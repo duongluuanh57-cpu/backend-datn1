@@ -10,6 +10,7 @@ import { Brand } from '../../models/Brand.ts';
 import { Tag } from '../../models/Tag.ts';
 import { Product } from '../../models/Product.ts';
 import type { RouteContext } from './queryRouterTypes.ts';
+import { getTenantIds } from '../../utils/tenantHelper.ts';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
 
@@ -36,20 +37,19 @@ async function buildContext(
   }
 
   let storeOverview = '';
-  if (products.length > 0) {
-    try {
-      const [allBrands, allTags, productCount] = await Promise.all([
-        Brand.find({ tenantId, status: 'active' }).select('name').lean(),
-        Tag.find({ tenantId, status: 'active' }).select('name').lean(),
-        Product.countDocuments({ tenantId }),
-      ]);
-      storeOverview = `TỔNG QUAN CỬA HÀNG:
+  try {
+    const tenantIds = getTenantIds(tenantId);
+    const [allBrands, allTags, productCount] = await Promise.all([
+      Brand.find({ tenantId: { $in: tenantIds }, status: 'active' }).select('name').lean(),
+      Tag.find({ tenantId: { $in: tenantIds }, status: 'active' }).select('name').lean(),
+      Product.countDocuments({ tenantId: { $in: tenantIds } }),
+    ]);
+    storeOverview = `TỔNG QUAN CỬA HÀNG:
 - Thương hiệu: ${allBrands.map((b: any) => b.name).join(', ')}
 - Tags: ${allTags.map((t: any) => t.name).join(', ')}
 - Tổng số sản phẩm: ${productCount}`;
-    } catch (dbErr) {
-      console.error('Error fetching store overview:', dbErr);
-    }
+  } catch (dbErr) {
+    console.error('Error fetching store overview:', dbErr);
   }
 
   return {
@@ -82,7 +82,11 @@ KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ th
   } else if (ctx.mode === 'gibberish') {
     contextStr = `TRẠNG THÁI: Người dùng nhập nội dung không rõ ràng. Hãy lịch sự hỏi lại họ cần tìm gì, KHÔNG đề xuất sản phẩm cụ thể.`;
   } else if (ctx.products.length === 0) {
-    contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự. KHÔNG đề xuất sản phẩm.`;
+    if (ctx.storeOverview) {
+      contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm cụ thể. Nhưng bạn CÓ thông tin tổng quan về cửa hàng. Dùng storeOverview để trả lời các câu hỏi chung (số lượng hãng, danh sách hãng...). Với câu hỏi về sản phẩm cụ thể thì xin lỗi lịch sự.`;
+    } else {
+      contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự. KHÔNG đề xuất sản phẩm.`;
+    }
   } else {
     contextStr = `DANH SÁCH SẢN PHẨM KHỚP NHẤT:\n${ctx.products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}`;
   }
@@ -106,7 +110,7 @@ KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ th
 
 /** Role denied response (used in admin executor) */
 function roleDeniedResponse(): string {
-  return "❌ Xin lỗi, bạn không có quyền truy cập vào thông tin này. Tính năng này chỉ dành cho quản trị viên. Nếu bạn cần hỗ trợ, hãy liên hệ với đội ngũ quản trị. 😊";
+  return "Xin lỗi, bạn không có quyền truy cập vào thông tin này. Tính năng này chỉ dành cho quản trị viên. Nếu bạn cần hỗ trợ, hãy liên hệ với đội ngũ quản trị.";
 }
 
 // ── EXECUTORS ─────────────────────────────────────────────────────────────
@@ -193,8 +197,9 @@ export async function executeGraphSearch(
       const productIds = ctx.products.map(p => p._id);
       const brands = [...new Set(ctx.products.map(p => p.brandId).filter(Boolean))];
       
+      const tenantIds = getTenantIds(tenantId);
       const relatedProducts = await Product.find({
-        tenantId,
+        tenantId: { $in: tenantIds },
         _id: { $nin: productIds },
         $or: [
           { brandId: { $in: brands } },

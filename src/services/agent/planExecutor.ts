@@ -182,8 +182,8 @@ export async function executePlan(
     return {
       success: false,
       results: [],
-      logs: [`❌ Plan validation failed: ${validationError}`],
-      summary: `❌ Lỗi plan: ${validationError}`,
+      logs: [`Plan validation failed: ${validationError}`],
+      summary: `Lỗi plan: ${validationError}`,
     };
   }
 
@@ -208,7 +208,7 @@ export async function executePlan(
           skipped: true,
           skipReason: `Dependency step ${depId} not executed`,
         });
-        logs.push(`⏭️ Step ${step.id}: SKIPPED — depends on step ${depId} (not executed)`);
+        logs.push(`Step ${step.id}: SKIPPED — depends on step ${depId} (not executed)`);
         depsFailed = true;
         break;
       }
@@ -229,7 +229,7 @@ export async function executePlan(
           skipped: true,
           skipReason: `Condition "${step.condition}" evaluated to false`,
         });
-        logs.push(`⏭️ Step ${step.id}: SKIPPED — condition "${step.condition}" = false`);
+        logs.push(`Step ${step.id}: SKIPPED — condition "${step.condition}" = false`);
         continue;
       }
     }
@@ -243,8 +243,7 @@ export async function executePlan(
     const toolResult = await executor(resolvedArgs, tenantId);
     results.set(step.id, toolResult);
 
-    const emoji = toolResult.success ? '✅' : '❌';
-    logs.push(`${emoji} Step ${step.id}: ${step.description} → ${toolResult.message}`);
+    logs.push(`Step ${step.id}: ${step.description} → ${toolResult.message}`);
 
     stepResults.push({
       stepId: step.id,
@@ -258,7 +257,7 @@ export async function executePlan(
 
     // Nếu step thất bại và là critical → dừng plan
     if (!toolResult.success && step.tool !== 'search_trending' && step.tool !== 'find_products') {
-      logs.push(`🛑 Plan dừng tại step ${step.id} do lỗi critical`);
+      logs.push(`Plan dừng tại step ${step.id} do lỗi critical`);
       break;
     }
   }
@@ -294,7 +293,7 @@ export async function summarizeExecution(
   try {
     const summary = await (generateText as any)({
       model: provider.interactions('gemini-3.1-flash-lite-preview'),
-      system: 'Bạn là AdminAI. Tóm tắt kết quả thực thi plan bằng tiếng Việt ngắn gọn, thân thiện, dùng icon. Chỉ dùng thông tin có sẵn, không tự suy diễn.',
+      system: 'Bạn là AdminAI. Tóm tắt kết quả thực thi plan bằng tiếng Việt ngắn gọn, thân thiện. Chỉ dùng thông tin có sẵn, không tự suy diễn.',
       messages: [{
         role: 'user',
         content: `Kết quả thực thi plan:\n${resultsText}\n\nLogs:\n${logsText}\n\nHãy tóm tắt cho admin biết đã làm được những gì.`,
@@ -313,7 +312,7 @@ export async function summarizeExecution(
 export function appendSupplementLink(summary: string, executionResult: PlanExecutionResult): string {
   const createdCount = executionResult.results.filter(r => r.tool === 'generate_product' && r.success && !r.skipped).length;
   if (createdCount > 0) {
-    return summary + `\n\n🔗 Có ${createdCount} sản phẩm cần bổ sung thông tin. Vào trang Bổ sung sản phẩm để hoàn thiện: /admin/products/supplement`;
+    return summary + `\n\nCó ${createdCount} sản phẩm cần bổ sung thông tin. Vào trang Bổ sung sản phẩm để hoàn thiện: /admin/products/supplement`;
   }
   return summary;
 }

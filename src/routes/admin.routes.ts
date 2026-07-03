@@ -107,9 +107,6 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/users', AdminCRUDControllerPart2.userList);
   app.post('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
 
-  // ── Media Library ──
-  app.get('/media', AdminPageController.mediaPage);
-
   // ── Settings ──
   app.get('/settings', AdminPageController.settingsPage);
   app.post('/settings', AdminPageController.settingsSave);

@@ -57,7 +57,7 @@ export class QueryRouterService {
           console.log(`⛔ [QueryRouter] Admin route denied for role: ${userRole}`);
           return {
             type: 'direct',
-            content: '❌ Xin lỗi, bạn không có quyền truy cập vào thông tin quản trị. Tính năng này chỉ dành cho quản trị viên. Nếu bạn cần hỗ trợ, hãy liên hệ với đội ngũ quản trị. 😊',
+            content: 'Xin lỗi, bạn không có quyền truy cập vào thông tin quản trị. Tính năng này chỉ dành cho quản trị viên. Nếu bạn cần hỗ trợ, hãy liên hệ với đội ngũ quản trị.',
           };
         }
       }
@@ -150,7 +150,7 @@ export class QueryRouterService {
           } else {
             result = {
               type: 'direct',
-              content: '❌ Có lỗi xảy ra khi xử lý yêu cầu quản trị.',
+              content: 'Có lỗi xảy ra khi xử lý yêu cầu quản trị.',
             };
           }
           break;
@@ -171,7 +171,7 @@ export class QueryRouterService {
       console.error('❌ [QueryRouter] Error:', error);
       return {
         type: 'direct',
-        content: `❌ Xin lỗi, đã có lỗi xảy ra: ${error.message}. Vui lòng thử lại sau.`,
+        content: `Xin lỗi, đã có lỗi xảy ra: ${error.message}. Vui lòng thử lại sau.`,
         error: error.message,
       };
     }

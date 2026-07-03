@@ -294,7 +294,7 @@ QUAN TRỌNG:
     if (!state) {
       return {
         type: 'done',
-        message: '❌ Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.',
+          message: 'Phiên làm việc đã hết hạn. Vui lòng bắt đầu lại.',
         results: [],
       };
     }
@@ -309,7 +309,7 @@ QUAN TRỌNG:
       default:
         return {
           type: 'done',
-          message: '✅ Hoàn tất!',
+          message: 'Hoàn tất!',
           results: [],
         };
     }
@@ -474,7 +474,7 @@ QUAN TRỌNG:
       if (state.productDetails.length === 0) {
         return {
           type: 'done',
-          message: '❌ Bạn đã bỏ qua tất cả sản phẩm. Không có sản phẩm nào được tạo.',
+          message: 'Bạn đã bỏ qua tất cả sản phẩm. Không có sản phẩm nào được tạo.',
           results: [],
         };
       }
@@ -644,12 +644,12 @@ QUAN TRỌNG:
       const successCount = results.filter(r => r.success).length;
       const failCount = results.filter(r => !r.success).length;
 
-      let message = `✅ Đã tạo thành công ${successCount} sản phẩm!`;
+      let message = `Đã tạo thành công ${successCount} sản phẩm!`;
       if (failCount > 0) {
-        message += ` ❌ ${failCount} sản phẩm thất bại.`;
+        message += ` ${failCount} sản phẩm thất bại.`;
       }
       message += '\n\n' + results.map(r =>
-        `${r.success ? '✅' : '❌'} ${r.name}: ${r.message}`
+        `${r.success ? '[OK]' : '[FAIL]'} ${r.name}: ${r.message}`
       ).join('\n');
 
       InterviewStateManager.deleteSession(state.sessionId);

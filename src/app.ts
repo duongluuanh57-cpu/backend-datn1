@@ -20,7 +20,6 @@ import { authRoutes } from './routes/auth.routes.ts';
 import { aiRoutes } from './routes/ai.routes.ts';
 import { visitsRoutes } from './routes/visits.routes.ts';
 import { oauthRoutes } from './routes/oauth.routes.ts';
-import { mediaRoutes } from './routes/media.routes.ts';
 import { productRoutes } from './routes/product.routes.ts';
 import { userRoutes } from './routes/user.routes.ts';
 import { brandRoutes } from './routes/brand.routes.ts';
@@ -127,7 +126,6 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(oauthRoutes, { prefix: '/api/auth' });
   app.register(aiRoutes, { prefix: '/api/ai' });
-  app.register(mediaRoutes, { prefix: '/api/media' });
   app.register(productRoutes, { prefix: '/api/products' });
   app.register(userRoutes, { prefix: '/api/users' });
   app.register(brandRoutes, { prefix: '/api/brands' });

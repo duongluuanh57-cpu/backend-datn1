@@ -272,8 +272,8 @@ function renderCreateChoice(container, message) {
   var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
   html += '<div style="margin-bottom:10px;">' + escapeHtml(message) + '</div>';
   html += '<div style="display:flex;gap:8px;">';
-  html += '<button onclick="pickExistingBrand()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;">📋 Brand có sẵn</button>';
-  html += '<button onclick="pickNewBrand()" style="padding:8px 16px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;">✨ Brand mới</button>';
+  html += '<button onclick="pickExistingBrand()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;">Brand có sẵn</button>';
+  html += '<button onclick="pickNewBrand()" style="padding:8px 16px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;">Brand mới</button>';
   html += '</div></div>';
   container.innerHTML += html; container.scrollTop = container.scrollHeight;
 }

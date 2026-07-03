@@ -26,7 +26,7 @@ export class ProductMutationController {
             success: true,
             data: { ...updated, isSupplemented: true, status: 'active' },
             autoActivated: true,
-            message: '✅ Sản phẩm đã được bổ sung đầy đủ và tự động kích hoạt!',
+            message: 'Sản phẩm đã được bổ sung đầy đủ và tự động kích hoạt!',
           });
         }
       }

@@ -21,8 +21,8 @@ import type { UserRole } from '../../services/queryRouter/queryRouterTypes.ts';
  */
 export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { messages, image } = req.body as { messages: any[], image?: string };
-    const tenantId = (req as any).user?.tenantId || 'default';
+    const { messages, image, tenantId: bodyTenantId } = req.body as { messages: any[], image?: string; tenantId?: string };
+    const tenantId = bodyTenantId || (req as any).user?.tenantId || 'default';
     const userRole = ((req as any).user?.role || undefined) as UserRole;
 
     if ((!messages || !Array.isArray(messages)) && !image) {

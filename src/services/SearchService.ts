@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { VectorSearchService } from './VectorSearchService.ts';
 import { Brand } from '../models/Brand.ts';
 import { Product } from '../models/Product.ts';
+import { getTenantIds } from '../utils/tenantHelper.ts';
 
 /**
  * Keyword search — hybrid $text (inverted index) + $regex (prefix autocomplete)
@@ -20,9 +21,10 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const BUFFER = 2;
 
+  const tenantIds = getTenantIds(tenantId);
   // ── 1. Text search trên Product (inverted index) ──
   const textSearchProducts = Product.find(
-    { tenantId, $text: { $search: cleanQuery } },
+    { tenantId: { $in: tenantIds }, $text: { $search: cleanQuery } },
     { textScore: { $meta: 'textScore' } }
   )
     .sort({ textScore: { $meta: 'textScore' }, soldCount: -1 })
@@ -33,7 +35,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
 
   // ── 2. Text search trên Brand (inverted index) ──
   const brandTextSearch = Brand.find(
-    { tenantId, $text: { $search: cleanQuery } },
+    { tenantId: { $in: tenantIds }, $text: { $search: cleanQuery } },
     { textScore: { $meta: 'textScore' } }
   )
     .sort({ textScore: { $meta: 'textScore' } })
@@ -50,7 +52,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
 
   const regexSearch = mongoose.connection.db!.collection('products').aggregate([
-    { $match: { tenantId, $or: nameConditions } },
+    { $match: { tenantId: { $in: tenantIds }, $or: nameConditions } },
     { $sort: { soldCount: -1, rating: -1 } },
     { $limit: limit * BUFFER },
     { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brandData' } },
@@ -72,7 +74,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   let brandProductResults: any[] = [];
   if (brandIds.length > 0) {
     brandProductResults = await Product.find(
-      { tenantId, brandId: { $in: brandIds } }
+      { tenantId: { $in: tenantIds }, brandId: { $in: brandIds } }
     )
       .sort({ soldCount: -1, rating: -1 })
       .limit(limit)

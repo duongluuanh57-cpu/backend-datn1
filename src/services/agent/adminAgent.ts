@@ -56,7 +56,7 @@ function formatToolResult(result: ToolResult): string {
       if (result.data.price) text += `\n  • Giá: ${result.data.price.toLocaleString('vi-VN')}đ`;
       if (result.data.brand) text += `\n  • Hãng: ${result.data.brand}`;
       if (result.data.tags) text += `\n  • Tags: ${result.data.tags}`;
-      if (result.data.url) text += `\n  👉 Xem tại: ${result.data.url}`;
+      if (result.data.url) text += `\n  Xem tại: ${result.data.url}`;
     }
   }
   return text;
@@ -160,7 +160,7 @@ HÀNH ĐỘNG:
               }
             }
             if (!targetId) {
-              return '❌ Cần ID hoặc tên sản phẩm để cập nhật.';
+              return 'Cần ID hoặc tên sản phẩm để cập nhật.';
             }
             const toolResult = await updateProductFields(targetId, fields, tenantId);
             return formatToolResult(toolResult);
@@ -184,7 +184,7 @@ HÀNH ĐỘNG:
               }
             }
             if (!targetId) {
-              return '❌ Cần ID hoặc tên sản phẩm để xóa. Vui lòng cung cấp ID hoặc nhập "tìm sản phẩm X" trước.';
+              return 'Cần ID hoặc tên sản phẩm để xóa. Vui lòng cung cấp ID hoặc nhập "tìm sản phẩm X" trước.';
             }
             const toolResult = await deleteProductById(targetId, tenantId);
             return formatToolResult(toolResult);
@@ -259,7 +259,7 @@ HÀNH ĐỘNG:
       let supplementTip = '';
       if (toolCalls.some((c: any) => c.toolName === 'create_product')) {
         const baseUrl = globalThis.process.env?.APP_URL || 'http://localhost:4000';
-        supplementTip = `\n\n🔗 Sản phẩm cần bổ sung thông tin: ${baseUrl}/admin/products/supplement`;
+        supplementTip = `\n\nSản phẩm cần bổ sung thông tin: ${baseUrl}/admin/products/supplement`;
       }
 
       // Gọi Gemini lần 2 để tóm tắt kết quả
@@ -282,7 +282,7 @@ HÀNH ĐỘNG:
     if (textResponse && /\d/.test(textResponse)) {
       return {
         type: 'text',
-        content: textResponse + '\n\n⚠️ Lưu ý: Tôi không chắc về các con số trên. Hãy hỏi cụ thể hơn như "có bao nhiêu sản phẩm" hoặc "liệt kê thương hiệu" để tôi tra cứu chính xác từ dữ liệu thực tế.',
+        content: textResponse + '\n\nLưu ý: Tôi không chắc về các con số trên. Hãy hỏi cụ thể hơn như "có bao nhiêu sản phẩm" hoặc "liệt kê thương hiệu" để tôi tra cứu chính xác từ dữ liệu thực tế.',
       };
     }
     return { type: 'text', content: textResponse };
@@ -290,7 +290,7 @@ HÀNH ĐỘNG:
     console.error('❌ [AdminAgent] Error:', error);
     return {
       type: 'text',
-      content: `❌ Lỗi: ${error.message || 'Đã có lỗi xảy ra khi xử lý yêu cầu.'}`,
+      content: `Lỗi: ${error.message || 'Đã có lỗi xảy ra khi xử lý yêu cầu.'}`,
     };
   }
 }

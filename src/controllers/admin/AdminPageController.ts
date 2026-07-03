@@ -55,14 +55,6 @@ export class AdminPageController {
     return reply.redirect('/admin/settings?toast=Đã+lưu+cài+đặt&type=success');
   }
 
-  // ── Media Library ──
-  static async mediaPage(req: FastifyRequest, reply: FastifyReply) {
-    const u = await getDoc((req as any).user?.userId);
-    const apiToken = (req as any).token || '';
-    const body = renderEjs('admin/media.ejs', { apiToken });
-    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'Media Library', 'media', 'Hệ thống'), body, apiToken });
-  }
-
   static async logout(_req: FastifyRequest, reply: FastifyReply) {
     // Xóa cookie bằng cách set expired
     reply.header('Set-Cookie', 'admin_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax');

@@ -44,13 +44,15 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
 
     // ── Kiểm tra intent "tạo sản phẩm" (chỉ sản phẩm, không brand) ──
     // Cho phép: "tạo sản phẩm", "tạo 1 sản phẩm", "tạo một sản phẩm", "tạo cho t 1 sản phẩm", "tạo sp"
+    //             "tạo cho 1 sản phẩm", "tạo cho 5 sản phẩm"
     const lowerMsg = message.toLowerCase();
     const justCreateProduct =
       /^tạo\s+(?:\d+\s+)?(?:một\s+vài\s+|một\s+)?sản\s+phẩm\s*$/i.test(lowerMsg) ||
       /^tạo\s+(?:\d+\s+)?sp\s*$/i.test(lowerMsg) ||
       /^tạo\s+(?:\d+\s+)?product\s*$/i.test(lowerMsg) ||
       /^tạo\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm/i.test(lowerMsg) ||
-      /tạo\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)/i.test(lowerMsg);
+      /tạo\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)/i.test(lowerMsg) ||
+      /^tạo\s+cho\s+\d+\s+sản\s+phẩm/i.test(lowerMsg);
     if (justCreateProduct) {
       return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
     }
@@ -72,6 +74,10 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
         // Blacklist: Nếu brandName là đại từ nhân xưng → redirect về create_choice
         const pronouns = ['t','tôi','mình','tao','tau','bạn','cậu','anh','chị','em','sếp','admin','mày','quý khách','khách'];
         if (pronouns.includes(brandName.toLowerCase()) || /^(t|tôi|mình|tao|tau)\s+\d/i.test(brandName)) {
+          return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
+        }
+        // Blacklist: Nếu brandName có dạng "1 sản phẩm", "2 sản phẩm" → redirect về create_choice
+        if (/^\d+\s+sản\s+phẩm/i.test(brandName)) {
           return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
         }
 
@@ -182,7 +188,7 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
       }
     }
 
-    // ── Xử lý xác nhận tạo entity (từ nút "✅ Tạo luôn" trong chat) ──
+    // ── Xử lý xác nhận tạo entity (từ nút "Tạo luôn" trong chat) ──
     if (body.action === 'confirm_create') {
       return handleConfirmCreate(req, reply, body);
     }
@@ -244,7 +250,7 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * Xử lý khi admin nhấn "✅ Tạo luôn" trong chat để tạo entity thực sự
+ * Xử lý khi admin nhấn "Tạo luôn" trong chat để tạo entity thực sự
  */
 async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, body: any) {
   try {
@@ -259,7 +265,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         return reply.send({
           type: 'entity_created',
           entity: 'user',
-          message: `✅ Đã tạo người dùng **${parsed.username || data.username}** thành công!`,
+          message: `Đã tạo người dùng **${parsed.username || data.username}** thành công!`,
         });
       }
       case 'brand': {
@@ -275,7 +281,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         return reply.send({
           type: 'entity_created',
           entity: 'brand',
-          message: `✅ Đã tạo thương hiệu **${newBrand.name}** thành công!`,
+          message: `Đã tạo thương hiệu **${newBrand.name}** thành công!`,
         });
       }
       case 'category': {
@@ -285,7 +291,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         return reply.send({
           type: 'entity_created',
           entity: 'category',
-          message: `✅ Đã tạo danh mục **${parsed.name || data.name}** thành công!`,
+          message: `Đã tạo danh mục **${parsed.name || data.name}** thành công!`,
         });
       }
       case 'tag': {
@@ -295,7 +301,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         return reply.send({
           type: 'entity_created',
           entity: 'tag',
-          message: `✅ Đã tạo tag **${parsed.name || data.name}** thành công!`,
+          message: `Đã tạo tag **${parsed.name || data.name}** thành công!`,
         });
       }
       case 'voucher': {
@@ -305,7 +311,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         return reply.send({
           type: 'entity_created',
           entity: 'voucher',
-          message: `✅ Đã tạo voucher **${parsed.code || data.code}** thành công!`,
+          message: `Đã tạo voucher **${parsed.code || data.code}** thành công!`,
         });
       }
       default:
@@ -337,16 +343,16 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "có bao nhiêu brand / thương hiệu" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:brand|thương\s+hiệu|hãng)/i.test(lowerMsg)) {
-    const brands = await Brand.find({}).select('name').lean();
+    const brands = await Brand.find({ tenantId }).select('name').lean();
     const list = brands.map((b: any, i: number) => `${i + 1}. ${b.name}`).join('\n');
     return `Dạ hiện có ${brands.length} thương hiệu ạ:\n${list}`;
   }
 
   // ── "kể tên / danh sách sản phẩm" ── (có 90 sp → chỉ hiển thị 30 đầu, có link supplement)
   if (/(?:kể|liệt\s+kê|danh\s+sách|list|đếm)\s+(?:tên\s+)?(?:các\s+)?(?:sản\s+phẩm|product)/i.test(lowerMsg)) {
-    const products = await Product.find({}).select('name').limit(30).lean();
+    const products = await Product.find({ tenantId }).select('name').limit(30).lean();
     if (!products.length) return 'Chưa có sản phẩm nào.';
-    const totalCount = await Product.countDocuments({});
+    const totalCount = await Product.countDocuments({ tenantId });
     const list = products.map((p: any, i: number) => `${i + 1}. ${p.name}`).join('\n');
     const suffix = totalCount > 30 ? `\n\n… và ${totalCount - 30} sản phẩm khác.` : '';
     return `Dạ danh sách sản phẩm (${totalCount}):\n${list}${suffix}`;
@@ -354,45 +360,45 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "có bao nhiêu sản phẩm / product" ── (cực tolerant: mọi cách viết)
   if (/(?:có\s+|có\s+tất\s+cả\s+|trong\s+(?:shop|db|database|hệ\s+thống)\s+|hiện\s+tại\s+|tổng\s+|tổng\s+cộng\s+)?(?:bao\s+nhi[êểễ]u|mấy|bao\s+nhiu|bao\s+nhiểu)\s*(?:sản\s+phẩm|product|sp\b|sản\s+phẩm\s+trong\s+(?:shop|store)?)/i.test(lowerMsg)) {
-    const count = await Product.countDocuments({});
+    const count = await Product.countDocuments({ tenantId });
     return `Dạ hiện có ${count} sản phẩm ạ.`;
   }
 
   // ── "có bao nhiêu danh mục / category" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:danh\s+mục|category)/i.test(lowerMsg)) {
-    const cats = await Category.find({}).select('name').lean();
+    const cats = await Category.find({ tenantId }).select('name').lean();
     const list = cats.map((c: any, i: number) => `${i + 1}. ${c.name}`).join('\n');
     return `Dạ hiện có ${cats.length} danh mục ạ:\n${list}`;
   }
 
   // ── "có bao nhiêu tag" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+tag/i.test(lowerMsg)) {
-    const tags = await Tag.find({}).select('name').lean();
+    const tags = await Tag.find({ tenantId }).select('name').lean();
     const list = tags.map((t: any, i: number) => `${i + 1}. ${t.name}`).join('\n');
     return `Dạ hiện có ${tags.length} tag ạ:\n${list}`;
   }
 
   // ── "có bao nhiêu người dùng / user" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:người\s+dùng|user|tài\s+khoản)/i.test(lowerMsg)) {
-    const count = await UserModel.countDocuments({});
+    const count = await UserModel.countDocuments({ tenantId });
     return `Dạ hiện có ${count} người dùng ạ.`;
   }
 
   // ── "có bao nhiêu đơn hàng / order" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:đơn\s+hàng|order)/i.test(lowerMsg)) {
-    const count = await Order.countDocuments({});
+    const count = await Order.countDocuments({ tenantId });
     return `Dạ hiện có ${count} đơn hàng ạ.`;
   }
 
   // ── "có bao nhiêu voucher / mã giảm giá" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:voucher|mã\s+giảm\s+giá)/i.test(lowerMsg)) {
-    const count = await VoucherModel.countDocuments({});
+    const count = await VoucherModel.countDocuments({ tenantId });
     return `Dạ hiện có ${count} mã giảm giá ạ.`;
   }
 
   // ── "liệt kê / danh sách brand / thương hiệu" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+(?:brand|thương\s+hiệu|hãng)/i.test(lowerMsg)) {
-    const brands = await Brand.find({}).select('name origin').lean();
+    const brands = await Brand.find({ tenantId }).select('name origin').lean();
     if (!brands.length) return 'Chưa có thương hiệu nào.';
     const list = brands.map((b: any, i: number) => `${i + 1}. ${b.name}${b.origin ? ` (${b.origin})` : ''}`).join('\n');
     return `Dạ danh sách thương hiệu:\n${list}`;
@@ -400,7 +406,7 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "liệt kê / danh sách category / danh mục" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+(?:danh\s+mục|category)/i.test(lowerMsg)) {
-    const cats = await Category.find({}).select('name').lean();
+    const cats = await Category.find({ tenantId }).select('name').lean();
     if (!cats.length) return 'Chưa có danh mục nào.';
     const list = cats.map((c: any, i: number) => `${i + 1}. ${c.name}`).join('\n');
     return `Dạ danh sách danh mục:\n${list}`;
@@ -408,7 +414,7 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "liệt kê / danh sách tag" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+tag/i.test(lowerMsg)) {
-    const tags = await Tag.find({}).select('name').lean();
+    const tags = await Tag.find({ tenantId }).select('name').lean();
     if (!tags.length) return 'Chưa có tag nào.';
     const list = tags.map((t: any, i: number) => `${i + 1}. ${t.name}`).join('\n');
     return `Dạ danh sách tag:\n${list}`;

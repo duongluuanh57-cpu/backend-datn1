@@ -165,7 +165,7 @@ export async function createProductFromName(
 
     // Brand phải có sẵn trong DB (đã được resolve từ generateProductController)
     if (!generatedInfo.brandId) {
-      return { success: false, message: `❌ Hãng "${generatedInfo.brand || 'Không rõ'}" không tồn tại trong hệ thống. Vui lòng tạo hãng thủ công trước.` };
+      return { success: false, message: `Hãng "${generatedInfo.brand || 'Không rõ'}" không tồn tại trong hệ thống. Vui lòng tạo hãng thủ công trước.` };
     }
 
     // Gọi ProductService.createProduct
@@ -173,7 +173,7 @@ export async function createProductFromName(
 
     return {
       success: true,
-      message: `✅ Đã tạo sản phẩm "${newProduct.name}" thành công!`,
+      message: `Đã tạo sản phẩm "${newProduct.name}" thành công!`,
       data: {
         id: newProduct._id,
         name: newProduct.name,
@@ -185,7 +185,7 @@ export async function createProductFromName(
     };
   } catch (error: any) {
     console.error('❌ [AdminTool createProductFromName] Error:', error);
-    return { success: false, message: `❌ Lỗi tạo sản phẩm: ${error.message}` };
+    return { success: false, message: `Lỗi tạo sản phẩm: ${error.message}` };
   }
 }
 
@@ -202,18 +202,18 @@ export async function updateProductFields(
   try {
     const existing = await findProductById!(id, tenantId);
     if (!existing) {
-      return { success: false, message: `❌ Không tìm thấy sản phẩm với ID: ${id}` };
+      return { success: false, message: `Không tìm thấy sản phẩm với ID: ${id}` };
     }
 
     const updated = await updateProduct!(id, fields, tenantId);
     if (!updated) {
-      return { success: false, message: `❌ Không thể cập nhật sản phẩm ${id}` };
+      return { success: false, message: `Không thể cập nhật sản phẩm ${id}` };
     }
 
     const changedFields = Object.keys(fields).join(', ');
     return {
       success: true,
-      message: `✅ Đã cập nhật sản phẩm "${existing.name}" (${changedFields})`,
+      message: `Đã cập nhật sản phẩm "${existing.name}" (${changedFields})`,
       data: {
         id: updated._id || id,
         name: existing.name,
@@ -223,7 +223,7 @@ export async function updateProductFields(
     };
   } catch (error: any) {
     console.error('❌ [AdminTool updateProductFields] Error:', error);
-    return { success: false, message: `❌ Lỗi cập nhật sản phẩm: ${error.message}` };
+    return { success: false, message: `Lỗi cập nhật sản phẩm: ${error.message}` };
   }
 }
 
@@ -237,22 +237,22 @@ export async function deleteProductById(
   try {
     const existing = await Product.findOne({ _id: id, tenantId }).select('name').lean();
     if (!existing) {
-      return { success: false, message: `❌ Không tìm thấy sản phẩm với ID: ${id}` };
+      return { success: false, message: `Không tìm thấy sản phẩm với ID: ${id}` };
     }
 
     const success = await ProductService.deleteProduct(id, tenantId);
     if (!success) {
-      return { success: false, message: `❌ Không thể xóa sản phẩm ${id}` };
+      return { success: false, message: `Không thể xóa sản phẩm ${id}` };
     }
 
     return {
       success: true,
-      message: `✅ Đã xóa sản phẩm "${existing.name}" (ID: ${id})`,
+      message: `Đã xóa sản phẩm "${existing.name}" (ID: ${id})`,
       data: { id, name: existing.name },
     };
   } catch (error: any) {
     console.error('❌ [AdminTool deleteProductById] Error:', error);
-    return { success: false, message: `❌ Lỗi xóa sản phẩm: ${error.message}` };
+    return { success: false, message: `Lỗi xóa sản phẩm: ${error.message}` };
   }
 }
 
@@ -275,7 +275,7 @@ export async function findProductsByName(
       .lean();
 
     if (!products.length) {
-      return { success: false, message: `❌ Không tìm thấy sản phẩm nào khớp với "${query}"` };
+      return { success: false, message: `Không tìm thấy sản phẩm nào khớp với "${query}"` };
     }
 
     const list = products.map((p: any) => ({
@@ -287,12 +287,12 @@ export async function findProductsByName(
 
     return {
       success: true,
-      message: `📋 Tìm thấy ${products.length} sản phẩm khớp với "${query}":`,
+      message: `Tìm thấy ${products.length} sản phẩm khớp với "${query}":`,
       data: list,
     };
   } catch (error: any) {
     console.error('❌ [AdminTool findProductsByName] Error:', error);
-    return { success: false, message: `❌ Lỗi tìm kiếm: ${error.message}` };
+    return { success: false, message: `Lỗi tìm kiếm: ${error.message}` };
   }
 }
 
@@ -316,7 +316,7 @@ export async function ensureBrand(
     if (existing) {
       return {
         success: true,
-        message: `✅ Hãng "${existing.name}" đã tồn tại.`,
+        message: `Hãng "${existing.name}" đã tồn tại.`,
         data: { brandId: existing._id, name: existing.name, existed: true },
       };
     }
@@ -339,7 +339,7 @@ export async function ensureBrand(
     if (!mockReplyData?.success || !mockReplyData.data) {
       return {
         success: false,
-        message: `❌ AI không thể generate thông tin cho hãng "${name}": ${mockReplyData?.message || 'Unknown error'}`,
+        message: `AI không thể generate thông tin cho hãng "${name}": ${mockReplyData?.message || 'Unknown error'}`,
       };
     }
 
@@ -354,12 +354,12 @@ export async function ensureBrand(
     console.log(`✅ [ensureBrand] Created brand "${newBrand.name}" (ID: ${newBrand._id})`);
     return {
       success: true,
-      message: `✅ Đã tạo hãng "${newBrand.name}" thành công! (Xuất xứ: ${origin || 'Chưa rõ'})`,
+      message: `Đã tạo hãng "${newBrand.name}" thành công! (Xuất xứ: ${origin || 'Chưa rõ'})`,
       data: { brandId: newBrand._id, name: newBrand.name, existed: false, origin },
     };
   } catch (error: any) {
     console.error('❌ [AdminTool ensureBrand] Error:', error);
-    return { success: false, message: `❌ Lỗi ensure brand: ${error.message}` };
+    return { success: false, message: `Lỗi ensure brand: ${error.message}` };
   }
 }
 
@@ -399,13 +399,13 @@ QUAN TRỌNG:
     if (!Array.isArray(products) || products.length === 0) {
       return {
         success: false,
-        message: `❌ Không tìm thấy nước hoa trending nào${brand ? ` cho hãng ${brand}` : ''}.`,
+        message: `Không tìm thấy nước hoa trending nào${brand ? ` cho hãng ${brand}` : ''}.`,
       };
     }
 
     return {
       success: true,
-      message: `🔍 Tìm thấy ${products.length} nước hoa trending${brand ? ` của ${brand}` : ''}:`,
+      message: `Tìm thấy ${products.length} nước hoa trending${brand ? ` của ${brand}` : ''}:`,
       data: products.slice(0, limit).map((p: any) => ({
         name: p.name || '',
         brand: p.brand || brand || '',
@@ -414,6 +414,6 @@ QUAN TRỌNG:
     };
   } catch (error: any) {
     console.error('❌ [AdminTool searchTrending] Error:', error);
-    return { success: false, message: `❌ Lỗi tìm trending: ${error.message}` };
+    return { success: false, message: `Lỗi tìm trending: ${error.message}` };
   }
 }
