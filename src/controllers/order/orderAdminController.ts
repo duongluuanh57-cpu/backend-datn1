@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
-import { requireAdmin, getTenantId, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter } from './orderHelpers.ts';
+import { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter } from './orderHelpers.ts';
 
 /**
  * GET /api/orders/admin/all
@@ -11,7 +11,6 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
   try {
     if (!requireAdmin(req, reply)) return;
 
-    const tenantId = getTenantId(req);
     const query = req.query as {
       page?: string;
       limit?: string;
@@ -26,7 +25,7 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
     const limit = Math.min(100, Math.max(1, parseInt(query.limit || '25', 10)));
     const skip = (page - 1) * limit;
 
-    const filter: any = { tenantId };
+    const filter: any = {};
 
     if (query.status && query.status !== 'all') {
       filter.status = query.status;
@@ -59,7 +58,7 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
     ]);
 
     for (const order of orders) {
-      const items = await OrderItem.find({ orderId: order._id, tenantId }).lean();
+      const items = await OrderItem.find({ orderId: order._id }).lean();
       if (items.length > 0) {
         await enhanceItemsWithProductData(items);
         order.totalAmount = recalculateTotalAmount(items);
@@ -86,7 +85,6 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
   try {
     if (!requireAdmin(req, reply)) return;
 
-    const tenantId = getTenantId(req);
     const { id } = req.params as { id: string };
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -95,7 +93,6 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
 
     const order = await Order.findOne({
       _id: new mongoose.Types.ObjectId(id),
-      tenantId,
     })
       .populate('userId', 'username email phoneNumber fullName')
       .lean();
@@ -104,7 +101,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
     }
 
-    const items = await OrderItem.find({ orderId: order._id, tenantId }).lean();
+    const items = await OrderItem.find({ orderId: order._id }).lean();
     await enhanceItemsWithProductData(items);
     order.totalAmount = recalculateTotalAmount(items);
     order.items = items;
@@ -122,7 +119,6 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
   try {
     if (!requireAdmin(req, reply)) return;
 
-    const tenantId = getTenantId(req);
     const { id } = req.params as { id: string };
     const { status } = req.body as { status: string };
 
@@ -132,7 +128,7 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
     }
 
     const order = await Order.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(id), tenantId },
+      { _id: new mongoose.Types.ObjectId(id) },
       { status },
       { new: true }
     ).lean();
@@ -158,7 +154,6 @@ export async function updatePaymentStatus(req: FastifyRequest, reply: FastifyRep
   try {
     if (!requireAdmin(req, reply)) return;
 
-    const tenantId = getTenantId(req);
     const { id } = req.params as { id: string };
     const { paymentStatus } = req.body as { paymentStatus: string };
 
@@ -168,7 +163,7 @@ export async function updatePaymentStatus(req: FastifyRequest, reply: FastifyRep
     }
 
     const order = await Order.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(id), tenantId },
+      { _id: new mongoose.Types.ObjectId(id) },
       { paymentStatus },
       { new: true }
     ).lean();
@@ -194,14 +189,12 @@ export async function deleteOrder(req: FastifyRequest, reply: FastifyReply) {
   try {
     if (!requireAdmin(req, reply)) return;
 
-    const tenantId = getTenantId(req);
     const { id } = req.params as { id: string };
 
-    await OrderItem.deleteMany({ orderId: new mongoose.Types.ObjectId(id), tenantId });
+    await OrderItem.deleteMany({ orderId: new mongoose.Types.ObjectId(id) });
 
     const order = await Order.findOneAndDelete({
       _id: new mongoose.Types.ObjectId(id),
-      tenantId,
     });
 
     if (!order) {

@@ -42,12 +42,10 @@ export interface DecomposedPlan {
  * decomposeQuery — Phân rã message của admin thành plan steps
  *
  * @param message - Tin nhắn của admin
- * @param tenantId - Tenant ID
  * @returns DecomposedPlan (nếu isComplex=false → dùng flow cũ single-tool)
  */
 export async function decomposeQuery(
   message: string,
-  tenantId: string,
 ): Promise<DecomposedPlan> {
   const prompt = `Bạn là Query Decomposer cho admin dashboard L'essence. Phân tích yêu cầu của admin và phân rã thành các bước tuần tự.
 
@@ -128,7 +126,7 @@ Hãy phân rã và trả về JSON:`;
     // Fallback: single step
     return {
       isComplex: false,
-      steps: [{ id: 1, tool: 'generate_product', args: { name: message }, dependsOn: [], condition: null, description: 'Tạo sản phẩm' }],
+      steps: [{ id: 1, tool: 'generate_product', args: { name: message }, dependsOn: [], description: 'Tạo sản phẩm' }],
       rawMessage: message,
     };
   } catch (error: any) {
@@ -136,7 +134,7 @@ Hãy phân rã và trả về JSON:`;
     // Fallback: trả về single step để không break flow
     return {
       isComplex: false,
-      steps: [{ id: 1, tool: 'generate_product', args: { name: message }, dependsOn: [], condition: null, description: 'Tạo sản phẩm (fallback)' }],
+      steps: [{ id: 1, tool: 'generate_product', args: { name: message }, dependsOn: [], description: 'Tạo sản phẩm (fallback)' }],
       rawMessage: message,
     };
   }

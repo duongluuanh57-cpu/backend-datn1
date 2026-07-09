@@ -10,8 +10,7 @@ export class ProductListingController {
    */
   static async getNewProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const products = await ProductService.getNewProducts(tenantId);
+      const products = await ProductService.getNewProducts();
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -23,8 +22,7 @@ export class ProductListingController {
    */
   static async getLimitedProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const products = await ProductService.getLimitedProducts(tenantId);
+      const products = await ProductService.getLimitedProducts();
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -36,8 +34,7 @@ export class ProductListingController {
    */
   static async getTrendingProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const products = await ProductService.getTrendingProducts(tenantId);
+      const products = await ProductService.getTrendingProducts();
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -49,7 +46,6 @@ export class ProductListingController {
    */
   static async getPublicProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as {
         type?: string;
         brand?: string;
@@ -70,7 +66,7 @@ export class ProductListingController {
         return reply.status(400).send({ success: false, message: 'Invalid type. Must be trending, new, or limited.' });
       }
 
-      const products = await ProductService.getPublicProducts(tenantId, type, {
+      const products = await ProductService.getPublicProducts(type, {
         brand: query.brand,
         capacity: query.capacity,
         priceRange: query.priceRange,
@@ -95,8 +91,7 @@ export class ProductListingController {
    */
   static async getSaleProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const products = await ProductService.getSaleProducts(tenantId);
+      const products = await ProductService.getSaleProducts();
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -109,7 +104,6 @@ export class ProductListingController {
    */
   static async getAllProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as {
         page?: string;
         limit?: string;
@@ -121,7 +115,7 @@ export class ProductListingController {
         sortBy?: string;
       };
 
-      const result = await ProductService.getAllProducts(tenantId, {
+      const result = await ProductService.getAllProducts({
         page: query.page ? parseInt(query.page, 10) : 1,
         limit: query.limit ? parseInt(query.limit, 10) : 25,
         search: query.search,
@@ -143,10 +137,8 @@ export class ProductListingController {
    */
   static async suggestProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const { q, limit } = req.query as { q?: string; limit?: string };
       const products = await ProductService.suggestProducts(
-        tenantId,
         q.trim(),
         limit ? Math.min(parseInt(limit, 10), 20) : 8
       );
@@ -161,7 +153,6 @@ export class ProductListingController {
    */
   static async getBulkProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { ids?: string };
       if (!query.ids) {
         return reply.status(400).send({ success: false, message: 'Missing ids query parameter.' });
@@ -170,7 +161,7 @@ export class ProductListingController {
       if (ids.length > 20) {
         return reply.status(400).send({ success: false, message: 'Maximum 20 IDs allowed.' });
       }
-      const products = await ProductService.getBulkProducts(tenantId, ids);
+      const products = await ProductService.getBulkProducts(ids);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -183,9 +174,7 @@ export class ProductListingController {
   static async getProductById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const queryTenantId = (req.query as any).tenantId;
-      const tenantId = (req as any).user?.tenantId || queryTenantId || 'default';
-      const product = await ProductService.getProductById(id, tenantId);
+      const product = await ProductService.getProductById(id);
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
       return reply.status(200).send({ success: true, data: product });
     } catch (error: any) {
@@ -199,8 +188,7 @@ export class ProductListingController {
   static async getProductImages(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const images = await ProductImage.find({ productId: id, tenantId }).sort({ createdAt: 1 });
+      const images = await ProductImage.find({ productId: id }).sort({ createdAt: 1 });
       return reply.status(200).send({ success: true, data: images.map(img => img.url) });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -227,12 +215,10 @@ export class ProductListingController {
    */
   static async getTopBrandsByViews(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { limit?: string };
       const limit = query.limit ? Math.min(parseInt(query.limit, 10), 50) : 20;
 
       const agg = await Product.aggregate([
-        { $match: { tenantId } },
         { $group: { _id: '$brandId', totalViews: { $sum: '$viewCount' }, productCount: { $sum: 1 } } },
         { $sort: { totalViews: -1 } },
         { $limit: limit },
@@ -262,8 +248,7 @@ export class ProductListingController {
    */
   static async getNeedsSupplement(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const products = await Product.find({ tenantId, isSupplemented: false, status: 'draft' })
+      const products = await Product.find({ isSupplemented: false, status: 'draft' })
         .select('name image brandId description categories variants status isSupplemented')
         .populate('brandId', 'name')
         .populate('categories', 'name')

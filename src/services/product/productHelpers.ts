@@ -1,11 +1,12 @@
-// Helper slugification
+/** Slugify cho product — remove diacritics và giữ ký tự ASCII */
 export function slugify(text: string): string {
   return text
-    .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-zA-Z0-9\-]/g, '-')
+    .toLowerCase()
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'product';
 }
 
 // Helper sizes parsing

@@ -32,18 +32,17 @@ export class ImageOptimizer {
    */
   static async optimizeForProduct(
     inputBuffer: Buffer,
-    maxWidth: number = 1200,
+    width: number = 1080,
+    height: number = 1080,
     quality: number = 95
   ): Promise<Buffer> {
     try {
       return await sharp(inputBuffer)
-        .resize({
-          width: maxWidth,
-          withoutEnlargement: false, // Cho phép upscale ảnh nhỏ
-          fit: 'inside',
-          kernel: 'lanczos3',        // Thuật toán nội suy chất lượng cao
+        .resize(width, height, {
+          fit: 'cover',
+          kernel: 'lanczos3',
         })
-        .sharpen({                    // Làm nét cạnh để ảnh sắc hơn
+        .sharpen({
           sigma: 0.8,
           m1: 0.5,
           m2: 0.5,

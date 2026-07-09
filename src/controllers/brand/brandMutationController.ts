@@ -7,10 +7,9 @@ export class BrandMutationController {
    */
   static async createBrand(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const brandData = req.body as any;
 
-      const brand = await BrandService.createBrand(brandData, tenantId);
+      const brand = await BrandService.createBrand(brandData);
 
       return reply.status(201).send({
         success: true,
@@ -30,10 +29,9 @@ export class BrandMutationController {
   static async updateBrand(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
       const brandData = req.body as any;
 
-      const brand = await BrandService.updateBrand(id, brandData, tenantId);
+      const brand = await BrandService.updateBrand(id, brandData);
       if (!brand) {
         return reply.status(404).send({
           success: false,
@@ -59,9 +57,8 @@ export class BrandMutationController {
   static async deleteBrand(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
 
-      const success = await BrandService.deleteBrand(id, tenantId);
+      const success = await BrandService.deleteBrand(id);
       if (!success) {
         return reply.status(404).send({
           success: false,
@@ -91,9 +88,7 @@ export class BrandMutationController {
         return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
       }
 
-      const tenantId = (req as any).user?.tenantId || 'default';
-
-      const success = await BrandService.bulkDeleteBrands(ids, tenantId);
+      const success = await BrandService.bulkDeleteBrands(ids);
       if (!success) {
         return reply.status(404).send({
           success: false,

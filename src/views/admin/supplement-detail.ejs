@@ -1,12 +1,14 @@
 <!-- ═══════════════════════════════════════════════════════════════════════
-   Trang Bổ sung thông tin Sản phẩm — Có tương tác upload ảnh, chỉnh sửa
+   Trang Chỉnh sửa / Bổ sung Sản phẩm
+   mode = 'edit' → chỉnh sửa toàn bộ nội dung
+   mode = 'supplement' → bổ sung thông tin (scent read-only)
    ═══════════════════════════════════════════════════════════════════════ -->
 <div id="supplement-detail">
   <!-- ── Header ── -->
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
-    <a href="/admin/products/supplement" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
+    <a href="/admin/products" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      Quay lại danh sách chờ
+      Quay lại danh sách
     </a>
     <span style="color:var(--text-muted);">/</span>
     <span id="sd-breadcrumb" style="color:var(--text-primary);font-weight:600;font-size:14px;">Đang tải...</span>
@@ -38,16 +40,21 @@
           
           <!-- Main image preview -->
           <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Ảnh chính</div>
-          <div id="sd-image-preview" style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;border:2px solid var(--accent);background:var(--bg);margin-bottom:8px;display:flex;align-items:center;justify-content:center;">
+          <div id="sd-image-preview" style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;border:2px solid var(--accent);background:var(--bg);margin-bottom:8px;display:flex;align-items:center;justify-content:center;position:relative;">
             <span style="color:var(--text-muted);font-size:12px;">Chưa có ảnh</span>
           </div>
           
-          <!-- Upload main image button -->
-          <input type="file" id="sd-image-upload" accept="image/*" style="display:none;" onchange="handleImageUpload(event, null)" />
-          <button type="button" onclick="document.getElementById('sd-image-upload').click()" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;border:2px dashed var(--accent);border-radius:10px;background:rgba(201,169,110,0.04);color:var(--accent);cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s;margin-bottom:16px;" onmouseover="this.style.background='rgba(201,169,110,0.1)'" onmouseout="this.style.background='rgba(201,169,110,0.04)'">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            Tải ảnh chính
-          </button>
+          <!-- Main image actions -->
+          <div style="display:flex;gap:6px;margin-bottom:12px;">
+            <input type="file" id="sd-image-upload" accept="image/*" style="display:none;" onchange="handleImageUpload(event, null)" />
+            <button type="button" onclick="document.getElementById('sd-image-upload').click()" style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:8px;border:2px dashed var(--accent);border-radius:8px;background:rgba(201,169,110,0.04);color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;" onmouseover="this.style.background='rgba(201,169,110,0.1)'" onmouseout="this.style.background='rgba(201,169,110,0.04)'">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Tải ảnh chính
+            </button>
+            <button type="button" id="sd-delete-main-image" onclick="deleteMainImage()" style="display:none;padding:8px 10px;border:1px solid var(--danger);border-radius:8px;background:rgba(239,68,68,0.06);color:var(--danger);cursor:pointer;font-size:12px;transition:all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.12)'" onmouseout="this.style.background='rgba(239,68,68,0.06)'" title="Xóa ảnh chính">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
 
           <!-- Sub images -->
           <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Ảnh phụ</div>
@@ -86,15 +93,54 @@
               <!-- Danh mục -->
               <div class="supp-form-group">
                 <label>Danh mục (chọn tối thiểu 2)</label>
-                <div id="sd-categories" style="display:flex;flex-wrap:wrap;gap:8px;">
-                  <!-- checkboxes injected by JS -->
+                <div id="sd-selected-cats" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;padding:4px 0;">
+                  <!-- selected category chips injected by JS -->
+                </div>
+                <div style="margin-top:4px;">
+                  <button type="button" onclick="openCategoryModal()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    Chọn danh mục
+                  </button>
+                </div>
+              </div>
+
+              <!-- Tags -->
+              <div class="supp-form-group">
+                <label>Tags</label>
+                <div id="sd-selected-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;padding:4px 0;">
+                  <!-- selected tag chips injected by JS -->
+                </div>
+                <div style="margin-top:4px;">
+                  <button type="button" onclick="openTagModal()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>
+                    Chọn tags
+                  </button>
                 </div>
               </div>
 
               <!-- Mô tả -->
               <div class="supp-form-group">
-                <label>Mô tả <span style="font-weight:400;color:var(--text-muted);">(AI đã tạo sẵn)</span></label>
-                <textarea id="sd-description" rows="5" placeholder="Mô tả sản phẩm do AI tạo"></textarea>
+                <label>Mô tả</label>
+                <div id="sd-description-editor" style="min-height:180px;border:1px solid var(--border);border-radius:8px;background:var(--surface);"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Card: Giá & Khuyến mãi ── -->
+          <div class="dt-card">
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 16px;color:var(--text-primary);">Giá & Khuyến mãi</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="supp-form-group">
+                <label>Giảm giá (%)</label>
+                <input type="number" id="sd-discount" min="0" max="100" placeholder="0" />
+              </div>
+              <div class="supp-form-group">
+                <label>Ngày bắt đầu giảm giá</label>
+                <input type="date" id="sd-discount-start" />
+              </div>
+              <div class="supp-form-group">
+                <label>Ngày kết thúc giảm giá</label>
+                <input type="date" id="sd-discount-end" />
               </div>
             </div>
           </div>
@@ -113,15 +159,14 @@
             </div>
           </div>
 
-          <!-- ── Card: Thuộc tính nước hoa (read-only preview) ── -->
+          <!-- ── Card: Thuộc tính nước hoa ── -->
           <div class="dt-card">
             <h3 style="font-size:14px;font-weight:600;margin:0 0 12px;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-              Thuộc tính AI đã phân tích
-              <span style="font-size:11px;color:var(--text-muted);font-weight:400;">(read-only)</span>
+              Thuộc tính nước hoa
             </h3>
             <div id="sd-scent-meta" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:8px;">
-              <!-- scent meta injected by JS -->
+              <!-- scent meta injected by JS (read-only in supplement mode, editable in edit mode) -->
             </div>
           </div>
 
@@ -143,7 +188,61 @@
   </div>
 </div>
 
+<!-- ── Modal: Chọn danh mục ── -->
+<div id="cat-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h4>Chọn danh mục</h4>
+      <button type="button" onclick="closeCategoryModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="cat-modal-body">
+      <div id="cat-modal-list" style="display:flex;flex-direction:column;gap:6px;">
+        <!-- checkboxes injected by JS -->
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="cat-new-name" placeholder="Thêm danh mục mới..." style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--bg);" />
+          <button type="button" onclick="addCategoryFromModal()" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">Thêm</button>
+          <span id="cat-add-status" style="font-size:11px;color:var(--text-muted);"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" onclick="closeCategoryModal()" class="modal-btn-cancel">Hủy</button>
+      <button type="button" onclick="saveCategoryModal()" class="modal-btn-save">Xác nhận</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: Chọn tags ── -->
+<div id="tag-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h4>Chọn tags</h4>
+      <button type="button" onclick="closeTagModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="tag-modal-body">
+      <div id="tag-modal-list" style="display:flex;flex-direction:column;gap:6px;">
+        <!-- checkboxes injected by JS -->
+      </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="tag-new-name" placeholder="Thêm tag mới..." style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--bg);" />
+          <button type="button" onclick="addTagFromModal()" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">Thêm</button>
+          <span id="tag-add-status" style="font-size:11px;color:var(--text-muted);"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" onclick="closeTagModal()" class="modal-btn-cancel">Hủy</button>
+      <button type="button" onclick="saveTagModal()" class="modal-btn-save">Xác nhận</button>
+    </div>
+  </div>
+</div>
+
 <style>
+  @import url('https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css');
+  :root { --surface: var(--color-surface, #F7F6F3); --bg: var(--color-background, #FFFFFF); }
   #sd-image-preview img { width:100%; height:100%; object-fit:cover; }
   .supp-form-group { display:flex; flex-direction:column; gap:4px; }
   .supp-form-group label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); }
@@ -173,7 +272,50 @@
   .scent-meta-icon svg { width:100%; height:100%; }
   .scent-meta-label { font-size:10px; color:var(--text-muted); min-width:80px; text-transform:uppercase; letter-spacing:0.5px; }
   .scent-meta-value { font-size:12px; font-weight:500; color:var(--text-primary); }
+  .scent-meta-item input,
+  .scent-meta-item select {
+    padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; color:var(--text-primary); background:var(--surface); flex:1; min-width:100px;
+  }
+  .scent-meta-item input:focus,
+  .scent-meta-item select:focus { outline:none; border-color:var(--accent); }
   
+  .sub-image-row {
+    display:flex; align-items:center; gap:8px; padding:8px; background:var(--bg); border-radius:8px; border:1px solid var(--border);
+  }
+  .sub-image-row .sub-img-preview { width:48px; height:48px; border-radius:6px; overflow:hidden; border:1px solid var(--border); background:var(--surface); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+  .sub-image-row .sub-img-preview img { width:100%; height:100%; object-fit:cover; }
+  
+  /* ── Modal ── */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:999; align-items:center; justify-content:center; }
+  .modal-overlay.active { display:flex; }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:14px; max-width:480px; width:90%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.1); }
+  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); }
+  .modal-header h4 { margin:0; font-size:15px; font-weight:600; color:var(--text-primary); }
+  .modal-header button { background:none; border:none; font-size:22px; cursor:pointer; color:var(--text-muted); padding:0 4px; line-height:1; }
+  .modal-header button:hover { color:var(--text-primary); }
+  .modal-body { padding:16px 20px; overflow-y:auto; flex:1; }
+  .modal-footer { display:flex; gap:8px; justify-content:flex-end; padding:12px 20px; border-top:1px solid var(--border); }
+  .modal-btn-cancel { padding:8px 18px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:12px; font-weight:500; }
+  .modal-btn-cancel:hover { color:var(--text-primary); border-color:var(--text-muted); }
+  .modal-btn-save { padding:8px 18px; border:none; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; font-size:12px; font-weight:600; }
+  .modal-btn-save:hover { filter:brightness(1.1); }
+
+  /* ── Checkbox items ── */
+  .modal-check-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s; }
+  .modal-check-item:hover { background:rgba(201,169,110,0.06); }
+  .modal-check-item input[type="checkbox"] { accent-color:var(--accent); cursor:pointer; width:16px; height:16px; }
+
+  /* ── Chips ── */
+  .chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:500; background:rgba(201,169,110,0.10); color:var(--accent); border:1px solid rgba(201,169,110,0.2); }
+  .chip-remove { cursor:pointer; font-size:14px; line-height:1; opacity:0.6; }
+  .chip-remove:hover { opacity:1; }
+
+  /* ── Quill overrides ── */
+  #sd-description-editor .ql-editor { min-height:120px; font-size:13px; font-family:inherit; }
+  #sd-description-editor .ql-toolbar { border:0; border-bottom:1px solid var(--border); border-radius:8px 8px 0 0; background:var(--bg); }
+  #sd-description-editor .ql-container { border:0; font-family:inherit; }
+  #sd-description-editor .ql-editor.ql-blank::before { color:var(--text-muted); font-style:normal; }
+
   @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
   
   @media (max-width:768px) {
@@ -182,17 +324,28 @@
   }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"></script>
 <script>
 var PRODUCT_ID = '<%= productId %>';
 var TOKEN = '<%= apiToken %>';
-var TENANT = '<%= tenantId || 'default' %>';
+// TENANT removed — single-tenant mode
+var MODE = '<%= mode || 'supplement' %>';
 var H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
 var currentProduct = null;
 var allBrands = [];
 var allCategories = [];
+var allTags = [];
+var selectedCatNames = [];
+var selectedTagSlugs = [];
+var quill = null;
 var currentVariants = [];
 var subImageCount = 0;
-var uploadedSubImages = []; // [{ index, url }]
+
+// Image state tracking
+var existingImages = [];        // full list of existing image URLs from DB
+var deletedImageUrls = [];      // URLs that were deleted
+var uploadedSubImages = [];     // [{ index, url }] — newly uploaded subs
+var uploadedMainImageUrl = null; // newly uploaded main image URL
 
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return (n || 0).toLocaleString('vi-VN'); }
@@ -206,13 +359,15 @@ function escapeHtml(str) {
 // LOAD DATA
 // ═══════════════════════════════════════════════════════════════
 Promise.all([
-  fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H }).then(function(r) { return r.json(); }),
+  fetch('/api/products/' + PRODUCT_ID, { headers: H }).then(function(r) { return r.json(); }),
   fetch('/api/brands', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
   fetch('/api/categories', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
+  fetch('/api/tags', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
 ]).then(function(results) {
   var productRes = results[0];
   var brandsRes = results[1];
   var categoriesRes = results[2];
+  var tagsRes = results[3];
 
   if (!productRes.success || !productRes.data) {
     $('sd-loading').style.display = 'none';
@@ -223,9 +378,37 @@ Promise.all([
 
   currentProduct = productRes.data;
   allBrands = brandsRes.success ? (brandsRes.data || []) : [];
-  allCategories = categoriesRes.success ? (categoriesRes.data || []) : [];
+  // Handle cả 2 format: array hoặc { items: [...] }
+  var catData = categoriesRes.success ? (categoriesRes.data || []) : [];
+  allCategories = Array.isArray(catData) ? catData : (catData.items || []);
+
+  // Handle tags response: { success, data: [...] }
+  if (tagsRes.success && Array.isArray(tagsRes.data)) {
+    allTags = tagsRes.data;
+  } else if (tagsRes.success && tagsRes.data && Array.isArray(tagsRes.data.items)) {
+    allTags = tagsRes.data.items;
+  }
+
+  // Extract existing images
+  var prodImages = Array.isArray(currentProduct.images) ? currentProduct.images : [];
+  existingImages = prodImages.length > 0 ? prodImages : (currentProduct.image ? [currentProduct.image] : []);
 
   renderForm();
+
+  // Init Quill after form is rendered
+  quill = new Quill('#sd-description-editor', {
+    theme: 'snow',
+    modules: {
+      toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['clean']
+      ]
+    }
+  });
+  quill.root.innerHTML = currentProduct.description || '';
+
   $('sd-loading').style.display = 'none';
   $('sd-form').style.display = 'block';
 }).catch(function() {
@@ -240,7 +423,8 @@ Promise.all([
 function renderForm() {
   var p = currentProduct;
   $('sd-breadcrumb').textContent = (p.brand || '') + ' · ' + (p.name || '');
-  document.title = 'Bổ sung: ' + (p.name || 'Sản phẩm') + ' — Admin';
+  var pageTitle = MODE === 'edit' ? 'Chỉnh sửa' : 'Bổ sung';
+  document.title = pageTitle + ': ' + (p.name || 'Sản phẩm') + ' — Admin';
 
   // Status badge
   var badge = $('sd-status-badge');
@@ -248,24 +432,27 @@ function renderForm() {
     badge.style.display = 'inline-block';
     badge.style.background = 'rgba(245,158,11,0.12)';
     badge.style.color = '#d97706';
-    badge.textContent = '⏳ Chờ bổ sung';
+    badge.textContent = '⏳ Nháp';
   } else if (p.status === 'active') {
     badge.style.display = 'inline-block';
     badge.style.background = 'rgba(34,197,94,0.12)';
     badge.style.color = '#16a34a';
     badge.textContent = '✓ Đã kích hoạt';
+  } else if (p.status === 'archived') {
+    badge.style.display = 'inline-block';
+    badge.style.background = 'rgba(107,114,128,0.12)';
+    badge.style.color = '#6b7280';
+    badge.textContent = '⏸ Đã ẩn';
   }
 
-  // Product image
-  if (p.image) {
-    $('sd-image-preview').innerHTML = '<img src="' + escapeHtml(p.image) + '" alt="" />';
-  }
+  // Main image
+  renderMainImage();
+
+  // Sub images
+  renderSubImages();
 
   // Name
   $('sd-name').value = p.name || '';
-
-  // Description
-  $('sd-description').value = p.description || '';
 
   // Brands dropdown
   var brandHtml = '<option value="">-- Chọn thương hiệu --</option>';
@@ -275,17 +462,26 @@ function renderForm() {
   });
   $('sd-brand').innerHTML = brandHtml;
 
-  // Categories checkboxes
-  var currentCatIds = Array.isArray(p.categories) ? p.categories.map(function(c) { return typeof c === 'string' ? c : c._id; }) : [];
-  var catCheckboxes = '';
-  allCategories.forEach(function(c) {
-    var checked = currentCatIds.indexOf(c._id) !== -1 ? ' checked' : '';
-    catCheckboxes += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:4px 10px;border:1px solid var(--border);border-radius:20px;background:' + (checked ? 'rgba(201,169,110,0.08)' : 'var(--surface)') + ';">' +
-      '<input type="checkbox" value="' + c._id + '"' + checked + ' onchange="this.parentElement.style.background=this.checked?\'rgba(201,169,110,0.08)\':\'var(--surface)\'" style="accent-color:var(--accent);" />' +
-      escapeHtml(c.name) +
-    '</label>';
-  });
-  $('sd-categories').innerHTML = catCheckboxes || '<span style="color:var(--text-muted);font-size:12px;">Chưa có danh mục nào</span>';
+  // Categories
+  selectedCatNames = typeof p.categories === 'string' ? p.categories.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  if (!selectedCatNames.length && Array.isArray(p.categories)) {
+    selectedCatNames = p.categories.map(function(c) { return typeof c === 'string' ? c : (c.name || ''); }).filter(Boolean);
+  }
+  renderCategoryChips();
+
+  // Tags
+  var tagStr = p.tag || '';
+  selectedTagSlugs = tagStr ? tagStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  renderTagChips();
+
+  // Discount
+  $('sd-discount').value = p.discountPercentage || '';
+  if (p.discountStartDate) {
+    $('sd-discount-start').value = new Date(p.discountStartDate).toISOString().split('T')[0];
+  }
+  if (p.discountEndDate) {
+    $('sd-discount-end').value = new Date(p.discountEndDate).toISOString().split('T')[0];
+  }
 
   // Variants
   var variants = Array.isArray(p.variants) ? p.variants : [];
@@ -297,27 +493,316 @@ function renderForm() {
   }
   renderVariants();
 
-  // Scent metadata (read-only preview)
-  var scentMeta = [
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>', label: 'Độ lưu hương', value: p.longevity },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>', label: 'Độ tỏa hương', value: p.sillage },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>', label: 'Độ bền', value: p.durability },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>', label: 'Hương đặc trưng', value: p.scentTrail },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>', label: 'Phong cách', value: p.style },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>', label: 'Phù hợp', value: p.suitableFor },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>', label: 'Dịp', value: p.occasion },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>', label: 'Mùa', value: p.season },
-    { icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>', label: 'Thời điểm', value: p.time },
+  // Scent attributes
+  var scentFields = [
+    { key: 'longevity', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>', label: 'Độ lưu hương' },
+    { key: 'sillage', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>', label: 'Độ tỏa hương' },
+    { key: 'durability', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>', label: 'Độ bền' },
+    { key: 'scentTrail', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>', label: 'Hương đặc trưng' },
+    { key: 'style', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>', label: 'Phong cách' },
+    { key: 'suitableFor', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>', label: 'Phù hợp' },
+    { key: 'occasion', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>', label: 'Dịp' },
+    { key: 'season', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>', label: 'Mùa' },
+    { key: 'time', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>', label: 'Thời điểm' },
   ];
   var scentHtml = '';
-  scentMeta.forEach(function(m) {
-    scentHtml += '<div class="scent-meta-item">' +
-      '<span class="scent-meta-icon">' + m.icon + '</span>' +
-      '<span class="scent-meta-label">' + m.label + '</span>' +
-      '<span class="scent-meta-value">' + escapeHtml(m.value || '—') + '</span>' +
-    '</div>';
+  var isEditable = MODE === 'edit';
+  scentFields.forEach(function(f) {
+    var val = p[f.key] || '';
+    if (isEditable) {
+      scentHtml += '<div class="scent-meta-item">' +
+        '<span class="scent-meta-icon">' + f.icon + '</span>' +
+        '<span class="scent-meta-label">' + f.label + '</span>' +
+        '<input type="text" id="sd-' + f.key + '" value="' + escapeHtml(val) + '" placeholder="—" />' +
+      '</div>';
+    } else {
+      scentHtml += '<div class="scent-meta-item">' +
+        '<span class="scent-meta-icon">' + f.icon + '</span>' +
+        '<span class="scent-meta-label">' + f.label + '</span>' +
+        '<span class="scent-meta-value">' + escapeHtml(val || '—') + '</span>' +
+      '</div>';
+    }
   });
   $('sd-scent-meta').innerHTML = scentHtml || '<span style="color:var(--text-muted);font-size:12px;">Chưa có thuộc tính</span>';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMAGE RENDERING
+// ═══════════════════════════════════════════════════════════════
+function renderMainImage() {
+  var isDeleted = deletedImageUrls.indexOf(currentProduct.image) !== -1;
+  var mainUrl = uploadedMainImageUrl || (!isDeleted ? currentProduct.image : null);
+  var preview = $('sd-image-preview');
+  var delBtn = $('sd-delete-main-image');
+
+  if (mainUrl) {
+    preview.innerHTML = '<img src="' + escapeHtml(mainUrl) + '" alt="" />';
+    delBtn.style.display = 'inline-flex';
+  } else {
+    preview.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">Chưa có ảnh</span>';
+    delBtn.style.display = 'none';
+  }
+}
+
+function renderSubImages() {
+  var container = $('sd-sub-images');
+  var html = '';
+  var allSubUrls = [];
+
+  // Existing sub images (excluding main image, not deleted)
+  if (Array.isArray(currentProduct.images)) {
+    currentProduct.images.forEach(function(url) {
+      if (url !== currentProduct.image && deletedImageUrls.indexOf(url) === -1) {
+        allSubUrls.push(url);
+      }
+    });
+  }
+
+  // Newly uploaded sub images
+  uploadedSubImages.forEach(function(si) {
+    allSubUrls.push(si.url);
+  });
+
+  allSubUrls.forEach(function(url, idx) {
+    html += '<div class="sub-image-row" data-url="' + escapeHtml(url) + '">' +
+      '<div class="sub-img-preview"><img src="' + escapeHtml(url) + '" alt="" /></div>' +
+      '<span style="flex:1;font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px;">' + escapeHtml(url.split('/').pop()) + '</span>' +
+      '<button type="button" onclick="deleteSubImage(\'' + escapeHtml(url) + '\')" style="padding:4px 8px;border:none;background:transparent;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;" title="Xóa ảnh phụ">&times;</button>' +
+    '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IMAGE DELETE
+// ═══════════════════════════════════════════════════════════════
+function deleteMainImage() {
+  if (!currentProduct.image) return;
+  if (!confirm('Xóa ảnh chính này?')) return;
+
+  var url = currentProduct.image;
+  callDeleteImage(url, function() {
+    if (uploadedMainImageUrl === url) {
+      uploadedMainImageUrl = null;
+    } else {
+      deletedImageUrls.push(url);
+    }
+    renderMainImage();
+    renderSubImages();
+  });
+}
+
+function deleteSubImage(url) {
+  if (!confirm('Xóa ảnh phụ này?')) return;
+
+  // Check if it's a newly uploaded or existing image
+  var found = false;
+  uploadedSubImages = uploadedSubImages.filter(function(si) {
+    if (si.url === url) { found = true; return false; }
+    return true;
+  });
+
+  if (!found) {
+    deletedImageUrls.push(url);
+  }
+
+  renderSubImages();
+
+  // Call API
+  callDeleteImage(url, function() {});
+}
+
+function callDeleteImage(url, cb) {
+  fetch('/api/media/images', {
+    method: 'DELETE',
+    headers: H,
+    body: JSON.stringify({ url: url, productId: PRODUCT_ID }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success && cb) cb();
+      else console.warn('Xóa ảnh thất bại:', res.message);
+    })
+    .catch(function() {
+      console.warn('Lỗi kết nối khi xóa ảnh');
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CATEGORIES — Modal
+// ═══════════════════════════════════════════════════════════════
+function renderCategoryChips() {
+  var html = selectedCatNames.map(function(name) {
+    return '<span class="chip">' + escapeHtml(name) + '<span class="chip-remove" onclick="removeCategory(\'' + escapeHtml(name) + '\')">&times;</span></span>';
+  }).join('');
+  $('sd-selected-cats').innerHTML = html || '<span style="color:var(--text-muted);font-size:12px;">Chưa chọn danh mục</span>';
+}
+
+function removeCategory(name) {
+  selectedCatNames = selectedCatNames.filter(function(n) { return n !== name; });
+  renderCategoryChips();
+}
+
+function renderCategoryModalList() {
+  var html = '';
+  allCategories.forEach(function(c) {
+    var checked = selectedCatNames.indexOf(c.name) !== -1 ? ' checked' : '';
+    html += '<label class="modal-check-item"><input type="checkbox" value="' + escapeHtml(c.name) + '"' + checked + ' />' + escapeHtml(c.name) + '</label>';
+  });
+  $('cat-modal-list').innerHTML = html || '<span style="color:var(--text-muted);font-size:12px;">Chưa có danh mục nào</span>';
+}
+
+function openCategoryModal() {
+  renderCategoryModalList();
+  $('cat-modal').classList.add('active');
+}
+
+function closeCategoryModal() {
+  $('cat-modal').classList.remove('active');
+  $('cat-add-status').textContent = '';
+}
+
+function saveCategoryModal() {
+  var cbs = document.querySelectorAll('#cat-modal-list input[type="checkbox"]:checked');
+  selectedCatNames = [];
+  cbs.forEach(function(cb) { selectedCatNames.push(cb.value); });
+  renderCategoryChips();
+  closeCategoryModal();
+}
+
+function addCategoryFromModal() {
+  var input = $('cat-new-name');
+  var name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  var statusEl = $('cat-add-status');
+  statusEl.textContent = 'Đang thêm...';
+  statusEl.style.color = 'var(--accent)';
+
+  fetch('/api/categories', {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: name }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success) {
+        statusEl.textContent = '✓ Đã thêm!';
+        statusEl.style.color = '#16a34a';
+        return fetch('/api/categories', { headers: H }).then(function(r) { return r.json(); });
+      } else {
+        statusEl.textContent = 'Lỗi: ' + (res.message || 'Không thể thêm');
+        statusEl.style.color = 'var(--danger)';
+        return null;
+      }
+    })
+    .then(function(res) {
+      if (res && res.success) {
+        var catData = res.data || [];
+        allCategories = Array.isArray(catData) ? catData : (catData.items || []);
+        // Add new category to selectedCatNames and render
+        if (selectedCatNames.indexOf(name) === -1) selectedCatNames.push(name);
+        renderCategoryModalList();
+        renderCategoryChips();
+        input.value = '';
+        statusEl.textContent = '';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Lỗi kết nối';
+      statusEl.style.color = 'var(--danger)';
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TAGS — Modal
+// ═══════════════════════════════════════════════════════════════
+function renderTagChips() {
+  var html = selectedTagSlugs.map(function(slug) {
+    var name = slug;
+    var found = allTags.find(function(t) { return t.slug === slug; });
+    if (found) name = found.name;
+    return '<span class="chip">' + escapeHtml(name) + '<span class="chip-remove" onclick="removeTag(\'' + escapeHtml(slug) + '\')">&times;</span></span>';
+  }).join('');
+  $('sd-selected-tags').innerHTML = html || '<span style="color:var(--text-muted);font-size:12px;">Chưa chọn tags</span>';
+}
+
+function removeTag(slug) {
+  selectedTagSlugs = selectedTagSlugs.filter(function(s) { return s !== slug; });
+  renderTagChips();
+}
+
+function renderTagModalList() {
+  var html = '';
+  allTags.forEach(function(t) {
+    var checked = selectedTagSlugs.indexOf(t.slug) !== -1 ? ' checked' : '';
+    html += '<label class="modal-check-item"><input type="checkbox" value="' + escapeHtml(t.slug) + '"' + checked + ' />' + escapeHtml(t.name) + '</label>';
+  });
+  $('tag-modal-list').innerHTML = html || '<span style="color:var(--text-muted);font-size:12px;">Chưa có tags nào</span>';
+}
+
+function openTagModal() {
+  renderTagModalList();
+  $('tag-modal').classList.add('active');
+}
+
+function closeTagModal() {
+  $('tag-modal').classList.remove('active');
+  $('tag-add-status').textContent = '';
+}
+
+function saveTagModal() {
+  var cbs = document.querySelectorAll('#tag-modal-list input[type="checkbox"]:checked');
+  selectedTagSlugs = [];
+  cbs.forEach(function(cb) { selectedTagSlugs.push(cb.value); });
+  renderTagChips();
+  closeTagModal();
+}
+
+function addTagFromModal() {
+  var input = $('tag-new-name');
+  var name = input.value.trim();
+  if (!name) { input.focus(); return; }
+
+  var statusEl = $('tag-add-status');
+  statusEl.textContent = 'Đang thêm...';
+  statusEl.style.color = 'var(--accent)';
+
+  fetch('/api/tags', {
+    method: 'POST',
+    headers: H,
+    body: JSON.stringify({ name: name }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success) {
+        statusEl.textContent = '✓ Đã thêm!';
+        statusEl.style.color = '#16a34a';
+        return fetch('/api/tags', { headers: H }).then(function(r) { return r.json(); });
+      } else {
+        statusEl.textContent = 'Lỗi: ' + (res.message || 'Không thể thêm');
+        statusEl.style.color = 'var(--danger)';
+        return null;
+      }
+    })
+    .then(function(res) {
+      if (res && res.success) {
+        var tagData = res.data || [];
+        allTags = Array.isArray(tagData) ? tagData : (tagData.items || []);
+        // Auto-select new tag
+        var slug = name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        if (selectedTagSlugs.indexOf(slug) === -1) selectedTagSlugs.push(slug);
+        renderTagModalList();
+        renderTagChips();
+        input.value = '';
+        statusEl.textContent = '';
+      }
+    })
+    .catch(function() {
+      statusEl.textContent = 'Lỗi kết nối';
+      statusEl.style.color = 'var(--danger)';
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -361,7 +846,7 @@ function setDefaultVariant(index) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// IMAGE UPLOAD (dùng pipeline sharpen + upscale cho sản phẩm)
+// IMAGE UPLOAD
 // ═══════════════════════════════════════════════════════════════
 function getProductSlug() {
   var name = $('sd-name').value.trim() || currentProduct.name || 'product';
@@ -383,7 +868,6 @@ function handleImageUpload(event, subIndex) {
   var slug = getProductSlug();
   var formData = new FormData();
   formData.append('image', file);
-  formData.append('productSlug', slug);
   if (subIndex !== null && subIndex !== undefined) {
     formData.append('subIndex', String(subIndex));
   }
@@ -403,13 +887,13 @@ function handleImageUpload(event, subIndex) {
       if (res.success && res.data && res.data.url) {
         if (subIndex === null || subIndex === undefined) {
           // Main image
-          $('sd-image-preview').innerHTML = '<img src="' + res.data.url + '" alt="" />';
-          currentProduct._uploadedImage = res.data.url;
-          statusEl.textContent = '✓ Ảnh chính đã tải lên (sharpen + upscale)';
+          uploadedMainImageUrl = res.data.url;
+          renderMainImage();
+          statusEl.textContent = '✓ Ảnh chính đã tải lên';
         } else {
           // Sub image
           uploadedSubImages.push({ index: subIndex, url: res.data.url });
-          statusEl.textContent = '✓ Ảnh phụ #' + (subIndex + 1) + ' đã tải lên (sharpen + upscale)';
+          statusEl.textContent = '✓ Ảnh phụ đã tải lên';
           renderSubImages();
         }
         statusEl.style.color = '#16a34a';
@@ -423,11 +907,9 @@ function handleImageUpload(event, subIndex) {
       statusEl.style.color = 'var(--danger)';
     });
 
-  // Reset input
   event.target.value = '';
 }
 
-// ── Sub images management ──
 function addSubImage() {
   subImageCount++;
   var idx = subImageCount - 1;
@@ -437,13 +919,11 @@ function addSubImage() {
   row.id = 'sd-sub-row-' + idx;
   row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:8px;border:1px solid var(--border);';
 
-  // Preview placeholder
   var preview = document.createElement('div');
   preview.id = 'sd-sub-preview-' + idx;
   preview.style.cssText = 'width:48px;height:48px;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;justify-content:center;';
   preview.innerHTML = '<span style="font-size:10px;color:var(--text-muted);">#' + (idx+1) + '</span>';
 
-  // File input
   var fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.id = inputId;
@@ -451,7 +931,6 @@ function addSubImage() {
   fileInput.style.display = 'none';
   fileInput.onchange = function(e) {
     handleImageUpload(e, idx);
-    // Show preview immediately
     var f = e.target.files[0];
     if (f) {
       var reader = new FileReader();
@@ -462,20 +941,17 @@ function addSubImage() {
     }
   };
 
-  // Upload button
   var btn = document.createElement('button');
   btn.type = 'button';
   btn.textContent = 'Chọn ảnh #' + (idx+1);
   btn.style.cssText = 'flex:1;padding:6px 12px;border:1px dashed var(--border);border-radius:6px;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;text-align:left;';
   btn.onclick = function() { document.getElementById(inputId).click(); };
 
-  // Remove button
   var removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.innerHTML = '&times;';
   removeBtn.style.cssText = 'padding:4px 8px;border:none;background:transparent;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;';
   removeBtn.onclick = function() {
-    // Remove uploaded image if any
     uploadedSubImages = uploadedSubImages.filter(function(si) { return si.index !== idx; });
     document.getElementById('sd-sub-row-' + idx).remove();
   };
@@ -486,16 +962,6 @@ function addSubImage() {
   row.appendChild(removeBtn);
 
   $('sd-sub-images').appendChild(row);
-}
-
-function renderSubImages() {
-  // Update previews for already-uploaded sub images
-  uploadedSubImages.forEach(function(si) {
-    var preview = document.getElementById('sd-sub-preview-' + si.index);
-    if (preview) {
-      preview.innerHTML = '<img src="' + si.url + '" alt="" style="width:100%;height:100%;object-fit:cover;" />';
-    }
-  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -513,31 +979,82 @@ function saveProduct(activate) {
   btnDraft.style.opacity = '0.6';
   btnActivate.style.opacity = '0.6';
 
-  // Gather data
-  var selectedCategories = [];
-  var checkboxes = document.querySelectorAll('#sd-categories input[type="checkbox"]:checked');
-  checkboxes.forEach(function(cb) { selectedCategories.push(cb.value); });
+  // Gather categories — service cần comma-separated names
+  // (uses global selectedCatNames from modal)
 
+  // Gather variants string
+  var variantStr = currentVariants.map(function(v) {
+    return v.size + ':' + v.price;
+  }).join(',');
+
+  // Default variant stock
+  var defaultVar = currentVariants.find(function(v) { return v.isDefault; }) || currentVariants[0];
+  var quantityInStock = defaultVar ? defaultVar.quantityInStock : 0;
+
+  // Build body
+  var desc = quill ? quill.root.innerHTML.trim() : '';
+  if (desc === '<p><br></p>' || desc === '<p></p>') desc = '';
   var body = {
     name: $('sd-name').value.trim(),
-    description: $('sd-description').value.trim(),
-    brandId: $('sd-brand').value || undefined,
-    categories: selectedCategories,
-    variants: currentVariants,
+    description: desc,
+    brand: $('sd-brand').value || undefined,
+    categories: selectedCatNames.join(','),
+    tag: selectedTagSlugs.join(', '),
+    size: variantStr,
+    quantityInStock: quantityInStock,
     isSupplemented: activate,
     status: activate ? 'active' : 'draft',
   };
 
-  // If a new main image was uploaded, use it
-  if (currentProduct._uploadedImage) {
-    body.image = currentProduct._uploadedImage;
-  }
-  // Add sub images
-  if (uploadedSubImages.length > 0) {
-    body.images = uploadedSubImages.map(function(si) { return si.url; });
+  // Discount
+  var discVal = $('sd-discount').value;
+  if (discVal) body.discountPercentage = Number(discVal);
+  body.discountStartDate = $('sd-discount-start').value || null;
+  body.discountEndDate = $('sd-discount-end').value || null;
+
+  // Scent attributes (always editable now)
+  body.longevity = ($('sd-longevity') && $('sd-longevity').value) || undefined;
+  body.sillage = ($('sd-sillage') && $('sd-sillage').value) || undefined;
+  body.durability = ($('sd-durability') && $('sd-durability').value) || undefined;
+  body.scentTrail = ($('sd-scentTrail') && $('sd-scentTrail').value) || undefined;
+  body.style = ($('sd-style') && $('sd-style').value) || undefined;
+  body.suitableFor = ($('sd-suitableFor') && $('sd-suitableFor').value) || undefined;
+  body.occasion = ($('sd-occasion') && $('sd-occasion').value) || undefined;
+  body.season = ($('sd-season') && $('sd-season').value) || undefined;
+  body.time = ($('sd-time') && $('sd-time').value) || undefined;
+
+  // Build images list: existing (not deleted) + new uploads
+  var finalImages = [];
+
+  // Main image
+  if (uploadedMainImageUrl) {
+    body.image = uploadedMainImageUrl;
+    finalImages.push(uploadedMainImageUrl);
+  } else if (currentProduct.image && deletedImageUrls.indexOf(currentProduct.image) === -1) {
+    body.image = currentProduct.image;
+    finalImages.push(currentProduct.image);
   }
 
-  // PATCH to update
+  // Sub images (existing, not deleted)
+  if (Array.isArray(currentProduct.images)) {
+    currentProduct.images.forEach(function(url) {
+      if (url !== currentProduct.image && deletedImageUrls.indexOf(url) === -1 && finalImages.indexOf(url) === -1) {
+        finalImages.push(url);
+      }
+    });
+  }
+
+  // Newly uploaded sub images
+  uploadedSubImages.forEach(function(si) {
+    if (finalImages.indexOf(si.url) === -1) {
+      finalImages.push(si.url);
+    }
+  });
+
+  // Set images on body (except main image which is already tracked separately)
+  body.images = finalImages.filter(function(url) { return url !== body.image; });
+
+  // PATCH
   fetch('/api/products/' + PRODUCT_ID, {
     method: 'PATCH',
     headers: H,
@@ -550,10 +1067,13 @@ function saveProduct(activate) {
           statusEl.textContent = '✅ Sản phẩm đã được kích hoạt! Đang chuyển trang...';
           statusEl.style.color = '#16a34a';
           setTimeout(function() {
-            window.location.href = '/admin/products/supplement?toast=Đã+kích+hoạt+sản+phẩm&type=success';
+            var toastType = activate ? 'success' : 'info';
+            var toastMsg = activate ? 'Đã+kích+hoạt+sản+phẩm' : 'Đã+lưu+thay+đổi';
+            var baseUrl = MODE === 'edit' ? '/admin/products' : '/admin/products/supplement';
+            window.location.href = baseUrl + '?toast=' + toastMsg + '&type=' + toastType;
           }, 1200);
         } else {
-          statusEl.textContent = '✓ Đã lưu bản nháp';
+          statusEl.textContent = '✓ Đã lưu thay đổi';
           statusEl.style.color = '#16a34a';
           setTimeout(function() { statusEl.textContent = ''; }, 3000);
         }

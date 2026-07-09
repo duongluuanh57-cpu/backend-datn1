@@ -94,7 +94,6 @@ export class FavoriteController {
       const favorite = await Favorite.create({
         userId: new mongoose.Types.ObjectId(userId),
         productId: new mongoose.Types.ObjectId(productId),
-        tenantId: user.tenantId || 'default',
       });
 
       return reply.status(201).send({ success: true, data: favorite });

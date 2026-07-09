@@ -8,19 +8,18 @@ export class TagController {
    */
   static async getAllTags(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const { page, limit, search } = req.query as { page?: string; limit?: string; search?: string };
 
       // If page param is provided, use paginated response
       if (page) {
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
-        const result = await TagService.getPaginatedTags(tenantId, pageNum, limitNum, search);
+        const result = await TagService.getPaginatedTags(pageNum, limitNum, search ?? '');
         return reply.status(200).send({ success: true, data: result });
       }
 
       // Legacy: return full list
-      const tags = await TagService.getAllTags(tenantId);
+      const tags = await TagService.getAllTags();
       return reply.status(200).send({ success: true, data: tags });
     } catch (error: any) {
       return reply.status(500).send({
@@ -36,9 +35,8 @@ export class TagController {
   static async getTagById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
       
-      const tag = await TagService.getTagById(id, tenantId);
+      const tag = await TagService.getTagById(id);
       if (!tag) {
         return reply.status(404).send({
           success: false,
@@ -63,10 +61,9 @@ export class TagController {
    */
   static async createTag(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const tagData = req.body as any;
       
-      const tag = await TagService.createTag(tagData, tenantId);
+      const tag = await TagService.createTag(tagData);
       
       return reply.status(201).send({
         success: true,
@@ -86,10 +83,9 @@ export class TagController {
   static async updateTag(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
       const tagData = req.body as any;
       
-      const tag = await TagService.updateTag(id, tagData, tenantId);
+      const tag = await TagService.updateTag(id, tagData);
       if (!tag) {
         return reply.status(404).send({
           success: false,
@@ -115,9 +111,8 @@ export class TagController {
   static async deleteTag(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
       
-      const success = await TagService.deleteTag(id, tenantId);
+      const success = await TagService.deleteTag(id);
       if (!success) {
         return reply.status(404).send({
           success: false,
@@ -142,7 +137,6 @@ export class TagController {
    */
   static async bulkDeleteTags(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const { ids } = req.body as { ids: string[] };
       
       if (!ids || ids.length === 0) {
@@ -152,7 +146,7 @@ export class TagController {
         });
       }
 
-      const result = await TagService.bulkDeleteTags(ids, tenantId);
+      const result = await TagService.bulkDeleteTags(ids);
       
       return reply.status(200).send({
         success: true,

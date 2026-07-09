@@ -1,5 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
+import { Brand } from './Brand.ts';
+import { Category } from './Category.ts';
 
 export interface IProduct extends Document {
   name: string;
@@ -32,7 +34,6 @@ export interface IProduct extends Document {
   isSupplemented: boolean;
   status: string; // 'draft' | 'active' | 'archived'
 
-  tenantId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,8 +69,6 @@ const ProductSchema = new Schema<IProduct>(
     // ── Supplement workflow ──
     isSupplemented: { type: Boolean, default: false, index: true },
     status: { type: String, default: 'draft', enum: ['draft', 'active', 'archived'], index: true },
-
-    tenantId: { type: String, required: true, index: true },
   },
   {
     timestamps: true,
@@ -85,9 +84,15 @@ ProductSchema.post('save', async function() {
   try {
     console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
 
-    await this.populate(['brandId', 'categories']);
-    const brandName = (this.brandId as any)?.name || '';
-    const categoryNames = (this.categories as any[] || []).map((c: any) => c?.name).filter(Boolean).join(' ');
+    const populated = await this.populate([
+      { path: 'brandId', select: 'name' },
+      { path: 'categories', select: 'name' },
+    ]) as any;
+    const brandName = populated.brandId?.name || '';
+    const categoryNames = (populated.categories as any[] || [])
+      .map((c: any) => c?.name)
+      .filter(Boolean)
+      .join(' ');
 
     const textToEmbed = `${this.name} ${brandName} ${this.description} ${categoryNames}`;
 
@@ -102,11 +107,6 @@ ProductSchema.post('save', async function() {
     console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
   }
 });
-
-ProductSchema.index({ tenantId: 1, createdAt: -1 });
-ProductSchema.index({ tenantId: 1, name: 1 });
-ProductSchema.index({ tenantId: 1, brandId: 1 });
-ProductSchema.index({ tenantId: 1, soldCount: -1, createdAt: -1 });
 
 ProductSchema.index({ name: 'text', description: 'text' });
 

@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ICartItem extends Document {
   cartId: mongoose.Types.ObjectId;
-  tenantId: string;
+  userId: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
   name: string;
   image?: string;
@@ -18,7 +18,7 @@ export interface ICartItem extends Document {
 const CartItemSchema = new Schema<ICartItem>(
   {
     cartId: { type: Schema.Types.ObjectId, ref: 'Cart', required: true },
-    tenantId: { type: String, required: true, default: 'default' },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     name: { type: String, required: true },
     image: { type: String },
@@ -32,6 +32,7 @@ const CartItemSchema = new Schema<ICartItem>(
 );
 
 CartItemSchema.index({ cartId: 1 });
+CartItemSchema.index({ userId: 1 });
 CartItemSchema.index({ cartId: 1, productId: 1, variantSize: 1 }, { unique: true });
 
 export default mongoose.model<ICartItem>('CartItem', CartItemSchema);

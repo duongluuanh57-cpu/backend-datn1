@@ -6,7 +6,6 @@ export interface ICategory extends Document {
   slug: string;
   status: 'active' | 'inactive';
   sortOrder?: number;
-  tenantId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,7 +16,6 @@ const CategorySchema = new Schema<ICategory>(
     slug: { type: String, required: true },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     sortOrder: { type: Number, default: 0 },
-    tenantId: { type: String, required: true, index: true },
   },
   {
     timestamps: true,
@@ -25,9 +23,7 @@ const CategorySchema = new Schema<ICategory>(
   }
 );
 
-CategorySchema.index({ tenantId: 1, slug: 1 }, { unique: true });
-CategorySchema.index({ tenantId: 1, sortOrder: 1 });
-CategorySchema.index({ tenantId: 1, name: 1 });
+CategorySchema.index({ slug: 1 }, { unique: true });
 
 CategorySchema.plugin(multiTenancyPlugin);
 

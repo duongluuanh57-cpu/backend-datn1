@@ -13,10 +13,9 @@ export async function visitsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.post('/track', async (request, _reply) => {
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'default';
+  fastify.post('/track', async (_request, _reply) => {
     const dateStr = new Date().toISOString().split('T')[0];
-    const visitsKey = `visits:${dateStr}:${tenantId}`;
+    const visitsKey = `visits:${dateStr}:default`;
     try {
       await redis.incr(visitsKey);
       await redis.expire(visitsKey, 172800);

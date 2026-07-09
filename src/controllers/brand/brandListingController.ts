@@ -9,16 +9,15 @@ export class BrandListingController {
    */
   static async getAllBrands(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
       const query = req.query as { page?: string; limit?: string; search?: string; origin?: string };
 
       // Backward compatible: không có page thì trả full list
       if (!query.page) {
-        const brands = await BrandService.getAllBrands(tenantId);
+        const brands = await BrandService.getAllBrands();
         return reply.status(200).send({ success: true, data: brands });
       }
 
-      const result = await BrandService.getPaginatedBrands(tenantId, {
+      const result = await BrandService.getPaginatedBrands({
         page: parseInt(query.page, 10),
         limit: query.limit ? parseInt(query.limit, 10) : 25,
         search: query.search,
@@ -39,8 +38,7 @@ export class BrandListingController {
    */
   static async getBrandOrigins(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || 'default';
-      const origins = await BrandService.getBrandOrigins(tenantId);
+      const origins = await BrandService.getBrandOrigins();
 
       return reply.status(200).send({
         success: true,
@@ -60,9 +58,8 @@ export class BrandListingController {
   static async getBrandById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tenantId = (req as any).user?.tenantId || 'default';
 
-      const brand = await BrandService.getBrandById(id, tenantId);
+      const brand = await BrandService.getBrandById(id);
       if (!brand) {
         return reply.status(404).send({
           success: false,

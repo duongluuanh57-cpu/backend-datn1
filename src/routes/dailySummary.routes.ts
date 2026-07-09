@@ -21,7 +21,6 @@ export async function dailySummaryRoutes(fastify: FastifyInstance) {
       since.setHours(0, 0, 0, 0);
 
       const reports = await DailySummaryReport.find({
-        tenantId: 'default',
         date: { $gte: since },
       })
         .sort({ date: -1 })

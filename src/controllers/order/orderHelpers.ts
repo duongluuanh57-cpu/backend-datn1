@@ -19,13 +19,6 @@ export function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean 
 }
 
 /**
- * Get tenant ID from request
- */
-export function getTenantId(req: FastifyRequest): string {
-  return (req as any).user?.tenantId || 'default';
-}
-
-/**
  */
 export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
   if (!items || items.length === 0) return;

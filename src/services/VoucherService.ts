@@ -4,17 +4,16 @@ export class VoucherService {
   /**
    * Lấy tất cả voucher của tenant
    */
-  static async getAll(tenantId: string) {
-    return Voucher.find({ tenantId }).sort({ createdAt: -1 }).lean();
+  static async getAll() {
+    return Voucher.find({}).sort({ createdAt: -1 }).lean();
   }
 
   /**
    * Lấy voucher đang hoạt động (còn hạn, còn lượt)
    */
-  static async getActive(tenantId: string) {
+  static async getActive() {
     const now = new Date();
     return Voucher.find({
-      tenantId,
       status: 'active',
       startDate: { $lte: now },
       endDate: { $gte: now },
@@ -23,8 +22,8 @@ export class VoucherService {
       .lean();
   }
 
-  static async getById(id: string, tenantId: string) {
-    return Voucher.findOne({ _id: id, tenantId }).lean();
+  static async getById(id: string) {
+    return Voucher.findOne({ _id: id }).lean();
   }
 
   static async create(data: {
@@ -36,11 +35,10 @@ export class VoucherService {
     maxUsage?: number;
     startDate: string;
     endDate: string;
-  }, tenantId: string) {
+  }) {
     return Voucher.create({
       ...data,
       code: data.code.toUpperCase(),
-      tenantId,
     });
   }
 
@@ -54,7 +52,7 @@ export class VoucherService {
     startDate: string;
     endDate: string;
     status: 'active' | 'inactive';
-  }>, tenantId: string) {
+  }>) {
     const updateData: any = {};
     if (data.code !== undefined) updateData.code = data.code.toUpperCase();
     if (data.type !== undefined) updateData.type = data.type;
@@ -67,14 +65,14 @@ export class VoucherService {
     if (data.status !== undefined) updateData.status = data.status;
 
     return Voucher.findOneAndUpdate(
-      { _id: id, tenantId },
+      { _id: id },
       { $set: updateData },
       { new: true }
     );
   }
 
-  static async delete(id: string, tenantId: string) {
-    const result = await Voucher.deleteOne({ _id: id, tenantId });
+  static async delete(id: string) {
+    const result = await Voucher.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 
@@ -82,10 +80,9 @@ export class VoucherService {
    * Validate voucher code: kiểm tra hạn, số lượt, min order
    * Trả về { valid, message, voucher? }
    */
-  static async validate(code: string, orderAmount: number, tenantId: string) {
+  static async validate(code: string, orderAmount: number) {
     const voucher = await Voucher.findOne({
       code: code.toUpperCase(),
-      tenantId,
     }).lean();
 
     if (!voucher) {
@@ -132,9 +129,9 @@ export class VoucherService {
   /**
    * Tăng usedCount của voucher (gọi khi order thành công)
    */
-  static async incrementUsage(id: string, tenantId: string) {
+  static async incrementUsage(id: string) {
     await Voucher.findOneAndUpdate(
-      { _id: id, tenantId },
+      { _id: id },
       { $inc: { usedCount: 1 } }
     );
   }

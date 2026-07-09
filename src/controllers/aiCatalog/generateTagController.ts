@@ -47,18 +47,15 @@ JSON Schema:
 
 export async function createTagFromAI(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { tagData, tenantId } = req.body as { tagData: any; tenantId?: string };
+    const { tagData } = req.body as { tagData: any };
     if (!tagData || !tagData.name || !tagData.slug) {
       return reply.status(400).send({ success: false, message: 'Missing required tag fields' });
     }
-
-    const tid = tenantId || (req as any).user?.tenantId || 'default';
 
     const newTag = await Tag.create({
       name: tagData.name,
       slug: tagData.slug,
       status: tagData.status || 'active',
-      tenantId: tid,
     });
 
     console.log(`✅ [AI Tag] Created tag ${newTag.name} (${newTag.slug})`);

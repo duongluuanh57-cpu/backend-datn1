@@ -19,7 +19,7 @@ function getPriceFromVariants(productVariants: any[], discountPercentage?: numbe
   return Math.round(price);
 }
 
-export async function formatMultipleProducts(products: any[], tenantId: string): Promise<any[]> {
+export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   if (products.length === 0) return [];
 
   const productIds = products.map(p => p._id.toString());
@@ -80,8 +80,8 @@ export async function formatMultipleProducts(products: any[], tenantId: string):
       image: productImages[0] || '',
       images: productImages.slice(1),
       size: productVariants.map((v: any) => `${v.size}:${v.price}`).join(', '),
-      tag: (tagMap.get(pId) || []).join(', '),
-      categories: resolveCategoryNames(product, [], oldCatMap.get((product as any).categoryId?.toString())),
+      tag: (tagMap.get(pId) || []).join(', ') || (product as any).tag || '',
+      categories: resolveCategoryNames(product, {} as Record<string, any[]>, oldCatMap.get((product as any).categoryId?.toString())),
       price: getPriceFromVariants(productVariants, product.discountPercentage, product.discountStartDate, product.discountEndDate),
       discount: product.discountPercentage || 0,
       quantityInStock: productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0),

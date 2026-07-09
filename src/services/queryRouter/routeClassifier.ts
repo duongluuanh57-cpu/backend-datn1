@@ -174,7 +174,7 @@ export async function classifyRoute(input: RouteInput): Promise<RouteClassificat
   }
 
   // ── LLM-based classification ──
-  const search = await SearchService.hybridSearch(message, input.tenantId, 1);
+  const search = await SearchService.hybridSearch(message, 1);
   const searchMode = search.mode;
 
   return llmRouteClassify(message, searchMode, userRole);

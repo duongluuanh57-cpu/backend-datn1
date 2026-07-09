@@ -8,7 +8,6 @@ import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
  * Một sản phẩm có thể có nhiều tag, một tag có thể thuộc nhiều sản phẩm.
  */
 export interface IProductTag extends Document {
-  tenantId: string;
   productId: mongoose.Types.ObjectId; // Reference to Product
   tagId: mongoose.Types.ObjectId;     // Reference to Tag
   createdAt: Date;
@@ -17,7 +16,6 @@ export interface IProductTag extends Document {
 
 const ProductTagSchema = new Schema<IProductTag>(
   {
-    tenantId: { type: String, required: true, index: true },
     productId: {
       type: Schema.Types.ObjectId,
       ref: 'Product',
@@ -38,10 +36,7 @@ const ProductTagSchema = new Schema<IProductTag>(
 );
 
 // Một sản phẩm không thể gán cùng một tag hai lần
-ProductTagSchema.index({ tenantId: 1, productId: 1, tagId: 1 }, { unique: true });
-
-// Index để query nhanh: "Lấy tất cả sản phẩm có tag X"
-ProductTagSchema.index({ tenantId: 1, tagId: 1 });
+ProductTagSchema.index({ productId: 1, tagId: 1 }, { unique: true });
 
 ProductTagSchema.plugin(multiTenancyPlugin);
 

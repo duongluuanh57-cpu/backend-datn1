@@ -27,43 +27,43 @@ export interface ToolResult {
 
 /** Dependency injection type để test */
 export interface AdminToolDeps {
-  findProductById?: (id: string, tenantId: string) => Promise<any | null>;
-  findProductsByName?: (query: string, tenantId: string, limit?: number) => Promise<any[]>;
-  createProduct?: (data: any, tenantId: string) => Promise<any>;
-  updateProduct?: (id: string, data: any, tenantId: string) => Promise<any>;
-  deleteProduct?: (id: string, tenantId: string) => Promise<boolean>;
+  findProductById?: (id: string) => Promise<any | null>;
+  findProductsByName?: (query: string, limit?: number) => Promise<any[]>;
+  createProduct?: (data: any) => Promise<any>;
+  updateProduct?: (id: string, data: any) => Promise<any>;
+  deleteProduct?: (id: string) => Promise<boolean>;
   /** Lấy danh sách brands active */
-  getBrands?: (tenantId: string) => Promise<{ name: string }[]>;
+  getBrands?: () => Promise<{ name: string }[]>;
   /** Lấy danh sách tags active */
-  getTags?: (tenantId: string) => Promise<{ name: string }[]>;
+  getTags?: () => Promise<{ name: string }[]>;
   /** Lấy danh sách categories active */
-  getCategories?: (tenantId: string) => Promise<{ name: string }[]>;
+  getCategories?: () => Promise<{ name: string }[]>;
 }
 
 /** Default implementations gọi thẳng Mongoose/ProductService */
 const defaultDeps: AdminToolDeps = {
-  findProductById: async (id, tenantId) => {
-    const product = await Product.findOne({ _id: id, tenantId }).select('name').lean();
+  findProductById: async (id) => {
+    const product = await Product.findOne({ _id: id }).select('name').lean();
     return product || null;
   },
-  findProductsByName: async (query, tenantId, limit = 5) => {
-    return Product.find({ tenantId, name: { $regex: query, $options: 'i' } })
+  findProductsByName: async (query, limit = 5) => {
+    return Product.find({ name: { $regex: query, $options: 'i' } })
       .select('name brandId price')
       .populate('brandId', 'name')
       .limit(limit)
       .lean();
   },
-  createProduct: (data, tenantId) => ProductService.createProduct(data, tenantId),
-  updateProduct: (id, data, tenantId) => ProductService.updateProduct(id, data, tenantId),
-  deleteProduct: (id, tenantId) => ProductService.deleteProduct(id, tenantId),
-  getBrands: async (tenantId) => {
-    return Brand.find({ tenantId, status: 'active' }).select('name').lean();
+  createProduct: (data) => ProductService.createProduct(data),
+  updateProduct: (id, data) => ProductService.updateProduct(id, data),
+  deleteProduct: (id) => ProductService.deleteProduct(id),
+  getBrands: async () => {
+    return Brand.find({ status: 'active' }).select('name').lean();
   },
-  getTags: async (tenantId) => {
-    return Tag.find({ tenantId, status: 'active' }).select('name').lean();
+  getTags: async () => {
+    return Tag.find({ status: 'active' }).select('name').lean();
   },
-  getCategories: async (tenantId) => {
-    return Category.find({ tenantId, status: 'active' }).select('name').lean();
+  getCategories: async () => {
+    return Category.find({ status: 'active' }).select('name').lean();
   },
 };
 
@@ -77,7 +77,6 @@ function resolve(maybeDeps?: AdminToolDeps): AdminToolDeps {
  */
 export async function createProductFromName(
   name: string,
-  tenantId: string,
   overrides?: { price?: number; brand?: string; discountPercentage?: number },
   deps?: AdminToolDeps
 ): Promise<ToolResult> {
@@ -85,9 +84,9 @@ export async function createProductFromName(
   try {
     // Build context data từ DB
     const [allBrands, allTags, allCategories] = await Promise.all([
-      getBrands!(tenantId),
-      getTags!(tenantId),
-      getCategories!(tenantId),
+      getBrands!(),
+      getTags!(),
+      getCategories!(),
     ]);
 
     // Gọi generateProduct internal (dùng AI để sinh full product info)
@@ -105,7 +104,7 @@ export async function createProductFromName(
         availableSizes: ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml'],
         ...overrides,
       },
-      user: { tenantId },
+      user: {},
     };
 
     let mockReplyData: any = null;
@@ -152,7 +151,6 @@ export async function createProductFromName(
 
     // Kiểm tra sản phẩm trùng tên (case-insensitive)
     const existingProducts = await Product.find({
-      tenantId,
       name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
     }).limit(1).lean();
     if (existingProducts.length > 0) {
@@ -169,7 +167,7 @@ export async function createProductFromName(
     }
 
     // Gọi ProductService.createProduct
-    const newProduct = await ProductService.createProduct(generatedInfo, tenantId);
+    const newProduct = await ProductService.createProduct(generatedInfo);
 
     return {
       success: true,
@@ -195,17 +193,16 @@ export async function createProductFromName(
 export async function updateProductFields(
   id: string,
   fields: Record<string, any>,
-  tenantId: string,
   deps?: AdminToolDeps
 ): Promise<ToolResult> {
   const { findProductById, updateProduct } = resolve(deps);
   try {
-    const existing = await findProductById!(id, tenantId);
+    const existing = await findProductById!(id);
     if (!existing) {
       return { success: false, message: `Không tìm thấy sản phẩm với ID: ${id}` };
     }
 
-    const updated = await updateProduct!(id, fields, tenantId);
+    const updated = await updateProduct!(id, fields);
     if (!updated) {
       return { success: false, message: `Không thể cập nhật sản phẩm ${id}` };
     }
@@ -231,16 +228,15 @@ export async function updateProductFields(
  * deleteProductById — Xóa sản phẩm theo id
  */
 export async function deleteProductById(
-  id: string,
-  tenantId: string
+  id: string
 ): Promise<ToolResult> {
   try {
-    const existing = await Product.findOne({ _id: id, tenantId }).select('name').lean();
+    const existing = await Product.findOne({ _id: id }).select('name').lean();
     if (!existing) {
       return { success: false, message: `Không tìm thấy sản phẩm với ID: ${id}` };
     }
 
-    const success = await ProductService.deleteProduct(id, tenantId);
+    const success = await ProductService.deleteProduct(id);
     if (!success) {
       return { success: false, message: `Không thể xóa sản phẩm ${id}` };
     }
@@ -261,12 +257,10 @@ export async function deleteProductById(
  */
 export async function findProductsByName(
   query: string,
-  tenantId: string,
   limit = 5
 ): Promise<ToolResult> {
   try {
     const products = await Product.find({
-      tenantId,
       name: { $regex: query, $options: 'i' },
     })
       .select('name brandId price')
@@ -303,13 +297,11 @@ export async function findProductsByName(
  * Tận dụng generateBrandController (AI sinh origin + description) + BrandService (lưu DB).
  */
 export async function ensureBrand(
-  name: string,
-  tenantId: string
+  name: string
 ): Promise<ToolResult> {
   try {
     // 1. Check exists (case-insensitive exact match)
     const existing = await Brand.findOne({
-      tenantId,
       name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
     }).lean();
 
@@ -325,7 +317,7 @@ export async function ensureBrand(
     let mockReplyData: any = null;
     const mockReq: any = {
       body: { name },
-      user: { tenantId },
+      user: {},
     };
     const mockReply: any = {
       status: (code: number) => ({
@@ -348,7 +340,6 @@ export async function ensureBrand(
     // 3. Lưu brand qua BrandService
     const newBrand = await BrandService.createBrand(
       { name, origin: origin || '', description: description || '', logo: '', status: 'active', featured: false },
-      tenantId,
     );
 
     console.log(`✅ [ensureBrand] Created brand "${newBrand.name}" (ID: ${newBrand._id})`);
@@ -372,7 +363,6 @@ export async function searchTrending(
   brand: string | undefined,
   query: string | undefined,
   limit: number,
-  tenantId: string,
 ): Promise<ToolResult> {
   try {
     const searchTerm = query || (brand ? `nước hoa ${brand}` : 'nước hoa trending 2026');

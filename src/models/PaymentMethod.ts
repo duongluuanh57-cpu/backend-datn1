@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IPaymentMethod extends Document {
-  tenantId: string;
   name: string;
   code: string;
   icon?: string;
@@ -14,7 +13,6 @@ export interface IPaymentMethod extends Document {
 
 const PaymentMethodSchema = new Schema<IPaymentMethod>(
   {
-    tenantId: { type: String, required: true, index: true },
     name: { type: String, required: true },
     code: { type: String, required: true, unique: true, index: true },
     icon: { type: String, default: '' },

@@ -20,13 +20,12 @@ export class MiniGameService {
   /**
    * Check if user can play (daily limit + cooldown)
    */
-  static async canPlay(tenantId: string, userId?: string) {
+  static async canPlay(userId?: string) {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Count today's plays
     const todayPlays = await MiniGameSession.countDocuments({
-      tenantId,
       userId: userId || 'guest',
       playedAt: { $gte: startOfDay },
     });
@@ -38,7 +37,6 @@ export class MiniGameService {
     // Check cooldown
     if (userId) {
       const lastPlay = await MiniGameSession.findOne({
-        tenantId,
         userId,
       }).sort({ playedAt: -1 });
 
@@ -60,12 +58,11 @@ export class MiniGameService {
   /**
    * Get today's remaining plays for a user
    */
-  static async getRemainingPlays(tenantId: string, userId?: string) {
+  static async getRemainingPlays(userId?: string) {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const todayPlays = await MiniGameSession.countDocuments({
-      tenantId,
       userId: userId || 'guest',
       playedAt: { $gte: startOfDay },
     });
@@ -83,14 +80,12 @@ export class MiniGameService {
       discountType?: 'percentage' | 'fixed';
       discountAmount?: number;
     },
-    tenantId: string,
     userId?: string
   ) {
     const voucherCode = data.won ? this.generateVoucherCode() : undefined;
 
     // Create game session record
     const session = await MiniGameSession.create({
-      tenantId,
       userId: userId || 'guest',
       gameType: data.gameType,
       status: data.won ? 'won' : 'lost',
@@ -110,7 +105,6 @@ export class MiniGameService {
       const endDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
       await Voucher.create({
-        tenantId,
         code: voucherCode,
         type: data.discountType,
         value: data.discountAmount,
@@ -130,9 +124,8 @@ export class MiniGameService {
   /**
    * Get game history for a user
    */
-  static async getHistory(tenantId: string, userId?: string, limit = 20) {
+  static async getHistory(userId?: string, limit = 20) {
     return MiniGameSession.find({
-      tenantId,
       userId: userId || 'guest',
     })
       .sort({ playedAt: -1 })

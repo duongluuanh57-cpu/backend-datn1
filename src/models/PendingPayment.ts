@@ -3,7 +3,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IPendingPayment extends Document {
   txnRef: string;
   userId: mongoose.Types.ObjectId;
-  tenantId: string;
   cartSnapshot: {
     items: any[];
     totalAmount: number;
@@ -30,7 +29,6 @@ const PendingPaymentSchema = new Schema<IPendingPayment>(
   {
     txnRef: { type: String, required: true, unique: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-    tenantId: { type: String, required: true, default: 'default' },
     cartSnapshot: {
       items: [{ type: Schema.Types.Mixed }],
       totalAmount: { type: Number, required: true },

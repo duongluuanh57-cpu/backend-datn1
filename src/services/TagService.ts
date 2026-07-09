@@ -18,8 +18,8 @@ export class TagService {
   /**
    * Fetch all tags for the tenant (backward compat — full list)
    */
-  static async getAllTags(tenantId: string): Promise<ITag[]> {
-    const tags = await Tag.find({ tenantId, status: 'active' }).sort({ name: 1 });
+  static async getAllTags(): Promise<ITag[]> {
+    const tags = await Tag.find({ status: 'active' }).sort({ name: 1 });
     return tags;
   }
 
@@ -27,12 +27,11 @@ export class TagService {
    * Fetch paginated tags for admin management
    */
   static async getPaginatedTags(
-    tenantId: string,
     page: number = 1,
     limit: number = 25,
     search?: string
   ): Promise<{ items: ITag[]; total: number; page: number; totalPages: number }> {
-    const query: Record<string, any> = { tenantId };
+    const query: Record<string, any> = {};
     if (search) {
       query.name = { $regex: '^' + search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
@@ -47,19 +46,18 @@ export class TagService {
   /**
    * Fetch details of a tag by ID
    */
-  static async getTagById(id: string, tenantId: string): Promise<ITag | null> {
-    return await Tag.findOne({ _id: id, tenantId });
+  static async getTagById(id: string): Promise<ITag | null> {
+    return await Tag.findOne({ _id: id });
   }
 
   /**
    * Create a new tag
    */
-  static async createTag(data: Partial<ITag>, tenantId: string): Promise<ITag> {
+  static async createTag(data: Partial<ITag>): Promise<ITag> {
     const slug = data.slug || slugify(data.name || '');
     const tag = new Tag({
       ...data,
       slug,
-      tenantId
     });
     return await tag.save();
   }
@@ -67,13 +65,13 @@ export class TagService {
   /**
    * Update tag info
    */
-  static async updateTag(id: string, data: Partial<ITag>, tenantId: string): Promise<ITag | null> {
+  static async updateTag(id: string, data: Partial<ITag>): Promise<ITag | null> {
     const updateData = { ...data };
     if (data.name && !data.slug) {
       updateData.slug = slugify(data.name);
     }
     return await Tag.findOneAndUpdate(
-      { _id: id, tenantId },
+      { _id: id },
       { $set: updateData },
       { new: true }
     );
@@ -82,14 +80,14 @@ export class TagService {
   /**
    * Delete tag from the system
    */
-  static async deleteTag(id: string, tenantId: string): Promise<boolean> {
-    const result = await Tag.deleteOne({ _id: id, tenantId });
+  static async deleteTag(id: string): Promise<boolean> {
+    const result = await Tag.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 
-  static async bulkDeleteTags(ids: string[], tenantId: string): Promise<number> {
+  static async bulkDeleteTags(ids: string[]): Promise<number> {
     if (!ids || ids.length === 0) return 0;
-    const result = await Tag.deleteMany({ _id: { $in: ids }, tenantId });
+    const result = await Tag.deleteMany({ _id: { $in: ids } });
     return result.deletedCount;
   }
 }

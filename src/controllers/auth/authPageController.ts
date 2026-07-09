@@ -75,8 +75,7 @@ export class AuthPageController {
     const turnstileValid = await verifyTurnstile(data.turnstileToken, request.ip);
     if (!turnstileValid) return reply.send({ success: false, message: 'Xác minh bảo mật thất bại.' });
     try {
-      const tenantId = (request.headers['x-tenant-id'] as string) || 'default';
-      await AuthService.register(data, tenantId);
+      await AuthService.register(data);
       return reply.send({ success: true, message: 'Đăng ký thành công' });
     } catch (error: any) {
       return reply.send({ success: false, message: error.message || 'Đăng ký thất bại.' });

@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IProductImage extends Document {
-  tenantId: string;
   productId: mongoose.Types.ObjectId;
   url: string;
   createdAt: Date;
@@ -11,7 +10,6 @@ export interface IProductImage extends Document {
 
 const ProductImageSchema = new Schema<IProductImage>(
   {
-    tenantId: { type: String, required: true, index: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
     url: { type: String, required: true },
   },

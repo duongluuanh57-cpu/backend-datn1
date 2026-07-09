@@ -1,6 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyAccessToken } from '../utils/auth.ts';
-import { normalizeTenant } from '../utils/tenantHelper.ts';
 
 /**
  * AdminAuthMiddleware — Bảo vệ trang Admin (SSR)
@@ -37,7 +36,7 @@ export async function adminAuthMiddleware(req: FastifyRequest, reply: FastifyRep
     }
 
     // Gắn user vào request để dùng trong controller
-    (req as any).user = { ...decoded, tenantId: normalizeTenant(decoded.tenantId) };
+    (req as any).user = { ...decoded };
     (req as any).token = token;
   } catch {
     return reply.redirect('/api/auth/login');

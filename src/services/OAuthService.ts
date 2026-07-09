@@ -96,13 +96,12 @@ export class OAuthService {
           username: profile.username,
           oauthProvider: provider,
           oauthId: profile.oauthId,
-          tenantId: 'default',
           role: 'USER',
         } as Partial<IUser>);
       }
     }
 
-    const tokens = generateTokens(user!._id.toString(), user!.role, false, (user as any).tenantId || 'default');
+    const tokens = generateTokens(user!._id.toString(), user!.role, false);
     return {
       user: { id: user!._id, username: user!.username, email: user!.email },
       tokens,

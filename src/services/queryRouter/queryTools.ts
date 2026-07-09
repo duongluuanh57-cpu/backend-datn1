@@ -9,9 +9,6 @@ import { z } from 'zod';
 import { SearchService } from '../SearchService.ts';
 import { Product } from '../../models/Product.ts';
 
-// ── Constants ──
-const TENANT_ID = 'default';
-
 // ── Helpers ──
 
 function toCardMarkdown(products: any[]): string {
@@ -21,11 +18,9 @@ function toCardMarkdown(products: any[]): string {
 }
 
 // ── Shared context (set by QueryRouterService before calling Gemini) ──
-let currentContext: { tenantId: string; userRole?: string } = {
-  tenantId: TENANT_ID,
-};
+let currentContext: { userRole?: string } = {};
 
-export function setToolContext(ctx: { tenantId: string; userRole?: string }) {
+export function setToolContext(ctx: { userRole?: string }) {
   currentContext = ctx;
 }
 
@@ -56,9 +51,9 @@ Dùng cho HẦU HẾT câu hỏi về sản phẩm.`,
       query: z.string().describe('Câu hỏi gốc của người dùng về sản phẩm họ muốn tìm'),
     }),
     execute: (async ({ query }: { query: string }) => {
-      const { tenantId, userRole } = currentContext;
+      const { userRole } = currentContext;
       const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
-      const search = await SearchService.hybridSearch(query, tenantId, 4);
+      const search = await SearchService.hybridSearch(query, 4);
       const products = search.products;
       if (!products.length) return 'Không tìm thấy sản phẩm phù hợp. Hãy xin lỗi lịch sự và hỏi khách muốn tìm gì khác không.';
       let result = `DANH SÁCH SẢN PHẨM KHỚP:\n${toCardMarkdown(products)}`;
@@ -74,15 +69,14 @@ Dùng khi user hỏi: "gợi ý cho mình", "nên mua nước hoa nào", "sản 
       query: z.string().describe('Câu hỏi gốc của người dùng'),
     }),
     execute: (async ({ query }: { query: string }) => {
-      const { tenantId } = currentContext;
-      const search = await SearchService.hybridSearch(query, tenantId, 3);
+      const search = await SearchService.hybridSearch(query, 3);
       const matchedProducts = search.products;
       let relatedText = '';
       if (matchedProducts.length > 0) {
         const brands = [...new Set(matchedProducts.map((p: any) => p.brandId))].filter(Boolean);
         const productIds = matchedProducts.map((p: any) => p._id);
         const related = await Product.find({
-          tenantId, _id: { $nin: productIds },
+          _id: { $nin: productIds },
           ...(brands.length ? { brandId: { $in: brands } } : {}),
           status: 'active',
         }).select('name price brand').limit(5).lean();

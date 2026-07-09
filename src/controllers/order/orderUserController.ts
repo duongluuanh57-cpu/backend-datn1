@@ -42,7 +42,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
       .lean();
 
     for (const order of orders) {
-      const items = await OrderItem.find({ orderId: order._id, tenantId: order.tenantId }).lean();
+const items = await OrderItem.find({ orderId: order._id }).lean();
       if (items.length > 0) {
         await enhanceItemsWithProductData(items);
         order.totalAmount = recalculateTotalAmount(items);
@@ -84,7 +84,7 @@ export async function getOrderById(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(404).send({ success: false, message: 'Khong tim thay don hang cua ban' });
     }
 
-    const items = await OrderItem.find({ orderId: order._id, tenantId: order.tenantId }).lean();
+    const items = await OrderItem.find({ orderId: order._id }).lean();
     await enhanceItemsWithProductData(items);
     order.totalAmount = recalculateTotalAmount(items);
     order.items = items;

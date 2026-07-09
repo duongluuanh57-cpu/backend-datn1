@@ -22,7 +22,6 @@ export async function handleProductInterview(req: FastifyRequest, reply: Fastify
     const sessionId = body.sessionId;
     const action = body.action;
     const userId = (req as any).user?.userId || 'unknown';
-    const tenantId = (req as any).user?.tenantId || 'default';
 
     if (!action) {
       return reply.status(400).send({ error: 'Action is required' });
@@ -39,7 +38,6 @@ export async function handleProductInterview(req: FastifyRequest, reply: Fastify
       const result = await ProductInterviewAgent.startInterview(
         startAction.brandName,
         userId,
-        tenantId,
       );
 
       return reply.send({

@@ -4,7 +4,6 @@ import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 export type VoucherType = 'percentage' | 'fixed';
 
 export interface IVoucher extends Document {
-  tenantId: string;
   code: string;              // Mã giảm giá, VD: "SALE50", "WELCOME10"
   type: VoucherType;         // percentage: giảm theo %, fixed: giảm số tiền cố định
   value: number;             // percentage: 10 = 10%, fixed: 50000 = 50.000đ
@@ -21,7 +20,6 @@ export interface IVoucher extends Document {
 
 const VoucherSchema = new Schema<IVoucher>(
   {
-    tenantId: { type: String, required: true, index: true },
     code: { type: String, required: true, uppercase: true, index: true },
     type: {
       type: String,
@@ -48,8 +46,8 @@ const VoucherSchema = new Schema<IVoucher>(
   }
 );
 
-// Mỗi tenant chỉ có 1 voucher với cùng code
-VoucherSchema.index({ tenantId: 1, code: 1 }, { unique: true });
+// Mỗi voucher code là duy nhất
+VoucherSchema.index({ code: 1 }, { unique: true });
 
 VoucherSchema.plugin(multiTenancyPlugin);
 

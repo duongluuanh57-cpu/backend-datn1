@@ -4,7 +4,6 @@ import { ContentSearchService } from '../../services/ContentSearchService.ts';
 export class ContentController {
   static async search(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (req as any).user?.tenantId || (req.query as any)?.tenantId || 'system_core';
       const query = req.query as { q?: string; page?: string; limit?: string };
 
       if (!query.q?.trim()) {
@@ -14,7 +13,7 @@ export class ContentController {
       const page = query.page ? parseInt(query.page, 10) : 1;
       const limit = query.limit ? parseInt(query.limit, 10) : 10;
 
-      const result = await ContentSearchService.searchWithPagination(query.q, tenantId, page, limit);
+      const result = await ContentSearchService.searchWithPagination(query.q, page, limit);
 
       return reply.status(200).send({ success: true, data: result });
     } catch (error: any) {

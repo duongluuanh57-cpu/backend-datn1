@@ -85,12 +85,12 @@ const typeDefs = `#graphql
   }
 
   type Query {
-    homepage(tenantId: String = "default"): HomepageData!
-    productDetail(id: ID!, tenantId: String = "default"): ProductDetail
-    trendingProducts(tenantId: String = "default", limit: Int = 8): [Product!]
-    products(type: String!, tenantId: String = "default", limit: Int = 10): [Product!]
-    brands(tenantId: String = "default"): [Brand!]
-    navbar(tenantId: String = "default"): NavbarData!
+    homepage: HomepageData!
+    productDetail(id: ID!): ProductDetail
+    trendingProducts(limit: Int = 8): [Product!]
+    products(type: String!, limit: Int = 10): [Product!]
+    brands: [Brand!]
+    navbar: NavbarData!
   }
 `;
 
@@ -141,7 +141,7 @@ function mapProductDetail(p: any) {
     reviewsCount: p.reviewsCount ?? p.reviews_count ?? 0,
     soldCount: p.soldCount ?? p.sold_count ?? 0,
     categories: typeof p.categories === 'string'
-      ? p.categories.split(',').map((s) => s.trim()).filter(Boolean)
+      ? p.categories.split(',').map((s: string) => s.trim()).filter(Boolean)
       : Array.isArray(p.categories)
         ? p.categories
         : [],
@@ -169,23 +169,22 @@ function mapProductDetail(p: any) {
 
 const resolvers = {
   Query: {
-    homepage: async (_: any, args: { tenantId?: string }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
-      const cacheKey = `homepage:v3:${tenantId}`;
+    homepage: async () => {
+      const cacheKey = 'homepage:v3';
       const cached = await safeRedisGet(cacheKey);
       if (cached) {
-        console.log(`[Cache HIT] Homepage for ${tenantId}`);
+        console.log('[Cache HIT] Homepage');
         return JSON.parse(cached);
       }
-      console.log(`[Cache MISS] Homepage for ${tenantId}`);
+      console.log('[Cache MISS] Homepage');
       const [sale, newProducts, hot, limited, standardResult, brands] = await Promise.race([
         Promise.all([
-          ProductService.getSaleProducts(tenantId),
-          ProductService.getNewProducts(tenantId),
-          ProductService.getTrendingProducts(tenantId),
-          ProductService.getLimitedProducts(tenantId),
-          ProductService.getAllProducts(tenantId, { limit: 20, sortBy: 'newest' }),
-          BrandService.getAllBrands(tenantId),
+          ProductService.getSaleProducts(),
+          ProductService.getNewProducts(),
+          ProductService.getTrendingProducts(),
+          ProductService.getLimitedProducts(),
+          ProductService.getAllProducts({ limit: 20, sortBy: 'newest' }),
+          BrandService.getAllBrands(),
         ]),
         new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], { items: [] }, []]), 10_000)),
       ]);
@@ -202,10 +201,9 @@ const resolvers = {
       return result;
     },
 
-    productDetail: async (_: any, args: { id: string; tenantId?: string }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
+    productDetail: async (_: any, args: { id: string }) => {
       try {
-        const product = await ProductService.getProductById(args.id, tenantId);
+        const product = await ProductService.getProductById(args.id);
         if (!product) return null;
         return mapProductDetail(product);
       } catch (err) {
@@ -214,11 +212,10 @@ const resolvers = {
       }
     },
 
-    trendingProducts: async (_: any, args: { tenantId?: string; limit: number }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
+    trendingProducts: async (_: any, args: { limit: number }) => {
       const limit = args.limit || 8;
       try {
-        const products = await ProductService.getTrendingProducts(tenantId);
+        const products = await ProductService.getTrendingProducts();
         return (products || []).slice(0, limit).map(mapProduct);
       } catch (err) {
         console.error('[GraphQL] trendingProducts error:', err);
@@ -226,17 +223,16 @@ const resolvers = {
       }
     },
 
-    products: async (_: any, args: { type: string; tenantId?: string; limit: number }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
+    products: async (_: any, args: { type: string; limit: number }) => {
       const limit = args.limit || 10;
       let products: any[] = [];
       switch (args.type) {
-        case 'sale': products = await ProductService.getSaleProducts(tenantId); break;
-        case 'new': products = await ProductService.getNewProducts(tenantId); break;
-        case 'hot': products = await ProductService.getTrendingProducts(tenantId); break;
-        case 'limited': products = await ProductService.getLimitedProducts(tenantId); break;
+        case 'sale': products = await ProductService.getSaleProducts(); break;
+        case 'new': products = await ProductService.getNewProducts(); break;
+        case 'hot': products = await ProductService.getTrendingProducts(); break;
+        case 'limited': products = await ProductService.getLimitedProducts(); break;
         case 'standard': {
-          const result = await ProductService.getAllProducts(tenantId, { limit: 20, sortBy: 'newest' });
+          const result = await ProductService.getAllProducts({ limit: 20, sortBy: 'newest' });
           products = result.items || [];
           break;
         }
@@ -245,17 +241,15 @@ const resolvers = {
       return (products || []).slice(0, limit).map(mapProduct);
     },
 
-    brands: async (_: any, args: { tenantId?: string }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
-      const brands = await BrandService.getAllBrands(tenantId);
+    brands: async () => {
+      const brands = await BrandService.getAllBrands();
       return (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand);
     },
 
-    navbar: async (_: any, args: { tenantId?: string }) => {
-      const tenantId = args.tenantId && args.tenantId !== 'default' ? args.tenantId : 'default';
+    navbar: async () => {
       const [trending, brands] = await Promise.all([
-        ProductService.getTrendingProducts(tenantId),
-        BrandService.getAllBrands(tenantId),
+        ProductService.getTrendingProducts(),
+        BrandService.getAllBrands(),
       ]);
       return {
         trending: (trending || []).slice(0, 8).map(mapProduct),

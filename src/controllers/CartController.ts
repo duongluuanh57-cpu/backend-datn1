@@ -5,6 +5,8 @@ import { Product } from '../models/Product.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
 import { ProductImage } from '../models/ProductImage.ts';
 import { Voucher } from '../models/Voucher.ts';
+import { Order } from '../models/Order.ts';
+import { OrderItem } from '../models/OrderItem.ts';
 import { redis } from '../config/redis.ts';
 import mongoose from 'mongoose';
 
@@ -142,7 +144,6 @@ export class CartController {
       if (!cart) {
         cart = await Cart.create({
           userId: new mongoose.Types.ObjectId(userId),
-          tenantId: (req as any).user?.tenantId || 'default',
           totalAmount: 0,
         });
         return reply.send({
@@ -208,7 +209,6 @@ export class CartController {
       if (!cart) {
         cart = await Cart.create({
           userId: new mongoose.Types.ObjectId(userId),
-          tenantId: (req as any).user?.tenantId || 'default',
           totalAmount: 0,
         });
       }
@@ -225,7 +225,7 @@ export class CartController {
       } else {
         await CartItem.create({
           cartId: cart._id,
-          tenantId: (req as any).user?.tenantId || 'default',
+          userId: new mongoose.Types.ObjectId(userId),
           productId: new mongoose.Types.ObjectId(productId),
           name: product.name,
           image: imageUrl,
@@ -297,6 +297,7 @@ export class CartController {
       if (quantity === 0) {
         await CartItem.deleteOne({ _id: item._id });
       } else {
+        if (!item.userId) item.userId = new mongoose.Types.ObjectId(userId);
         item.quantity = quantity;
         await item.save();
       }
@@ -366,11 +367,13 @@ export class CartController {
 
       if (existingWithNewVariant) {
         // Gộp quantity vào item variant mới, xóa item cũ
+        if (!existingWithNewVariant.userId) existingWithNewVariant.userId = new mongoose.Types.ObjectId(userId);
         existingWithNewVariant.quantity += item.quantity;
         existingWithNewVariant.price = finalPrice;
         await existingWithNewVariant.save();
         await CartItem.deleteOne({ _id: item._id });
       } else {
+        if (!item.userId) item.userId = new mongoose.Types.ObjectId(userId);
         item.variantSize = newVariantSize;
         item.price = finalPrice;
         await item.save();
@@ -439,6 +442,88 @@ export class CartController {
       return reply.send({
         success: true,
         data: { items: [], totalAmount: 0, totalItems: 0 },
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
+
+  static async checkout(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
+
+      const { customerName, customerEmail, customerPhone, customerAddress, paymentMethod } = req.body as {
+        customerName: string;
+        customerEmail?: string;
+        customerPhone?: string;
+        customerAddress?: string;
+        paymentMethod?: string;
+      };
+
+      if (!customerName) {
+        return reply.status(400).send({ success: false, message: 'Vui lòng nhập họ tên' });
+      }
+
+      const cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
+      if (!cart) {
+        return reply.status(400).send({ success: false, message: 'Giỏ hàng trống' });
+      }
+
+      const items = await CartItem.find({ cartId: cart._id }).lean();
+      if (items.length === 0) {
+        return reply.status(400).send({ success: false, message: 'Giỏ hàng trống' });
+      }
+
+      const shippingFee = cart.totalAmount >= 500000 ? 0 : 30000;
+      const finalAmount = cart.totalAmount + shippingFee - (cart.voucherDiscount || 0);
+
+      const order = await Order.create({
+        userId: new mongoose.Types.ObjectId(userId),
+        customerName,
+        customerEmail: customerEmail || '',
+        customerPhone: customerPhone || '',
+        customerAddress: customerAddress || '',
+        totalAmount: Math.max(0, finalAmount),
+        status: 'pending',
+        paymentMethod: paymentMethod || 'cod',
+        paymentStatus: 'unpaid',
+      });
+
+      await OrderItem.insertMany(
+        items.map((item: any) => ({
+          orderId: order._id,
+          productId: item.productId,
+          name: item.name,
+          image: item.image || '',
+          price: item.price,
+          quantity: item.quantity,
+          variantSize: item.variantSize || '50ml',
+          brand: item.brand || '',
+        }))
+      );
+
+      await CartItem.deleteMany({ cartId: cart._id });
+      cart.totalAmount = 0;
+      cart.voucherCode = null as any;
+      cart.voucherDiscount = 0;
+      await cart.save();
+
+      return reply.send({
+        success: true,
+        data: {
+          _id: order._id,
+          items: items.map((i: any) => ({
+            _id: i._id,
+            productId: i.productId,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+            variantSize: i.variantSize,
+          })),
+          totalAmount: order.totalAmount,
+          totalItems: items.reduce((sum: number, i: any) => sum + i.quantity, 0),
+        },
       });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });

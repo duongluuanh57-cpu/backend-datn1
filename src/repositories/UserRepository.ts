@@ -27,17 +27,16 @@ export class UserRepository {
     return User.findByIdAndUpdate(id, data, { new: true });
   }
 
-  static async findAll(tenantId: string): Promise<IUser[]> {
-    return User.find({ tenantId }).sort({ createdAt: -1 }).lean();
+  static async findAll(): Promise<IUser[]> {
+    return User.find({}).sort({ createdAt: -1 }).lean();
   }
 
   static async findPaginated(
-    tenantId: string,
     options: { page: number; limit: number; search?: string; role?: string }
   ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
     const { page, limit, search, role } = options;
 
-    const query: any = { tenantId };
+    const query: any = {};
 
     if (search) {
       const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -66,8 +65,8 @@ export class UserRepository {
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  static async delete(id: string, tenantId: string): Promise<boolean> {
-    const result = await User.deleteOne({ _id: id, tenantId });
+  static async delete(id: string): Promise<boolean> {
+    const result = await User.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 }

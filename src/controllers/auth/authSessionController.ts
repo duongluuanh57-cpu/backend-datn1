@@ -8,8 +8,7 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 export class AuthSessionController {
   static async register(request: FastifyRequest, reply: FastifyReply) {
     const data = request.body as any;
-    const tenantId = (request.headers['x-tenant-id'] as string) || 'default';
-    const result = await AuthService.register(data, tenantId);
+    const result = await AuthService.register(data);
 
     return reply.status(201).send({
       success: true,
@@ -52,7 +51,7 @@ export class AuthSessionController {
     const user = await UserRepository.findById(userId);
     if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-    const tokens = generateTokens(userId, user.role, false, user.tenantId || 'default');
+    const tokens = generateTokens(userId, user.role, false);
 
     return reply.send({
       success: true,

@@ -1,7 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyAccessToken } from '../utils/auth.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
-import { normalizeTenant } from '../utils/tenantHelper.ts';
 
 // Mở rộng kiểu Fastify Request để TypeScript biết có thêm field `user`
 declare module 'fastify' {
@@ -9,7 +8,6 @@ declare module 'fastify' {
     user?: {
       userId: string;
       role: string;
-      tenantId: string;
     };
   }
 }
@@ -32,7 +30,7 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
 
   try {
     const decoded = verifyAccessToken(token);
-    req.user = { userId: decoded.userId, role: decoded.role, tenantId: normalizeTenant(decoded.tenantId) };
+    req.user = { userId: decoded.userId, role: decoded.role };
   } catch (err: any) {
     throw new UnauthorizedError(err.message || 'Token không hợp lệ hoặc đã hết hạn');
   }

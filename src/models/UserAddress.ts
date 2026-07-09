@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IUserAddress extends Document {
-  tenantId: string;
   userId: mongoose.Types.ObjectId;
   label?: string;          // VD: "Nhà riêng", "Công ty", "Ký túc xá"
   address?: string;        // Số nhà, tên đường
@@ -15,7 +14,6 @@ export interface IUserAddress extends Document {
 
 const UserAddressSchema = new Schema<IUserAddress>(
   {
-    tenantId: { type: String, required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     label: { type: String, default: 'Địa chỉ của tôi' },
     address: { type: String, default: '' },

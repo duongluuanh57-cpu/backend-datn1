@@ -11,12 +11,11 @@ function slugify(text: string): string {
 }
 
 export class CategoryService {
-  static async getAll(tenantId: string): Promise<any[]> {
-    return Category.find({ tenantId }).sort({ sortOrder: 1, name: 1 }).lean();
+  static async getAll(): Promise<any[]> {
+    return Category.find({}).sort({ sortOrder: 1, name: 1 }).lean();
   }
 
   static async getPaginatedCategories(
-    tenantId: string,
     options: { page: number; limit: number; search?: string; status?: string }
   ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
     const { page, limit, search, status } = options;
@@ -40,24 +39,23 @@ export class CategoryService {
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  static async getById(id: string, tenantId: string): Promise<any | null> {
-    return Category.findOne({ _id: id, tenantId }).lean();
+  static async getById(id: string): Promise<any | null> {
+    return Category.findOne({ _id: id }).lean();
   }
 
-  static async create(data: { name: string; status?: string; sortOrder?: number }, tenantId: string): Promise<any> {
+  static async create(data: { name: string; status?: string; sortOrder?: number }): Promise<any> {
     const slug = slugify(data.name);
-    const maxOrder = await Category.findOne({ tenantId }).sort({ sortOrder: -1 }).lean();
+    const maxOrder = await Category.findOne({}).sort({ sortOrder: -1 }).lean();
     const category = new Category({
       name: data.name,
       slug,
       status: data.status || 'active',
       sortOrder: data.sortOrder ?? (maxOrder ? maxOrder.sortOrder! + 1 : 0),
-      tenantId,
     });
     return category.save();
   }
 
-  static async update(id: string, data: { name?: string; status?: string; sortOrder?: number }, tenantId: string): Promise<any | null> {
+  static async update(id: string, data: { name?: string; status?: string; sortOrder?: number }): Promise<any | null> {
     const updateData: any = {};
     if (data.name !== undefined) {
       updateData.name = data.name;
@@ -65,27 +63,27 @@ export class CategoryService {
     }
     if (data.status !== undefined) updateData.status = data.status;
     if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
-    return Category.findOneAndUpdate({ _id: id, tenantId }, { $set: updateData }, { new: true }).lean();
+    return Category.findOneAndUpdate({ _id: id }, { $set: updateData }, { new: true }).lean();
   }
 
-  static async delete(id: string, tenantId: string): Promise<boolean> {
-    const productCount = await Product.countDocuments({ categoryId: id, tenantId });
+  static async delete(id: string): Promise<boolean> {
+    const productCount = await Product.countDocuments({ categoryId: id });
     if (productCount > 0) {
       throw new Error(`Không thể xoá category vì có ${productCount} sản phẩm đang sử dụng.`);
     }
-    const result = await Category.deleteOne({ _id: id, tenantId });
+    const result = await Category.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 
-  static async bulkDelete(ids: string[], tenantId: string): Promise<boolean> {
+  static async bulkDelete(ids: string[]): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
 
-    const productUsing = await Product.countDocuments({ categoryId: { $in: ids }, tenantId });
+    const productUsing = await Product.countDocuments({ categoryId: { $in: ids } });
     if (productUsing > 0) {
       throw new Error(`Không thể xoá ${productUsing} danh mục vì có sản phẩm đang sử dụng.`);
     }
 
-    const result = await Category.deleteMany({ _id: { $in: ids }, tenantId });
+    const result = await Category.deleteMany({ _id: { $in: ids } });
     return result.deletedCount > 0;
   }
 }

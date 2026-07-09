@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IOrderItem extends Document {
-  tenantId: string;
   orderId: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
   name: string;
@@ -17,7 +16,6 @@ export interface IOrderItem extends Document {
 
 const OrderItemSchema = new Schema<IOrderItem>(
   {
-    tenantId: { type: String, required: true, index: true },
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     name: { type: String, required: true },

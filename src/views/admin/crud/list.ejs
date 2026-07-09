@@ -9,6 +9,7 @@
       <a id="crud-clear-search" href="#" style="color:var(--text-muted);text-decoration:none;font-size:13px;padding:8px;display:none;">Xóa lọc</a>
     </div>
     <div style="display:flex;align-items:center;gap:12px;">
+      <button onclick="cleanupBrokenImages()" id="cleanup-images-btn" style="display:none;align-items:center;gap:6px;background:rgba(239,68,68,0.1);color:#ef4444;border:none;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid rgba(239,68,68,0.2);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 7l-.867 12.142A2 2 0 0 1 16.138 21H7.862a2 2 0 0 1-1.995-1.858L5 7m5 4v6m4-6v6m1-10V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v2M1 5l1 12h20l1-12"/></svg> Dọn dẹp ảnh lỗi</button>
       <a href="/admin/products/supplement" id="supplement-link" style="display:none;align-items:center;gap:6px;background:rgba(245,158,11,0.1);color:#d97706;text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid rgba(245,158,11,0.2);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Bổ sung <span id="supplement-count" style="background:#d97706;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;min-width:18px;text-align:center;">0</span></a>
       <span style="color:var(--text-muted);font-size:13px;">Tổng: <b id="crud-total" style="color:var(--text-primary);">0</b></span>
     </div>
@@ -42,8 +43,11 @@
 
 <script>
 var C = window.__ADMIN_CONFIG__;
-var PAGE = 1;
-var SEARCH = '';
+
+// Khôi phục trạng thái từ URL
+var URL_PARAMS = new URLSearchParams(window.location.search);
+var PAGE = parseInt(URL_PARAMS.get('page'), 10) || 1;
+var SEARCH = URL_PARAMS.get('search') || '';
 var LIMIT = 10;
 var TOTAL_PAGES = 1;
 var ALL_ITEMS = [];       // current page items (with _id)
@@ -53,7 +57,17 @@ var COLORS = { pending:'#f59e0b', processing:'#3b82f6', shipped:'#8b5cf6', deliv
 var STATUS_LABELS = { pending:'Chờ XL', processing:'Đang XL', shipped:'Đang giao', delivered:'Đã giao', cancelled:'Đã hủy' };
 
 document.getElementById('crud-search').placeholder = C.searchPlaceholder || 'Tìm kiếm...';
+document.getElementById('crud-search').value = SEARCH;
 document.getElementById('crud-search').addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); crudSearch(); } });
+
+function syncUrl() {
+  var p = new URLSearchParams();
+  if (PAGE > 1) p.set('page', PAGE);
+  if (SEARCH) p.set('search', SEARCH);
+  var qs = p.toString();
+  var url = window.location.pathname + (qs ? '?' + qs : '');
+  history.replaceState(null, '', url);
+}
 
 // ── Build header with checkbox column ──
 var thead = document.getElementById('crud-thead');
@@ -103,6 +117,10 @@ function cellContent(row, col) {
   if (col.render === 'voucherValue') {
     if (row.type === 'percentage') return (Number(row.value) || 0) + '%';
     return fmtCurrency(row.value);
+  }
+  if (col.render === 'image') {
+    if (!val) return '<span class="product-thumb-empty"></span>';
+    return '<img src="' + escapeHtml(val) + '" alt="" class="product-thumb" onerror="this.style.display=\'none\'" />';
   }
   return v(val);
 }
@@ -193,6 +211,25 @@ function bulkDelete() {
     });
 }
 
+// ── Cleanup broken images ──
+function cleanupBrokenImages() {
+  if (!confirm('Bạn có chắc muốn dọn dẹp các URL ảnh không tồn tại trên R2? Đây sẽ xóa vĩnh viễn các URL ảnh hỏng khỏi cơ sở dữ liệu.')) return;
+  showToast('Đang quét và dọn dẹp ảnh...', 'info');
+
+  fetch('/admin/products/cleanup-images', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__ }
+  })
+    .then(function(r) { return r.text(); })
+    .then(function() {
+      showToast('✅ Đã dọn dẹp ảnh hoàn thành!', 'success');
+      crudFetch();
+    })
+    .catch(function() {
+      showToast('❌ Lỗi kết nối đến server', 'error');
+    });
+}
+
 // ── Render table ──
 function renderTable(items) {
   ALL_ITEMS = items || [];
@@ -263,6 +300,12 @@ function crudFetch() {
       renderTable(items || []);
       renderPagination();
       document.getElementById('crud-clear-search').style.display = SEARCH ? 'inline' : 'none';
+      
+      // Show cleanup button only for product list
+      if (C.entityName === 'product') {
+        document.getElementById('cleanup-images-btn').style.display = 'inline-flex';
+      }
+      syncUrl();
     })
     .catch(function() {
       document.getElementById('crud-tbody').innerHTML = '<tr><td colspan="99" style="text-align:center;padding:40px;color:var(--danger);">Lỗi kết nối</td></tr>';

@@ -29,7 +29,6 @@ export interface ProductDetail {
 export interface InterviewState {
   sessionId: string;
   adminId: string;
-  tenantId: string;
   step: 'select_products' | 'product_detail' | 'confirm' | 'done';
   brandName: string;
   availableProducts: ProductOption[];
@@ -75,12 +74,11 @@ setInterval(() => {
 }, 60 * 1000);
 
 export class InterviewStateManager {
-  static createSession(adminId: string, tenantId: string, brandName: string, products: ProductOption[]): string {
+  static createSession(adminId: string, brandName: string, products: ProductOption[]): string {
     const sessionId = `interview_${adminId}_${Date.now()}`;
     const state: InterviewState = {
       sessionId,
       adminId,
-      tenantId,
       step: 'select_products',
       brandName,
       availableProducts: products,
@@ -233,7 +231,6 @@ QUAN TRỌNG:
   static async startInterview(
     brandName: string,
     adminId: string,
-    tenantId: string,
   ): Promise<{ sessionId: string; response: InterviewResponse }> {
     // Tìm sản phẩm trending cho brand
     const prompt = `Bạn là chuyên gia nước hoa. Liệt kê 5 loại nước hoa nổi bật nhất của hãng "${brandName}" — có thể là sản phẩm mới trending hoặc dòng kinh điển lâu đời.
@@ -269,7 +266,7 @@ QUAN TRỌNG:
       );
     }
 
-    const sessionId = InterviewStateManager.createSession(adminId, tenantId, brandName, products);
+    const sessionId = InterviewStateManager.createSession(adminId, brandName, products);
 
     return {
       sessionId,
@@ -609,7 +606,6 @@ QUAN TRỌNG:
           const { createProductFromName } = await import('./adminTools.ts');
           const result = await createProductFromName(
             detail.name,
-            state.tenantId,
             {
               price: detail.price || undefined,
               brand: state.brandName,

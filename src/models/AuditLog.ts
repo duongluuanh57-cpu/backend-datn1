@@ -5,7 +5,6 @@ export interface IAuditLog extends Document {
   userId: mongoose.Types.ObjectId;
   action: string;      // Ví dụ: 'LOGIN', 'PASSWORD_CHANGE', 'DELETE_USER'
   resource: string;    // Ví dụ: 'User', 'Content'
-  tenantId: string;
   metadata: any;       // Thông tin chi tiết (IP, Browser, ID của bản ghi bị tác động)
   status: 'SUCCESS' | 'FAILURE';
   createdAt: Date;
@@ -15,7 +14,6 @@ const AuditLogSchema = new Schema<IAuditLog>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   action: { type: String, required: true, index: true },
   resource: { type: String, required: true },
-  tenantId: { type: String, required: true, index: true },
   metadata: { type: Schema.Types.Mixed },
   status: { type: String, enum: ['SUCCESS', 'FAILURE'], default: 'SUCCESS' },
   createdAt: { type: Date, default: Date.now, index: true }

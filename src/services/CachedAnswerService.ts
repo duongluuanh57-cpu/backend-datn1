@@ -10,12 +10,11 @@ export class CachedAnswerService {
    * Dùng vector search (embedding) để tìm ngữ nghĩa gần nhất.
    */
   static async findCachedAnswer(
-    question: string,
-    tenantId: string
+    question: string
   ): Promise<{ answer: string; rating: number; messageId: string } | null> {
     try {
       // 1. Kiểm tra Redis cache trước
-      const cacheKey = `cached_answer:${tenantId}:${Buffer.from(question.trim().toLowerCase()).toString('base64')}`;
+      const cacheKey = `cached_answer:${Buffer.from(question.trim().toLowerCase()).toString('base64')}`;
       const cached = await redisService.get(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -40,7 +39,6 @@ export class CachedAnswerService {
         },
         {
           $match: {
-            tenantId,
             rating: { $gte: 4 },
           },
         },
@@ -103,7 +101,6 @@ export class CachedAnswerService {
     answer: string;
     rating: number;
     userId?: string;
-    tenantId: string;
   }): Promise<void> {
     if (data.rating < 4) {
       console.log(`[CachedAnswer] Rating ${data.rating} < 4, skipping save`);
@@ -124,7 +121,6 @@ export class CachedAnswerService {
             rating: data.rating,
             embedding,
             userId: data.userId || null,
-            tenantId: data.tenantId,
             createdAt: new Date(),
           },
         },

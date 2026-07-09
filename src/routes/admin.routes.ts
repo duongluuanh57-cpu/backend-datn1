@@ -58,6 +58,10 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/products', AdminCRUDController.productList);
   app.get('/products/:id', AdminCRUDController.productDetail);
   app.post('/products/:id/delete', AdminCRUDController.productDelete);
+  app.post('/products/cleanup-images', AdminCRUDController.cleanupProductImages);
+
+  // ── Edit product (full form) — phải đặt TRƯỚC /products/supplement/:id
+  app.get('/products/:id/edit', AdminCRUDController.productEdit);
 
   // ── Supplement sản phẩm: chi tiết (phải đặt TRƯỚC /products/supplement) ──
   app.get('/products/supplement/:id', AdminCRUDController.productSupplementDetail);

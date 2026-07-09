@@ -21,8 +21,7 @@ import type { UserRole } from '../../services/queryRouter/queryRouterTypes.ts';
  */
 export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { messages, image, tenantId: bodyTenantId } = req.body as { messages: any[], image?: string; tenantId?: string };
-    const tenantId = bodyTenantId || (req as any).user?.tenantId || 'default';
+    const { messages, image } = req.body as { messages: any[], image?: string };
     const userRole = ((req as any).user?.role || undefined) as UserRole;
 
     if ((!messages || !Array.isArray(messages)) && !image) {
@@ -35,7 +34,7 @@ export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
     // ── HÌNH ẢNH: fallback sang direct stream ──
     if (image) {
       console.log(`📸 [chatStream] Image detected — falling back to direct stream`);
-      return handleImageStream(req, reply, messages, image, tenantId);
+      return handleImageStream(req, reply, messages, image);
     }
 
     // ── Query Routing ──
@@ -43,7 +42,6 @@ export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
       message: lastMessage,
       messages,
       image,
-      tenantId,
       userRole,
     });
 
@@ -95,8 +93,7 @@ async function handleImageStream(
   req: FastifyRequest,
   reply: FastifyReply,
   messages: any[],
-  image: string,
-  tenantId: string
+  image: string
 ) {
   const { AIService } = await import('../../services/AIService.ts');
   const systemFallback = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp. Trả lời ngắn gọn, thân thiện, dùng icon :3.`;

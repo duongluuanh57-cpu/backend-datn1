@@ -59,12 +59,10 @@ JSON Schema:
 
 export async function createVoucherFromAI(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { voucherData, tenantId } = req.body as { voucherData: any; tenantId?: string };
+    const { voucherData } = req.body as { voucherData: any };
     if (!voucherData || !voucherData.code || !voucherData.type || voucherData.value === undefined) {
       return reply.status(400).send({ success: false, message: 'Missing required voucher fields' });
     }
-
-    const tid = tenantId || (req as any).user?.tenantId || 'default';
 
     const newVoucher = await VoucherService.create({
       code: voucherData.code,
@@ -75,7 +73,7 @@ export async function createVoucherFromAI(req: FastifyRequest, reply: FastifyRep
       maxUsage: voucherData.maxUsage || 0,
       startDate: voucherData.startDate,
       endDate: voucherData.endDate,
-    }, tid);
+    });
 
     console.log(`✅ [AI Voucher] Created voucher ${newVoucher.code}`);
     return reply.status(200).send({ success: true, data: newVoucher });

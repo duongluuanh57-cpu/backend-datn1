@@ -28,4 +28,7 @@ export async function cartRoutes(app: FastifyInstance) {
 
   // POST /api/cart/remove-voucher — Hủy mã giảm giá
   app.post('/remove-voucher', CartController.removeVoucher);
+
+  // POST /api/cart/checkout — Tạo đơn hàng từ giỏ hàng
+  app.post('/checkout', CartController.checkout);
 }

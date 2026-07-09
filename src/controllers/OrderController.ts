@@ -3,11 +3,11 @@
  *
  * File này được giữ lại để backward compatibility.
  * Code thực tế đã được tách vào thư mục `controllers/order/`:
- *   - orderHelpers.ts          → requireAdmin, getTenantId, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter
+ *   - orderHelpers.ts          → requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter
  *   - orderUserController.ts   → getMyOrders, getOrderById
  *   - orderAdminController.ts  → getAllOrdersForAdmin, getOrderByIdForAdmin, updateOrderStatus, updatePaymentStatus, deleteOrder
  */
-export { requireAdmin, getTenantId, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter } from './order/orderHelpers.ts';
+export { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter } from './order/orderHelpers.ts';
 export { getMyOrders, getOrderById } from './order/orderUserController.ts';
 export { getAllOrdersForAdmin, getOrderByIdForAdmin, updateOrderStatus, updatePaymentStatus, deleteOrder } from './order/orderAdminController.ts';
 

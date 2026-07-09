@@ -32,7 +32,6 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
     const body = req.body as { message: string; history?: any[]; action?: string; entity?: string; data?: any };
     const message = body.message?.trim();
     const history = body.history || [];
-    const tenantId = (req as any).user?.tenantId || 'default';
     const userRole = ((req as any).user?.role || undefined) as UserRole;
     const userId = (req as any).user?.userId;
     const userDoc = userId ? await UserRepository.findById(userId) : null;
@@ -194,14 +193,13 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
     }
 
     // ── Fast path: Admin simple DB lookups (tránh 9s+ Gemini chain) ──
-    const fastResult = await tryAdminFastPath(message, tenantId);
+    const fastResult = await tryAdminFastPath(message);
     if (fastResult) return reply.send({ reply: fastResult });
 
     // ── Query Routing (cho các câu hỏi thông thường) ──
     const result = await QueryRouterService.route({
       message,
       messages: history,
-      tenantId,
       userRole,
       userId,
       userName,
@@ -255,11 +253,10 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
 async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, body: any) {
   try {
     const { entity, data } = body;
-    const tenantId = (req as any).user?.tenantId || 'default';
 
     switch (entity) {
       case 'user': {
-        const fakeReq = { body: { userData: data, tenantId } } as FastifyRequest;
+        const fakeReq = { body: { userData: data } } as FastifyRequest;
         const result = await createUserFromAI(fakeReq, reply);
         const parsed = parseResult(result);
         return reply.send({
@@ -276,7 +273,6 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
           origin: data.origin || '',
           description: data.description || '',
           status: 'active',
-          tenantId,
         });
         return reply.send({
           type: 'entity_created',
@@ -285,7 +281,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         });
       }
       case 'category': {
-        const fakeReq = { body: { categoryData: data, tenantId } } as FastifyRequest;
+        const fakeReq = { body: { categoryData: data } } as FastifyRequest;
         const result = await createCategoryFromAI(fakeReq, reply);
         const parsed = parseResult(result);
         return reply.send({
@@ -295,7 +291,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         });
       }
       case 'tag': {
-        const fakeReq = { body: { tagData: data, tenantId } } as FastifyRequest;
+        const fakeReq = { body: { tagData: data } } as FastifyRequest;
         const result = await createTagFromAI(fakeReq, reply);
         const parsed = parseResult(result);
         return reply.send({
@@ -305,7 +301,7 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         });
       }
       case 'voucher': {
-        const fakeReq = { body: { voucherData: data, tenantId } } as FastifyRequest;
+        const fakeReq = { body: { voucherData: data } } as FastifyRequest;
         const result = await createVoucherFromAI(fakeReq, reply);
         const parsed = parseResult(result);
         return reply.send({
@@ -336,23 +332,23 @@ function parseResult(result: any): any {
  * Tránh gọi Gemini chain ~9s cho những truy vấn có thể trả lời bằng DB query.
  * Trả về null nếu không match → fallback qua QueryRouter (Gemini).
  */
-async function tryAdminFastPath(message: string, tenantId: string): Promise<string | null> {
+async function tryAdminFastPath(message: string): Promise<string | null> {
   const lowerMsg = message.toLowerCase();
   const UserModel = User;
   const VoucherModel = Voucher;
 
   // ── "có bao nhiêu brand / thương hiệu" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:brand|thương\s+hiệu|hãng)/i.test(lowerMsg)) {
-    const brands = await Brand.find({ tenantId }).select('name').lean();
+    const brands = await Brand.find().select('name').lean();
     const list = brands.map((b: any, i: number) => `${i + 1}. ${b.name}`).join('\n');
     return `Dạ hiện có ${brands.length} thương hiệu ạ:\n${list}`;
   }
 
   // ── "kể tên / danh sách sản phẩm" ── (có 90 sp → chỉ hiển thị 30 đầu, có link supplement)
   if (/(?:kể|liệt\s+kê|danh\s+sách|list|đếm)\s+(?:tên\s+)?(?:các\s+)?(?:sản\s+phẩm|product)/i.test(lowerMsg)) {
-    const products = await Product.find({ tenantId }).select('name').limit(30).lean();
+    const products = await Product.find().select('name').limit(30).lean();
     if (!products.length) return 'Chưa có sản phẩm nào.';
-    const totalCount = await Product.countDocuments({ tenantId });
+    const totalCount = await Product.countDocuments();
     const list = products.map((p: any, i: number) => `${i + 1}. ${p.name}`).join('\n');
     const suffix = totalCount > 30 ? `\n\n… và ${totalCount - 30} sản phẩm khác.` : '';
     return `Dạ danh sách sản phẩm (${totalCount}):\n${list}${suffix}`;
@@ -360,45 +356,45 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "có bao nhiêu sản phẩm / product" ── (cực tolerant: mọi cách viết)
   if (/(?:có\s+|có\s+tất\s+cả\s+|trong\s+(?:shop|db|database|hệ\s+thống)\s+|hiện\s+tại\s+|tổng\s+|tổng\s+cộng\s+)?(?:bao\s+nhi[êểễ]u|mấy|bao\s+nhiu|bao\s+nhiểu)\s*(?:sản\s+phẩm|product|sp\b|sản\s+phẩm\s+trong\s+(?:shop|store)?)/i.test(lowerMsg)) {
-    const count = await Product.countDocuments({ tenantId });
+    const count = await Product.countDocuments();
     return `Dạ hiện có ${count} sản phẩm ạ.`;
   }
 
   // ── "có bao nhiêu danh mục / category" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:danh\s+mục|category)/i.test(lowerMsg)) {
-    const cats = await Category.find({ tenantId }).select('name').lean();
+    const cats = await Category.find().select('name').lean();
     const list = cats.map((c: any, i: number) => `${i + 1}. ${c.name}`).join('\n');
     return `Dạ hiện có ${cats.length} danh mục ạ:\n${list}`;
   }
 
   // ── "có bao nhiêu tag" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+tag/i.test(lowerMsg)) {
-    const tags = await Tag.find({ tenantId }).select('name').lean();
+    const tags = await Tag.find().select('name').lean();
     const list = tags.map((t: any, i: number) => `${i + 1}. ${t.name}`).join('\n');
     return `Dạ hiện có ${tags.length} tag ạ:\n${list}`;
   }
 
   // ── "có bao nhiêu người dùng / user" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:người\s+dùng|user|tài\s+khoản)/i.test(lowerMsg)) {
-    const count = await UserModel.countDocuments({ tenantId });
+    const count = await UserModel.countDocuments();
     return `Dạ hiện có ${count} người dùng ạ.`;
   }
 
   // ── "có bao nhiêu đơn hàng / order" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:đơn\s+hàng|order)/i.test(lowerMsg)) {
-    const count = await Order.countDocuments({ tenantId });
+    const count = await Order.countDocuments();
     return `Dạ hiện có ${count} đơn hàng ạ.`;
   }
 
   // ── "có bao nhiêu voucher / mã giảm giá" ──
   if (/(?:có\s+)?(?:bao\s+nhi[êểễ]u|mấy)\s+(?:voucher|mã\s+giảm\s+giá)/i.test(lowerMsg)) {
-    const count = await VoucherModel.countDocuments({ tenantId });
+    const count = await VoucherModel.countDocuments();
     return `Dạ hiện có ${count} mã giảm giá ạ.`;
   }
 
   // ── "liệt kê / danh sách brand / thương hiệu" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+(?:brand|thương\s+hiệu|hãng)/i.test(lowerMsg)) {
-    const brands = await Brand.find({ tenantId }).select('name origin').lean();
+    const brands = await Brand.find().select('name origin').lean();
     if (!brands.length) return 'Chưa có thương hiệu nào.';
     const list = brands.map((b: any, i: number) => `${i + 1}. ${b.name}${b.origin ? ` (${b.origin})` : ''}`).join('\n');
     return `Dạ danh sách thương hiệu:\n${list}`;
@@ -406,7 +402,7 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "liệt kê / danh sách category / danh mục" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+(?:danh\s+mục|category)/i.test(lowerMsg)) {
-    const cats = await Category.find({ tenantId }).select('name').lean();
+    const cats = await Category.find().select('name').lean();
     if (!cats.length) return 'Chưa có danh mục nào.';
     const list = cats.map((c: any, i: number) => `${i + 1}. ${c.name}`).join('\n');
     return `Dạ danh sách danh mục:\n${list}`;
@@ -414,7 +410,7 @@ async function tryAdminFastPath(message: string, tenantId: string): Promise<stri
 
   // ── "liệt kê / danh sách tag" ──
   if (/(?:liệt\s+kê|danh\s+sách|list)\s+tag/i.test(lowerMsg)) {
-    const tags = await Tag.find({ tenantId }).select('name').lean();
+    const tags = await Tag.find().select('name').lean();
     if (!tags.length) return 'Chưa có tag nào.';
     const list = tags.map((t: any, i: number) => `${i + 1}. ${t.name}`).join('\n');
     return `Dạ danh sách tag:\n${list}`;

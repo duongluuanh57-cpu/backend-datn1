@@ -25,48 +25,48 @@ export class ProductService {
   private static CACHE_TTL = 300;
 
   // --- Query methods ---
-  static async getProductIdsByTagSlugs(slugs: string[], tenantId: string) {
-    return _ProductQueryService.getProductIdsByTagSlugs(slugs, tenantId);
+  static async getProductIdsByTagSlugs(slugs: string[]) {
+    return _ProductQueryService.getProductIdsByTagSlugs(slugs);
   }
-  static async getNewProducts(tenantId: string) {
-    return _ProductQueryService.getNewProducts(tenantId);
+  static async getNewProducts() {
+    return _ProductQueryService.getNewProducts();
   }
-  static async getLimitedProducts(tenantId: string) {
-    return _ProductQueryService.getLimitedProducts(tenantId);
+  static async getLimitedProducts() {
+    return _ProductQueryService.getLimitedProducts();
   }
-  static async getTrendingProducts(tenantId: string) {
-    return _ProductQueryService.getTrendingProducts(tenantId);
+  static async getTrendingProducts() {
+    return _ProductQueryService.getTrendingProducts();
   }
-  static async getSaleProducts(tenantId: string) {
-    return _ProductQueryService.getSaleProducts(tenantId);
+  static async getSaleProducts() {
+    return _ProductQueryService.getSaleProducts();
   }
-  static async getPublicProducts(tenantId: string, type: 'trending' | 'new' | 'limited', filters: any = {}) {
-    return _ProductQueryService.getPublicProducts(tenantId, type, filters);
+  static async getPublicProducts(type: 'trending' | 'new' | 'limited', filters: any = {}) {
+    return _ProductQueryService.getPublicProducts(type, filters);
   }
-  static async getAllProducts(tenantId: string, options: any = {}) {
-    return _ProductQueryService.getAllProducts(tenantId, options);
+  static async getAllProducts(options: any = {}) {
+    return _ProductQueryService.getAllProducts(options);
   }
-  static async getBulkProducts(tenantId: string, ids: string[]) {
-    return _ProductQueryService.getBulkProducts(tenantId, ids);
+  static async getBulkProducts(ids: string[]) {
+    return _ProductQueryService.getBulkProducts(ids);
   }
-  static async suggestProducts(tenantId: string, query: string, limit?: number) {
-    return _ProductQueryService.suggestProducts(tenantId, query, limit);
+  static async suggestProducts(query: string, limit?: number) {
+    return _ProductQueryService.suggestProducts(query, limit);
   }
-  static async getProductById(id: string, tenantId: string) {
-    return _ProductQueryService.getProductById(id, tenantId);
+  static async getProductById(id: string) {
+    return _ProductQueryService.getProductById(id);
   }
 
   // --- Mutation methods ---
-  static async createProduct(data: any, tenantId: string) {
-    return _ProductMutationService.createProduct(data, tenantId);
+  static async createProduct(data: any) {
+    return _ProductMutationService.createProduct(data);
   }
-  static async updateProduct(id: string, data: any, tenantId: string) {
-    return _ProductMutationService.updateProduct(id, data, tenantId);
+  static async updateProduct(id: string, data: any) {
+    return _ProductMutationService.updateProduct(id, data);
   }
-  static async deleteProduct(id: string, tenantId: string) {
-    return _ProductMutationService.deleteProduct(id, tenantId);
+  static async deleteProduct(id: string) {
+    return _ProductMutationService.deleteProduct(id);
   }
-  static async bulkDeleteProducts(ids: string[], tenantId: string) {
-    return _ProductMutationService.bulkDeleteProducts(ids, tenantId);
+  static async bulkDeleteProducts(ids: string[]) {
+    return _ProductMutationService.bulkDeleteProducts(ids);
   }
 }

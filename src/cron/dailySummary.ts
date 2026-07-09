@@ -38,7 +38,7 @@ async function aggregateDay(date: Date) {
   const agg = result[0] || { totalRevenue: 0, totalOrders: 0, completedOrders: 0, cancelledRevenue: 0 };
 
   await DailySummaryReport.findOneAndUpdate(
-    { tenantId: 'default', date: start },
+    { date: start },
     {
       $set: {
         totalRevenue: Math.round(agg.totalRevenue),

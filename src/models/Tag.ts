@@ -5,7 +5,6 @@ export interface ITag extends Document {
   name: string;
   slug: string;
   status: 'active' | 'inactive';
-  tenantId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,9 +20,6 @@ const TagSchema = new Schema<ITag>(
     collection: 'tags'
   }
 );
-
-// Compound index for paginated search + sort
-TagSchema.index({ tenantId: 1, name: 1 });
 
 TagSchema.plugin(multiTenancyPlugin);
 

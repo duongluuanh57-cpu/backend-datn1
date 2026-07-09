@@ -1,25 +1,20 @@
 import { Brand } from '../models/Brand.ts';
 import type { IBrand } from '../models/Brand.ts';
 import { ImageService } from './ImageService.ts';
-import { tenantQuery } from '../utils/tenantHelper.ts';
+
 
 export class BrandService {
   /**
    * Lấy danh sách toàn bộ thương hiệu của tenant (không phân trang)
    */
-  static async getAllBrands(tenantId: string): Promise<IBrand[]> {
-    const tenantIds = [tenantId];
-    // Hỗ trợ cả brand cũ (default-tenant) và brand mới (default)
-    if (tenantId === 'default') tenantIds.push('default-tenant');
-    if (tenantId === 'default-tenant') tenantIds.push('default');
-    return await Brand.find({ tenantId: { $in: tenantIds } }).sort({ name: 1 });
+  static async getAllBrands(): Promise<IBrand[]> {
+    return await Brand.find({}).sort({ name: 1 });
   }
 
   /**
    * Lấy danh sách thương hiệu của tenant với phân trang, lọc
    */
   static async getPaginatedBrands(
-    tenantId: string,
     options: { page: number; limit: number; search?: string; origin?: string }
   ): Promise<{ items: IBrand[]; total: number; page: number; totalPages: number }> {
     const { page, limit, search, origin } = options;
@@ -50,25 +45,24 @@ export class BrandService {
   /**
    * Lấy danh sách các xuất xứ duy nhất của thương hiệu
    */
-  static async getBrandOrigins(tenantId: string): Promise<string[]> {
-    const origins = await Brand.find({ ...tenantQuery(tenantId), origin: { $ne: null, $exists: true } }).distinct('origin');
+  static async getBrandOrigins(): Promise<string[]> {
+    const origins = await Brand.find({ origin: { $ne: null, $exists: true } }).distinct('origin');
     return origins.filter((o): o is string => typeof o === 'string' && o.trim() !== '').sort();
   }
 
   /**
    * Lấy chi tiết thương hiệu theo ID
    */
-  static async getBrandById(id: string, tenantId: string): Promise<IBrand | null> {
-    return await Brand.findOne({ _id: id, ...tenantQuery(tenantId) });
+  static async getBrandById(id: string): Promise<IBrand | null> {
+    return await Brand.findOne({ _id: id });
   }
 
   /**
    * Tạo thương hiệu mới
    */
-  static async createBrand(data: Partial<IBrand>, tenantId: string): Promise<IBrand> {
+  static async createBrand(data: Partial<IBrand>): Promise<IBrand> {
     const brand = new Brand({
       ...data,
-      tenantId
     });
     return await brand.save();
   }
@@ -76,17 +70,17 @@ export class BrandService {
   /**
    * Cập nhật thông tin thương hiệu
    */
-  static async updateBrand(id: string, data: Partial<IBrand>, tenantId: string): Promise<IBrand | null> {
+  static async updateBrand(id: string, data: Partial<IBrand>): Promise<IBrand | null> {
     let oldLogo = '';
     if (data.logo) {
-      const oldBrand = await Brand.findOne({ _id: id, ...tenantQuery(tenantId) });
+      const oldBrand = await Brand.findOne({ _id: id });
       if (oldBrand && oldBrand.logo && oldBrand.logo !== data.logo) {
         oldLogo = oldBrand.logo;
       }
     }
 
     const updatedBrand = await Brand.findOneAndUpdate(
-      { _id: id, ...tenantQuery(tenantId) },
+      { _id: id },
       { $set: data },
       { new: true }
     );
@@ -103,11 +97,11 @@ export class BrandService {
   /**
    * Xóa thương hiệu khỏi hệ thống
    */
-  static async deleteBrand(id: string, tenantId: string): Promise<boolean> {
-    const brand = await Brand.findOne({ _id: id, ...tenantQuery(tenantId) });
+  static async deleteBrand(id: string): Promise<boolean> {
+    const brand = await Brand.findOne({ _id: id });
     if (!brand) return false;
 
-    const result = await Brand.deleteOne({ _id: id, ...tenantQuery(tenantId) });
+    const result = await Brand.deleteOne({ _id: id });
     if (result.deletedCount > 0 && brand.logo) {
       ImageService.deleteFromR2(brand.logo).catch(err => {
         console.error('Lỗi khi xóa logo thương hiệu khỏi R2:', err);
@@ -119,14 +113,14 @@ export class BrandService {
   /**
    * Xóa hàng loạt thương hiệu khỏi hệ thống
    */
-  static async bulkDeleteBrands(ids: string[], tenantId: string): Promise<boolean> {
+  static async bulkDeleteBrands(ids: string[]): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
     
     // Tìm các thương hiệu để lấy danh sách logo cần xóa
-    const brands = await Brand.find({ _id: { $in: ids }, ...tenantQuery(tenantId) });
+    const brands = await Brand.find({ _id: { $in: ids } });
     const logos = brands.map(b => b.logo).filter(Boolean);
 
-    const result = await Brand.deleteMany({ _id: { $in: ids }, ...tenantQuery(tenantId) });
+    const result = await Brand.deleteMany({ _id: { $in: ids } });
     if (result.deletedCount > 0 && logos.length > 0) {
       for (const logo of logos) {
         ImageService.deleteFromR2(logo).catch(err => {

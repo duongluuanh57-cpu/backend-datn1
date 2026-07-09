@@ -100,9 +100,10 @@ export class R2Uploader {
   /**
    * Upload ảnh SẢN PHẨM — upscale + sharpen, main + thumbnail
    * Folder tự động: products/{slug}/
-   *   - main.webp     → ảnh chính (1200px, sharpen)
-   *   - thumb.webp    → thumbnail (400px)
-   *   - sub-{n}.webp  → ảnh phụ (truyền qua options.subIndex)
+   * Tên file có hash (cache-busting) để tránh cache cũ khi replace ảnh:
+   *   - {hash}-main.webp     → ảnh chính (1200px, sharpen)
+   *   - {hash}-thumb.webp    → thumbnail (400px)
+   *   - {hash}-sub-{n}.webp  → ảnh phụ (truyền qua options.subIndex)
    */
   static async uploadProductImage(
     inputBuffer: Buffer,
@@ -126,17 +127,19 @@ export class R2Uploader {
     const folder = `products/${slug}`;
     const originalBytes = inputBuffer.length;
 
-    // Xác định tên file
+    // Random hash để cache-busting
+    const hash = Math.random().toString(36).substring(2, 10);
     const isSub = typeof options.subIndex === 'number';
     const baseFileName = isSub ? `sub-${options.subIndex}` : 'main';
+    const hashedBase = `${hash}-${baseFileName}`;
 
     // Ảnh chính: upscale + sharpen
     const mainBuffer = await ImageOptimizer.optimizeForProduct(inputBuffer);
     // Thumbnail
     const thumbBuffer = await ImageOptimizer.generateProductThumb(inputBuffer);
 
-    const mainKey = `${folder}/${baseFileName}.webp`;
-    const thumbKey = `${folder}/thumb.webp`;
+    const mainKey = `${folder}/${hashedBase}.webp`;
+    const thumbKey = `${folder}/${hash}-thumb.webp`;
 
     try {
       const client = getS3Client();

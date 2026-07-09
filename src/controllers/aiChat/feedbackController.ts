@@ -16,7 +16,6 @@ export async function handleFeedback(req: FastifyRequest, reply: FastifyReply) {
       question?: string;
       answer?: string;
     };
-    const tenantId = (req as any).user?.tenantId || 'default';
     const userId = (req as any).user?._id || undefined;
 
     if (!rating || rating < 1 || rating > 5) {
@@ -31,7 +30,6 @@ export async function handleFeedback(req: FastifyRequest, reply: FastifyReply) {
         answer,
         rating,
         userId,
-        tenantId,
       });
     }
 

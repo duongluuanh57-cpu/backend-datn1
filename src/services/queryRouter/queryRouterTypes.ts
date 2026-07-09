@@ -27,7 +27,6 @@ export interface RouteInput {
   message: string;
   messages: any[];
   image?: string;
-  tenantId: string;
   userRole: UserRole;
   userId?: string;
   userName?: string;

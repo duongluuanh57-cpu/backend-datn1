@@ -44,9 +44,11 @@ import { startDailySummaryCron } from './cron/dailySummary.ts';
 import { favoriteRoutes } from './routes/favorite.routes.ts';
 import { cartRoutes } from './routes/cart.routes.ts';
 import { adminRoutes } from './routes/admin.routes.ts';
+import { mediaRoutes } from './routes/media.routes.ts';
 import { readFileSync } from 'fs';
 
 import rawBody from 'fastify-raw-body';
+import multipart from '@fastify/multipart';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
@@ -86,6 +88,10 @@ export function buildApp(): FastifyInstance {
   app.setSerializerCompiler(serializerCompiler);
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || ['http://localhost:3000', 'https://frontend-datn-tau.vercel.app'];
+  app.register(multipart, {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  });
+
   app.register(cors, {
     origin: allowedOrigins,
     credentials: true,
@@ -144,6 +150,7 @@ export function buildApp(): FastifyInstance {
   app.register(funnelRoutes, { prefix: '/api/funnel' });
   app.register(miniGameRoutes, { prefix: '/api/mini-games' });
   app.register(dailySummaryRoutes, { prefix: '/api/admin' });
+  app.register(mediaRoutes, { prefix: '/api/media' });
 
   // Start background cron jobs
   startDailySummaryCron();

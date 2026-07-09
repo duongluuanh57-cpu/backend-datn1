@@ -71,24 +71,22 @@ function formatToolResult(result: ToolResult): string {
  *
  * @param message - Tin nhắn từ admin
  * @param history - Lịch sử chat (tối đa 10 tin gần nhất)
- * @param tenantId - Tenant ID
  */
 export async function process(
   message: string,
-  history: any[],
-  tenantId: string
+  history: any[]
 ): Promise<AdminAgentResult> {
   try {
     // ── Step 0: Query Decomposition ──
     // Phân rã yêu cầu của admin thành multi-step plan
-    const plan = await decomposeQuery(message, tenantId);
+    const plan = await decomposeQuery(message);
 
     // Nếu plan phức tạp (nhiều bước) → dùng Plan Executor
     if (plan.isComplex && plan.steps.length > 1) {
       console.log(`🔀 [AdminAgent] Using Query Decomposition — ${plan.steps.length} steps`);
       
-      const executionResult = await executePlan(plan, tenantId);
-      let summary = await summarizeExecution(executionResult, tenantId);
+      const executionResult = await executePlan(plan);
+      let summary = await summarizeExecution(executionResult);
       summary = appendSupplementLink(summary, executionResult);
 
       return {
@@ -137,7 +135,7 @@ HÀNH ĐỘNG:
           }),
           execute: async ({ name, price, brand }: { name: string; price?: number; brand?: string }) => {
             console.log(`🔧 [AdminAgent] Tool: create_product("${name}"${price ? `, price=${price}` : ''}${brand ? `, brand=${brand}` : ''})`);
-            const toolResult = await createProductFromName(name, tenantId, { price, brand });
+            const toolResult = await createProductFromName(name, { price, brand });
             return formatToolResult(toolResult);
           },
         },
@@ -152,7 +150,7 @@ HÀNH ĐỘNG:
             console.log(`🔧 [AdminAgent] Tool: update_product(id=${id || '?'}, name=${name || '?'}, fields=${JSON.stringify(fields)})`);
             let targetId = id;
             if (!targetId && name) {
-              const found = await findProductsByName(name, tenantId, 1);
+              const found = await findProductsByName(name, 1);
               if (found.success && found.data?.length > 0) {
                 targetId = found.data[0].id;
               } else {
@@ -162,7 +160,7 @@ HÀNH ĐỘNG:
             if (!targetId) {
               return 'Cần ID hoặc tên sản phẩm để cập nhật.';
             }
-            const toolResult = await updateProductFields(targetId, fields, tenantId);
+            const toolResult = await updateProductFields(targetId, fields);
             return formatToolResult(toolResult);
           },
         },
@@ -176,7 +174,7 @@ HÀNH ĐỘNG:
             console.log(`🔧 [AdminAgent] Tool: delete_product(id=${id || '?'}, name=${name || '?'})`);
             let targetId = id;
             if (!targetId && name) {
-              const found = await findProductsByName(name, tenantId, 1);
+              const found = await findProductsByName(name, 1);
               if (found.success && found.data?.length > 0) {
                 targetId = found.data[0].id;
               } else {
@@ -186,7 +184,7 @@ HÀNH ĐỘNG:
             if (!targetId) {
               return 'Cần ID hoặc tên sản phẩm để xóa. Vui lòng cung cấp ID hoặc nhập "tìm sản phẩm X" trước.';
             }
-            const toolResult = await deleteProductById(targetId, tenantId);
+            const toolResult = await deleteProductById(targetId);
             return formatToolResult(toolResult);
           },
         },
@@ -197,7 +195,7 @@ HÀNH ĐỘNG:
           }),
           execute: async ({ query }: { query: string }) => {
             console.log(`🔧 [AdminAgent] Tool: find_products("${query}")`);
-            const toolResult = await findProductsByName(query, tenantId, 5);
+            const toolResult = await findProductsByName(query, 5);
             return formatToolResult(toolResult);
           },
         },
@@ -208,7 +206,7 @@ HÀNH ĐỘNG:
           }),
           execute: async ({ name }: { name: string }) => {
             console.log(`🔧 [AdminAgent] Tool: ensure_brand("${name}")`);
-            const toolResult = await ensureBrand(name, tenantId);
+            const toolResult = await ensureBrand(name);
             return formatToolResult(toolResult);
           },
         },
@@ -221,7 +219,7 @@ HÀNH ĐỘNG:
           }),
           execute: async ({ brand, query, limit }: { brand?: string; query?: string; limit?: number }) => {
             console.log(`🔧 [AdminAgent] Tool: search_trending(brand=${brand || '?'}, query=${query || '?'}, limit=${limit || 5})`);
-            const toolResult = await searchTrending(brand, query, limit || 5, tenantId);
+            const toolResult = await searchTrending(brand, query, limit || 5);
             return formatToolResult(toolResult);
           },
         },

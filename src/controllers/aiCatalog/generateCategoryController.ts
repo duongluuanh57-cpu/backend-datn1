@@ -49,19 +49,16 @@ JSON Schema:
 
 export async function createCategoryFromAI(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { categoryData, tenantId } = req.body as { categoryData: any; tenantId?: string };
+    const { categoryData } = req.body as { categoryData: any };
     if (!categoryData || !categoryData.name || !categoryData.slug) {
       return reply.status(400).send({ success: false, message: 'Missing required category fields' });
     }
-
-    const tid = tenantId || (req as any).user?.tenantId || 'default';
 
     const newCategory = await Category.create({
       name: categoryData.name,
       slug: categoryData.slug,
       status: categoryData.status || 'active',
       sortOrder: categoryData.sortOrder || 0,
-      tenantId: tid,
     });
 
     console.log(`✅ [AI Category] Created category ${newCategory.name} (${newCategory.slug})`);

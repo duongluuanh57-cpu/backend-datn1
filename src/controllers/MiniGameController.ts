@@ -1,10 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { MiniGameService } from '../services/MiniGameService.ts';
 
-function getTenantId(req: FastifyRequest): string {
-  return (req as any).user?.tenantId || 'default';
-}
-
 function getUserId(req: FastifyRequest): string | undefined {
   return (req as any).user?._id?.toString();
 }
@@ -35,10 +31,9 @@ export class MiniGameController {
   /** GET /api/mini-games/status */
   static async status(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = getTenantId(req);
       const userId = getUserId(req);
-      const remaining = await MiniGameService.getRemainingPlays(tenantId, userId);
-      const canPlay = await MiniGameService.canPlay(tenantId, userId);
+      const remaining = await MiniGameService.getRemainingPlays(userId);
+      const canPlay = await MiniGameService.canPlay(userId);
 
       return reply.send({
         success: true,
@@ -60,7 +55,6 @@ export class MiniGameController {
   /** POST /api/mini-games/play */
   static async play(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = getTenantId(req);
       const userId = getUserId(req);
       const { gameType } = req.body as { gameType: string };
 
@@ -72,7 +66,7 @@ export class MiniGameController {
       }
 
       // Check daily limit + cooldown
-      const canPlay = await MiniGameService.canPlay(tenantId, userId);
+      const canPlay = await MiniGameService.canPlay(userId);
       if (!canPlay.allowed) {
         return reply.status(429).send({
           success: false,
@@ -95,7 +89,6 @@ export class MiniGameController {
           discountType: won ? reward.discountType : undefined,
           discountAmount: won ? reward.discountAmount : undefined,
         },
-        tenantId,
         userId
       );
 
@@ -123,9 +116,8 @@ export class MiniGameController {
   /** GET /api/mini-games/history */
   static async history(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = getTenantId(req);
       const userId = getUserId(req);
-      const history = await MiniGameService.getHistory(tenantId, userId);
+      const history = await MiniGameService.getHistory(userId);
 
       return reply.send({ success: true, data: history });
     } catch (err: any) {

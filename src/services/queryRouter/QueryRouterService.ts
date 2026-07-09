@@ -2,7 +2,7 @@
  * QueryRouterService — Entry point cho Query Routing
  *
  * Luồng xử lý:
- * 1. Nhận input (message, messages, image, tenantId, userRole)
+ * 1. Nhận input (message, messages, image, userRole)
  * 2. Kiểm tra cached answer từ feedback trước (nếu có → trả về ngay, không gọi AI)
  * 3. classifyRoute() → xác định route
  * 4. Kiểm tra role (admin routes cần ADMIN/SUBADMIN)
@@ -25,14 +25,14 @@ export class QueryRouterService {
    * Xử lý message từ user chat hoặc admin chat
    */
   static async route(input: RouteInput): Promise<RouteResult> {
-    const { message, messages, image, tenantId, userRole } = input;
+    const { message, messages, image, userRole } = input;
     const startTime = Date.now();
 
     try {
       // ── Step 0: Kiểm tra cached answer từ feedback trước ──
       // Nếu có cache hit (câu hỏi tương tự đã được đánh giá 4-5★), trả về ngay, không gọi AI
       if (message && !image) {
-        const cached = await CachedAnswerService.findCachedAnswer(message, tenantId);
+        const cached = await CachedAnswerService.findCachedAnswer(message);
         if (cached) {
           const elapsed = Date.now() - startTime;
           console.log(`✅ [QueryRouter] Cached answer hit (rating: ${cached.rating}) in ${elapsed}ms`);
@@ -113,25 +113,25 @@ export class QueryRouterService {
 
         // ── AI-powered routes ──
         case 'vector_search': {
-          const stream = await executeVectorSearch(message, tenantId, userRole);
+          const stream = await executeVectorSearch(message, userRole);
           result = { type: 'stream', streamResponse: stream };
           break;
         }
 
         case 'sql_search': {
-          const stream = await executeSqlSearch(message, tenantId, userRole);
+          const stream = await executeSqlSearch(message, userRole);
           result = { type: 'stream', streamResponse: stream };
           break;
         }
 
         case 'web_search': {
-          const stream = await executeWebSearch(message, tenantId, userRole);
+          const stream = await executeWebSearch(message, userRole);
           result = { type: 'stream', streamResponse: stream };
           break;
         }
 
         case 'graph_search': {
-          const stream = await executeGraphSearch(message, tenantId, userRole);
+          const stream = await executeGraphSearch(message, userRole);
           result = { type: 'stream', streamResponse: stream };
           break;
         }
@@ -140,7 +140,6 @@ export class QueryRouterService {
           const adminResult = await executeAdminQuery(
             message,
             messages || [],
-            tenantId,
             userRole
           );
           if (adminResult.text) {
@@ -158,7 +157,7 @@ export class QueryRouterService {
 
         default: {
           // Fallback: dùng vector search
-          const stream = await executeVectorSearch(message, tenantId, userRole);
+          const stream = await executeVectorSearch(message, userRole);
           result = { type: 'stream', streamResponse: stream };
         }
       }

@@ -4,7 +4,6 @@ import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export interface IPayment extends Document {
-  tenantId: string;
   orderId: mongoose.Types.ObjectId;
   paymentMethodId: mongoose.Types.ObjectId;
   method: string;
@@ -19,7 +18,6 @@ export interface IPayment extends Document {
 
 const PaymentSchema = new Schema<IPayment>(
   {
-    tenantId: { type: String, required: true, index: true },
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
     paymentMethodId: { type: Schema.Types.ObjectId, ref: 'PaymentMethod', required: true, index: true },
     method: { type: String, required: true },
@@ -39,8 +37,6 @@ const PaymentSchema = new Schema<IPayment>(
     collection: 'payments',
   }
 );
-
-PaymentSchema.index({ tenantId: 1, orderId: 1 });
 
 PaymentSchema.plugin(multiTenancyPlugin);
 

@@ -16,6 +16,10 @@ const VNPAY_HASH_SECRET = process.env.VNPAY_HASH_SECRET || '';
 const VNPAY_URL = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
 const VNPAY_RETURN_URL = process.env.VNPAY_RETURN_URL || (process.env.FRONTEND_URL || 'https://frontend-datn-tau.vercel.app') + '/payment/return';
 
+if (!VNPAY_HASH_SECRET) {
+  throw new Error('VNPAY_HASH_SECRET is not configured. Set it in .env or environment variables.');
+}
+
 export interface VNPayPaymentInput {
   txnRef: string;
   amount: number; // VND
@@ -79,12 +83,14 @@ function createSecureHash(params: Record<string, string>, secretKey: string): st
 /**
  * Tạo URL thanh toán VNPAY
  */
-export function createPaymentUrl(input: VNPayPaymentInput): string {
+export function createPaymentUrl(input: VNPayPaymentInput, customReturnUrl?: string): string {
   const { txnRef, amount, orderInfo, ipAddr, locale = 'vn', bankCode, orderType = 'other' } = input;
 
   const now = new Date();
   const createDate = formatVnDate(now);
   const expireDate = formatVnDate(new Date(now.getTime() + 60 * 60 * 1000));
+
+  const returnUrl = customReturnUrl || VNPAY_RETURN_URL;
 
   const params: Record<string, string> = {
     vnp_Amount: String(amount * 100),
@@ -96,7 +102,7 @@ export function createPaymentUrl(input: VNPayPaymentInput): string {
     vnp_Locale: locale,
     vnp_OrderInfo: orderInfo,
     vnp_OrderType: orderType,
-    vnp_ReturnUrl: VNPAY_RETURN_URL,
+    vnp_ReturnUrl: returnUrl,
     vnp_TmnCode: VNPAY_TMN_CODE,
     vnp_TxnRef: txnRef,
     vnp_Version: '2.1.0',

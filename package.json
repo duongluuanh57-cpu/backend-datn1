@@ -8,7 +8,9 @@
     "build": "cross-env NODE_OPTIONS='--max-old-space-size=2048' esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external && node --input-type=module -e \"import {cpSync} from 'fs'; cpSync('src/views', 'dist/views', {recursive: true})\"",
     "start": "node dist/server.js",
     "test": "vitest run",
-    "clean": "node --input-type=module -e \"import {rmSync,existsSync} from 'fs'; if (existsSync('dist')) {rmSync('dist', {recursive: true, force: true}); console.log('🧹 Cleaned dist folder')}\""
+    "clean": "node --input-type=module -e \"import {rmSync,existsSync} from 'fs'; if (existsSync('dist')) {rmSync('dist', {recursive: true, force: true}); console.log('🧹 Cleaned dist folder')}\"",
+    "migrate:remove-tenantid": "tsx src/scripts/migrate-remove-tenantId.ts",
+    "migrate:backfill-cartitem-userid": "tsx src/scripts/migrate-backfill-cartitem-userid.ts"
   },
   "keywords": [],
   "author": "",

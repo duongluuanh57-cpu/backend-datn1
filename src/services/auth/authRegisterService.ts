@@ -5,7 +5,7 @@ import { ValidationError } from '../../utils/errors.ts';
 import { AuditLog } from '../../models/AuditLog.ts';
 
 export class AuthRegisterService {
-  static async register(data: RegisterInput, tenantId: string = 'default') {
+  static async register(data: RegisterInput) {
     // 1. Kiểm tra email/username đã tồn tại chưa
     const existingEmail = await UserRepository.findByEmail(data.email);
     if (existingEmail) throw new ValidationError('Email đã được sử dụng');
@@ -16,14 +16,13 @@ export class AuthRegisterService {
     // 2. Mã hóa mật khẩu
     const passwordHash = await hashPassword(data.password);
 
-    // 3. Tạo User mới trong DB với tenantId
+    // 3. Tạo User mới trong DB
     const newUser = await UserRepository.create({
       username: data.username,
       email: data.email,
       passwordHash,
       role: 'USER',
       memberTier: 'MEMBER',
-      tenantId // Gán tenantId cho SaaS
     });
 
     // 4. Audit Logging
@@ -31,13 +30,12 @@ export class AuthRegisterService {
       userId: newUser._id,
       action: 'REGISTER',
       resource: 'User',
-      tenantId: newUser.tenantId || 'default',
       metadata: { email: newUser.email },
       status: 'SUCCESS'
     });
 
     // 5. Sinh bộ đôi JWT Token
-    const tokens = generateTokens(newUser._id.toString(), newUser.role, false, newUser.tenantId || 'default');
+    const tokens = generateTokens(newUser._id.toString(), newUser.role, false);
 
     return {
       user: {
@@ -50,7 +48,6 @@ export class AuthRegisterService {
         fullName: newUser.fullName || '',
         phoneNumber: newUser.phoneNumber || '',
         gender: newUser.gender || '',
-        tenantId: newUser.tenantId,
         createdAt: newUser.createdAt
       },
       tokens

@@ -14,101 +14,96 @@ import { resolveCategoryNames } from './productHelpers.ts';
 export class ProductQueryService {
   private static CACHE_TTL = 300;
 
-  // Cache tag slug → ID mapping to reduce DB queries (per-tenant TTL + giới hạn kích thước)
-  private static tagCache = new Map<string, { data: { id: mongoose.Types.ObjectId; tenantId: string; slug: string }[]; time: number }>();
-  private static TAG_CACHE_TTL = 300; // 5 minutes
-  private static TAG_CACHE_MAX_SIZE = 50; // giới hạn 50 tenant entry
+  // Cache tag slug → ID mapping
+  private static tagCache = new Map<string, mongoose.Types.ObjectId>();
 
-  private static async getTagIdsBySlugs(slugs: string[], tenantId: string): Promise<mongoose.Types.ObjectId[]> {
-    const now = Date.now();
-    const cacheEntry = this.tagCache.get(tenantId);
-    
-    // Check if we have valid cached tags for this tenant (per-tenant TTL)
-    if (cacheEntry && now - cacheEntry.time < this.TAG_CACHE_TTL) {
-      const tagIds: mongoose.Types.ObjectId[] = [];
-      for (const slug of slugs) {
-        const tag = cacheEntry.data.find(t => t.slug === slug);
-        if (tag) tagIds.push(tag.id);
-      }
-      if (tagIds.length > 0) return tagIds;
-    }
-    
-    // Cache miss or expired - query DB
-    const tags = await Tag.find({ tenantId }).lean();
-    const tagMap = new Map<string, mongoose.Types.ObjectId>();
-    for (const tag of tags) {
-      const slug = (tag.slug || '').toLowerCase();
-      tagMap.set(slug, tag._id);
-    }
-    
-    // Giới hạn kích thước cache
-    if (this.tagCache.size >= this.TAG_CACHE_MAX_SIZE) {
-      let oldestKey = '';
-      let oldestTime = Infinity;
-      for (const [k, v] of this.tagCache) {
-        if (v.time < oldestTime) { oldestTime = v.time; oldestKey = k; }
-      }
-      if (oldestKey) this.tagCache.delete(oldestKey);
-    }
-    
-    // Update cache với per-tenant timestamp
-    this.tagCache.set(tenantId, {
-      data: tags.map(t => ({ id: t._id, tenantId: t.tenantId, slug: (t.slug || '').toLowerCase() })),
-      time: now,
-    });
-    
-    const tagIds: mongoose.Types.ObjectId[] = [];
+  private static async getTagIdsBySlugs(slugs: string[]): Promise<mongoose.Types.ObjectId[]> {
+    const result: mongoose.Types.ObjectId[] = [];
+    const misses: string[] = [];
+
     for (const slug of slugs) {
-      const tagId = tagMap.get(slug.toLowerCase());
-      if (tagId) tagIds.push(tagId);
+      const id = this.tagCache.get(slug.toLowerCase());
+      if (id) {
+        result.push(id);
+      } else {
+        misses.push(slug);
+      }
     }
-    return tagIds;
+
+    // Cache miss — load all tags and match in-memory (case-insensitive)
+    if (misses.length > 0) {
+      const allTags = await Tag.find({}).lean();
+      for (const tag of allTags) {
+        const slug = (tag.slug || '').toLowerCase();
+        if (!this.tagCache.has(slug)) {
+          this.tagCache.set(slug, tag._id);
+        }
+      }
+      for (const slug of misses) {
+        const id = this.tagCache.get(slug.toLowerCase());
+        if (id && !result.some(r => r.equals(id))) {
+          result.push(id);
+        }
+      }
+    }
+
+    return result;
   }
 
-  static async getProductIdsByTagSlugs(slugs: string[], tenantId: string): Promise<mongoose.Types.ObjectId[]> {
-    const tagIds = await this.getTagIdsBySlugs(slugs, tenantId);
+  static async getProductIdsByTagSlugs(slugs: string[]): Promise<mongoose.Types.ObjectId[]> {
+    const tagIds = await this.getTagIdsBySlugs(slugs);
     if (tagIds.length === 0) return [];
-    const links = await ProductTag.find({ tenantId, tagId: { $in: tagIds } }).lean();
+    const links = await ProductTag.find({ tagId: { $in: tagIds } }).lean();
     return links.map(l => l.productId);
   }
 
-  static async getNewProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:new:tag:v3:${tenantId}`;
+  static async getNewProducts(): Promise<any[]> {
+    const cacheKey = `products:new:tag:v3`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getNewProducts:', err); }
-    const productIds = await this.getProductIdsByTagSlugs(['new', 'san-pham-moi'], tenantId);
-    const query: any = { tenantId }; if (productIds.length > 0) query._id = { $in: productIds };
-    const productsRaw = await Product.find(query)  .select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt longevity sillage durability scentTrail style suitableFor occasion season time description reviewsCount')
-  
-  
-.select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt').populate('brandId').populate('categories').lean().sort({ createdAt: -1 }).limit(15).lean();
-    const products = await formatMultipleProducts(productsRaw, tenantId);
+    const productIds = await this.getProductIdsByTagSlugs(['new', 'san-pham-moi']);
+    const select = 'name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt';
+    let productsRaw;
+    if (productIds.length > 0) {
+      productsRaw = await Product.find({ _id: { $in: productIds } }).select(select).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+    } else {
+      productsRaw = await Product.find({}).select(select).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+    }
+    const products = await formatMultipleProducts(productsRaw);
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) { console.warn('Redis set error:', err); } }
     return products;
   }
 
-  static async getLimitedProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:limited:tag:v2:${tenantId}`;
+  static async getLimitedProducts(): Promise<any[]> {
+    const cacheKey = `products:limited:tag:v2`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getLimitedProducts:', err); }
-    const productIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet'], tenantId);
-    const query: any = { tenantId }; if (productIds.length > 0) query._id = { $in: productIds };
-    const productsRaw = await Product.find(query).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
-    const products = await formatMultipleProducts(productsRaw, tenantId);
+    const productIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
+    let productsRaw;
+    if (productIds.length > 0) {
+      productsRaw = await Product.find({ _id: { $in: productIds } }).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+    } else {
+      productsRaw = await Product.find({}).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+    }
+    const products = await formatMultipleProducts(productsRaw);
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) { console.warn('Redis set error:', err); } }
     return products;
   }
 
-  static async getTrendingProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:trending:tag:v3:${tenantId}`;
+  static async getTrendingProducts(): Promise<any[]> {
+    const cacheKey = `products:trending:tag:v3`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getTrendingProducts:', err); }
-    const productIds = await this.getProductIdsByTagSlugs(['trending', 'thinh-hanh', 'ban-chay', 'hot'], tenantId);
-    const query: any = { tenantId }; if (productIds.length > 0) query._id = { $in: productIds };
-    const productsRaw = await Product.find(query).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
-    const products = await formatMultipleProducts(productsRaw, tenantId);
+    const productIds = await this.getProductIdsByTagSlugs(['trending', 'thinh-hanh', 'ban-chay', 'hot']);
+    let productsRaw;
+    if (productIds.length > 0) {
+      productsRaw = await Product.find({ _id: { $in: productIds } }).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+    } else {
+      productsRaw = await Product.find({}).populate('brandId').populate('categories').sort({ soldCount: -1, createdAt: -1 }).limit(15).lean();
+    }
+    const products = await formatMultipleProducts(productsRaw);
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) { console.warn('Redis set error:', err); } }
     return products;
   }
 
-  static async getPublicProducts(tenantId: string, type: 'trending' | 'new' | 'limited', filters: any = {}): Promise<any[]> {
+  static async getPublicProducts(type: 'trending' | 'new' | 'limited', filters: any = {}): Promise<any[]> {
     const { brand, capacity, priceRange, minPrice, maxPrice, sortBy = 'newest', limit = 20, filterTag } = filters;
     const tagSlugsMap: Record<string, string[]> = { trending: ['trending', 'thinh-hanh', 'ban-chay', 'hot'], new: ['new', 'san-pham-moi'], limited: ['limited', 'gioi-han', 'gioi-han-dac-biet'] };
     let slugs = tagSlugsMap[type] || [];
@@ -119,12 +114,12 @@ export class ProductQueryService {
     if (!slugs || slugs.length === 0) return [];
     const cachePayload = { brand, capacity, priceRange, minPrice, maxPrice, sortBy, limit, filterTag };
     const cacheHash = crypto.createHash('md5').update(JSON.stringify(cachePayload)).digest('hex');
-    const cacheKey = `products:public:${type}:${tenantId}:${cacheHash}`;
+    const cacheKey = `products:public:${type}:${cacheHash}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getPublicProducts:', err); }
-    const productIds = await this.getProductIdsByTagSlugs(slugs, tenantId);
+    const productIds = await this.getProductIdsByTagSlugs(slugs);
     if (productIds.length === 0) return [];
-    const productsRaw = await Product.find({ tenantId, _id: { $in: productIds } }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
-    const products = await formatMultipleProducts(productsRaw, tenantId);
+    const productsRaw = await Product.find({ _id: { $in: productIds } }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
+    const products = await formatMultipleProducts(productsRaw);
     const getActualPrice = (product: any) => { const p = product.price ?? 0; if (!p) return 0; let active = product.discountPercentage && product.discountPercentage > 0; if (active) { const now = new Date(); if (product.discountStartDate && new Date(product.discountStartDate) > now) active = false; if (product.discountEndDate && new Date(product.discountEndDate) < now) active = false; } return active ? Math.round(p * (1 - product.discountPercentage / 100)) : p; };
     const filtered = products.filter((product: any) => {
       if (brand && brand !== 'all') { const bName = (product.brand as any)?.name || (typeof product.brand === 'string' ? product.brand : '') || product.brandName || ''; if (bName.toLowerCase() !== brand.toLowerCase()) return false; }
@@ -142,22 +137,27 @@ export class ProductQueryService {
     return result;
   }
 
-  static async getSaleProducts(tenantId: string): Promise<any[]> {
-    const cacheKey = `products:sale:tag:${tenantId}`;
+  static async getSaleProducts(): Promise<any[]> {
+    const cacheKey = `products:sale:tag`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getSaleProducts:', err); }
-    const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia'], tenantId);
+    const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia']);
     const now = new Date();
-    const queryBase: any = { tenantId, discountPercentage: { $gt: 0 }, discountEndDate: { $gt: now }, $or: [{ discountStartDate: null }, { discountStartDate: { $exists: false } }, { discountStartDate: { $lte: now } }] };
-    if (saleProductIds.length > 0) queryBase._id = { $in: saleProductIds };
+    const discountFilter: any = { discountPercentage: { $gt: 0 }, discountEndDate: { $gt: now }, $or: [{ discountStartDate: null }, { discountStartDate: { $exists: false } }, { discountStartDate: { $lte: now } }] };
+    let queryBase: any;
+    if (saleProductIds.length > 0) {
+      queryBase = { _id: { $in: saleProductIds }, ...discountFilter };
+    } else {
+      queryBase = { ...discountFilter };
+    }
     let productsRaw: any[] = [];
     if (await Product.countDocuments(queryBase).maxTimeMS(3000)) { productsRaw = await Product.find(queryBase).populate('brandId').populate('categories').sort({ discountEndDate: 1, createdAt: -1 }).limit(12)  
 .lean(); }
-    const products = await formatMultipleProducts(productsRaw, tenantId);
+    const products = await formatMultipleProducts(productsRaw);
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) { console.warn('Redis set error:', err); } }
     return products;
   }
 
-  static async getAllProducts(tenantId: string, options: any = {}): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
+  static async getAllProducts(options: any = {}): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
     const { page = 1, limit = 25, search, brand, stock, tag, category, sortBy } = options;
     const query: any = {};
     if (search) { query.$text = { $search: search }; }
@@ -165,7 +165,6 @@ export class ProductQueryService {
     if (stock === 'inStock' || stock === 'lowStock' || stock === 'outOfStock') {
       // Stock is stored on ProductVariant, not Product. Aggregate total stock per product from variants.
       const stockAggregation = await ProductVariant.aggregate([
-        { $match: { tenantId } },
         { $group: { _id: '$productId', totalStock: { $sum: '$quantityInStock' } } },
         {
           $match: stock === 'inStock'
@@ -203,7 +202,7 @@ export class ProductQueryService {
     const total = await Product.countDocuments(query);
     const products = await Product.find(query).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean()
     
-    let items = await formatMultipleProducts(products, tenantId);
+    let items = await formatMultipleProducts(products);
 
     // Stock sort must happen post-query because quantityInStock is computed from variants in formatMultipleProducts
     if (stockSortNeeded) {
@@ -217,27 +216,27 @@ export class ProductQueryService {
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  static async getBulkProducts(tenantId: string, ids: string[]): Promise<any[]> {
+  static async getBulkProducts(ids: string[]): Promise<any[]> {
     if (!ids.length) return [];
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).slice(0, 20).map(id => new mongoose.Types.ObjectId(id));
     if (!validIds.length) return [];
-    const productsRaw = await Product.find({ _id: { $in: validIds }, tenantId }).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt').populate('brandId').populate('categories').lean()
-    return formatMultipleProducts(productsRaw, tenantId);
+    const productsRaw = await Product.find({ _id: { $in: validIds } }).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt').populate('brandId').populate('categories').lean()
+    return formatMultipleProducts(productsRaw);
   }
 
-  static async suggestProducts(tenantId: string, query: string, limit: number = 8): Promise<any[]> {
+  static async suggestProducts(query: string, limit: number = 8): Promise<any[]> {
     if (!query || !query.trim()) {
-      const randomProducts = await Product.aggregate([{ $match: { tenantId } }, { $sample: { size: limit } }, { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } }, { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } }, { $project: { name: 1, image: 1, brand: '$brand.name' } }]);
-      const formatted = await formatMultipleProducts(randomProducts, tenantId);
+      const randomProducts = await Product.aggregate([{ $sample: { size: limit } }, { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } }, { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } }, { $project: { name: 1, image: 1, brand: '$brand.name' } }]);
+      const formatted = await formatMultipleProducts(randomProducts);
       return formatted.map((p: any) => ({ _id: p._id, name: p.name, price: p.price, image: p.image || '', brand: p.brand || '' }));
     }
     const cleanQuery = query.trim();
-    const cacheKey = `products:suggest:v2:${tenantId}:${cleanQuery.toLowerCase()}`;
+    const cacheKey = `products:suggest:v2:${cleanQuery.toLowerCase()}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in suggestProducts:', err); }
 
     // Tìm brand bằng text index (nhanh hơn $regex)
     const matchingBrands = await Brand.find(
-      { tenantId, $text: { $search: cleanQuery } },
+      { $text: { $search: cleanQuery } },
       { score: { $meta: 'textScore' } }
     ).sort({ score: { $meta: 'textScore' } })
     const brandIds = matchingBrands.map(b => b._id);
@@ -246,7 +245,6 @@ export class ProductQueryService {
     const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const productsRaw = await Product.find(
       {
-        tenantId,
         $or: [
           { $text: { $search: cleanQuery } },
           { name: { $regex: `^${escaped}`, $options: 'i' } }, // prefix match cho autocomplete
@@ -261,21 +259,15 @@ export class ProductQueryService {
       .limit(limit)
       .lean();
 
-    const formatted = await formatMultipleProducts(productsRaw, tenantId);
+    const formatted = await formatMultipleProducts(productsRaw);
     const result = formatted.map((p: any) => ({ _id: p._id, name: p.name, price: p.price, originalPrice: p.originalPrice || p.price, discount: p.discount || 0, image: p.image || '', brand: p.brand || '' }));
     if (result.length > 0) { try { await redis.set(cacheKey, JSON.stringify(result), 'EX', 300); } catch (err) { console.warn('Redis set error in suggestProducts:', err); } }
     return result;
   }
 
-  static async getProductById(id: string, tenantId: string): Promise<any | null> {
-    let product = await Product.findOne({ _id: id, tenantId }).populate('brandId').populate('categories').lean();
-    if (!product) {
-      product = await Product.findOne({ _id: id }).populate('brandId').populate('categories').lean();
-    }
+  static async getProductById(id: string): Promise<any | null> {
+    const product = await Product.findOne({ _id: id }).populate('brandId').populate('categories').lean();
     if (!product) return null;
-
-    // Dùng tenantId thực từ product (đề phòng tenantId truyền vào không khớp)
-    const actualTenantId = (product as any).tenantId || tenantId;
 
     const images = await ProductImage.find({ productId: id }).lean();
     const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];

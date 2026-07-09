@@ -9,12 +9,11 @@ export class UserController {
    */
   static async getAllUsers(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = (request as any).user?.tenantId || 'default';
       const query = request.query as { page?: string; limit?: string; search?: string; role?: string };
 
       // Nếu không có page, trả full list (backward compatible)
       if (!query.page) {
-        const users = await UserRepository.findAll(tenantId);
+        const users = await UserRepository.findAll();
         const safeUsers = users.map(u => {
           const { passwordHash, ...rest } = u as any;
           return rest;
@@ -22,7 +21,7 @@ export class UserController {
         return reply.send({ success: true, data: safeUsers });
       }
 
-      const result = await UserRepository.findPaginated(tenantId, {
+      const result = await UserRepository.findPaginated({
         page: parseInt(query.page, 10),
         limit: query.limit ? parseInt(query.limit, 10) : 10,
         search: query.search,
@@ -159,9 +158,8 @@ export class UserController {
   static async deleteUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string };
-      const tenantId = (request as any).user?.tenantId || 'default';
       
-      const success = await UserRepository.delete(id, tenantId);
+      const success = await UserRepository.delete(id);
       if (!success) {
         return reply.status(404).send({
           success: false,

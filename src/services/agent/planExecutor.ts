@@ -40,29 +40,29 @@ export interface PlanExecutionResult {
 }
 
 /** Map tool name → executor function */
-type ToolExecutor = (args: Record<string, any>, tenantId: string) => Promise<ToolResult>;
+type ToolExecutor = (args: Record<string, any>) => Promise<ToolResult>;
 
 const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
-  generate_product: async (args, tenantId) => {
-    return createProductFromName(args.name, tenantId, {
+  generate_product: async (args) => {
+    return createProductFromName(args.name, {
       price: args.price,
       brand: args.brand,
     });
   },
-  update_product: async (args, tenantId) => {
-    return updateProductFields(args.id, args.fields, tenantId);
+  update_product: async (args) => {
+    return updateProductFields(args.id, args.fields);
   },
-  delete_product: async (args, tenantId) => {
-    return deleteProductById(args.id, tenantId);
+  delete_product: async (args) => {
+    return deleteProductById(args.id);
   },
-  find_products: async (args, tenantId) => {
-    return findProductsByName(args.query, tenantId, args.limit || 5);
+  find_products: async (args) => {
+    return findProductsByName(args.query, args.limit || 5);
   },
-  ensure_brand: async (args, tenantId) => {
-    return ensureBrand(args.name, tenantId);
+  ensure_brand: async (args) => {
+    return ensureBrand(args.name);
   },
-  search_trending: async (args, tenantId) => {
-    return searchTrending(args.brand, args.query, args.limit || 5, tenantId);
+  search_trending: async (args) => {
+    return searchTrending(args.brand, args.query, args.limit || 5);
   },
 };
 
@@ -170,7 +170,6 @@ function validatePlan(plan: DecomposedPlan): string | null {
  */
 export async function executePlan(
   plan: DecomposedPlan,
-  tenantId: string,
 ): Promise<PlanExecutionResult> {
   const results = new Map<number, ToolResult>();
   const stepResults: StepResult[] = [];
@@ -240,7 +239,7 @@ export async function executePlan(
 
     // Execute
     const executor = TOOL_EXECUTORS[step.tool];
-    const toolResult = await executor(resolvedArgs, tenantId);
+    const toolResult = await executor(resolvedArgs);
     results.set(step.id, toolResult);
 
     logs.push(`Step ${step.id}: ${step.description} → ${toolResult.message}`);
@@ -276,7 +275,6 @@ export async function executePlan(
  */
 export async function summarizeExecution(
   executionResult: PlanExecutionResult,
-  tenantId: string,
 ): Promise<string> {
   const { createGoogleGenerativeAI } = await import('@ai-sdk/google');
   const { generateText } = await import('ai');

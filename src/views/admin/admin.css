@@ -82,6 +82,9 @@
 :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
 .admin-input:focus-visible, .admin-btn:focus-visible, .nav-item:focus-visible, .btn-icon:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
+.product-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; display: block; }
+.product-thumb-empty { display: inline-block; width: 48px; height: 48px; border-radius: 8px; background: var(--color-surface); }
+
 /* ===== TABLE ===== */
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--color-background); border: 1px solid var(--color-border-light); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
 .data-table th { text-align: left; padding: 14px 18px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); background: var(--color-surface); border-bottom: 1px solid var(--color-border-light); }

@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import { VectorSearchService } from './VectorSearchService.ts';
 import { Brand } from '../models/Brand.ts';
 import { Product } from '../models/Product.ts';
-import { getTenantIds } from '../utils/tenantHelper.ts';
 
 /**
  * Keyword search — hybrid $text (inverted index) + $regex (prefix autocomplete)
@@ -13,7 +12,7 @@ import { getTenantIds } from '../utils/tenantHelper.ts';
  * 3. Fallback $regex prefix cho autocomplete (khi gõ từng chữ)
  * 4. Kết hợp tất cả bằng RRF merge
  */
-async function runKeywordSearch(query: string, tenantId: string, limit: number) {
+async function runKeywordSearch(query: string, limit: number) {
   const cleanQuery = query.toLowerCase().trim();
   const queryWords = cleanQuery.split(/\s+/).filter(w => w.length >= 2);
   if (queryWords.length === 0) return [];
@@ -21,10 +20,9 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const BUFFER = 2;
 
-  const tenantIds = getTenantIds(tenantId);
   // ── 1. Text search trên Product (inverted index) ──
   const textSearchProducts = Product.find(
-    { tenantId: { $in: tenantIds }, $text: { $search: cleanQuery } },
+    { $text: { $search: cleanQuery } },
     { textScore: { $meta: 'textScore' } }
   )
     .sort({ textScore: { $meta: 'textScore' }, soldCount: -1 })
@@ -35,7 +33,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
 
   // ── 2. Text search trên Brand (inverted index) ──
   const brandTextSearch = Brand.find(
-    { tenantId: { $in: tenantIds }, $text: { $search: cleanQuery } },
+    { $text: { $search: cleanQuery } },
     { textScore: { $meta: 'textScore' } }
   )
     .sort({ textScore: { $meta: 'textScore' } })
@@ -52,7 +50,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
 
   const regexSearch = mongoose.connection.db!.collection('products').aggregate([
-    { $match: { tenantId: { $in: tenantIds }, $or: nameConditions } },
+    { $match: { $or: nameConditions } },
     { $sort: { soldCount: -1, rating: -1 } },
     { $limit: limit * BUFFER },
     { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brandData' } },
@@ -74,7 +72,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
   let brandProductResults: any[] = [];
   if (brandIds.length > 0) {
     brandProductResults = await Product.find(
-      { tenantId: { $in: tenantIds }, brandId: { $in: brandIds } }
+      { brandId: { $in: brandIds } }
     )
       .sort({ soldCount: -1, rating: -1 })
       .limit(limit)
@@ -113,7 +111,7 @@ async function runKeywordSearch(query: string, tenantId: string, limit: number) 
 }
 
 export class SearchService {
-  static async hybridSearch(query: string, tenantId: string, limit: number = 4) {
+  static async hybridSearch(query: string, limit: number = 4) {
     try {
       const cleanQuery = query.toLowerCase().trim();
       if (!cleanQuery) return { products: [], mode: 'general' };
@@ -154,8 +152,8 @@ export class SearchService {
       if (queryWords.length === 0) return { products: [], mode: 'general' };
 
       const [vectorResults, keywordResults] = await Promise.all([
-        VectorSearchService.searchProducts(cleanQuery, tenantId, limit * 2).catch(() => [] as any[]),
-        runKeywordSearch(cleanQuery, tenantId, limit * 2),
+        VectorSearchService.searchProducts(cleanQuery, limit * 2).catch(() => [] as any[]),
+        runKeywordSearch(cleanQuery, limit * 2),
       ]);
 
       if (vectorResults.length === 0 && keywordResults.length === 0) {

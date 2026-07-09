@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IReview extends Document {
-  tenantId: string;
   userId: mongoose.Types.ObjectId;     // Người review
   productId: mongoose.Types.ObjectId;  // Sản phẩm được review
   orderItemId: mongoose.Types.ObjectId; // OrderItem đã mua (xác thực)
@@ -16,7 +15,6 @@ export interface IReview extends Document {
 
 const ReviewSchema = new Schema<IReview>(
   {
-    tenantId: { type: String, required: true, index: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
     orderItemId: { type: Schema.Types.ObjectId, ref: 'OrderItem', required: true, index: true },
@@ -32,10 +30,7 @@ const ReviewSchema = new Schema<IReview>(
 );
 
 // 1 user chỉ review 1 sản phẩm 1 lần duy nhất
-ReviewSchema.index({ tenantId: 1, userId: 1, productId: 1 }, { unique: true });
-
-// Index để query: "Lấy review của sản phẩm X"
-ReviewSchema.index({ tenantId: 1, productId: 1, status: 1, createdAt: -1 });
+ReviewSchema.index({ userId: 1, productId: 1 }, { unique: true });
 
 ReviewSchema.plugin(multiTenancyPlugin);
 

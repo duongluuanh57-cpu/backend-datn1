@@ -56,7 +56,6 @@ export class UserAddressController {
       const isDefault = body.isDefault ?? existingCount === 0;
 
       const newAddress = await UserAddress.create({
-        tenantId: user.tenantId || 'default',
         userId: new mongoose.Types.ObjectId(userId),
         label: body.label?.trim() || 'Địa chỉ của tôi',
         address: body.address?.trim() || '',

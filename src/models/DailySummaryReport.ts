@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IDailySummaryReport extends Document {
   date: Date;
-  tenantId: string;
   totalRevenue: number;
   totalOrders: number;
   completedOrders: number;
@@ -13,7 +12,6 @@ export interface IDailySummaryReport extends Document {
 const DailySummaryReportSchema = new Schema<IDailySummaryReport>(
   {
     date: { type: Date, required: true },
-    tenantId: { type: String, required: true, default: 'default' },
     totalRevenue: { type: Number, default: 0 },
     totalOrders: { type: Number, default: 0 },
     completedOrders: { type: Number, default: 0 },
@@ -25,7 +23,7 @@ const DailySummaryReportSchema = new Schema<IDailySummaryReport>(
   }
 );
 
-DailySummaryReportSchema.index({ tenantId: 1, date: 1 }, { unique: true });
+DailySummaryReportSchema.index({ date: 1 }, { unique: true });
 DailySummaryReportSchema.index({ date: -1 });
 
 export const DailySummaryReport =

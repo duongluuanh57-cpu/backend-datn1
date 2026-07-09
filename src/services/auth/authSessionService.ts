@@ -26,7 +26,6 @@ export class AuthSessionService {
         userId: user._id,
         action: 'LOGIN',
         resource: 'User',
-        tenantId: (user as any).tenantId || 'default',
         metadata: { ...metadata },
         status: 'FAILURE'
       });
@@ -46,13 +45,12 @@ export class AuthSessionService {
       userId: user._id,
       action: 'LOGIN',
       resource: 'User',
-      tenantId: (user as any).tenantId || 'default',
       metadata: { ...metadata, rememberMe: data.rememberMe },
       status: 'SUCCESS'
     });
 
     // 5. Sinh bộ đôi Token
-    const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe, (user as any).tenantId || 'default');
+    const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe);
 
     return {
       user: {
@@ -65,7 +63,6 @@ export class AuthSessionService {
         fullName: (user as any).fullName || '',
         phoneNumber: (user as any).phoneNumber || '',
         gender: (user as any).gender || '',
-        tenantId: (user as any).tenantId,
         createdAt: user.createdAt
       },
       tokens
@@ -80,16 +77,11 @@ export class AuthSessionService {
     const SEVEN_DAYS = 7 * 24 * 60 * 60;
     await redis.set(`blacklist:${refreshToken}`, 'true', 'EX', SEVEN_DAYS);
 
-    // Lấy user để xác định tenantId cho AuditLog
-    const user = await UserRepository.findById(userId);
-    const tenantId = user ? (user as any).tenantId : 'default';
-
     // Audit Log
     await AuditLog.create({
       userId,
       action: 'LOGOUT',
       resource: 'User',
-      tenantId,
       status: 'SUCCESS'
     });
 

@@ -4,10 +4,8 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 
 export async function generateUser(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { prompt, tenantId } = req.body as { prompt: string; tenantId?: string };
+    const { prompt } = req.body as { prompt: string };
     if (!prompt) return reply.status(400).send({ error: 'Prompt is required' });
-
-    const tid = tenantId || (req as any).user?.tenantId || 'default';
 
     console.log(`🧠 [AI Workflow] Generating user info with Gemini for prompt: ${prompt}`);
     const geminiPrompt = `
@@ -57,12 +55,10 @@ JSON Schema:
 
 export async function createUserFromAI(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { userData, tenantId } = req.body as { userData: any; tenantId?: string };
+    const { userData } = req.body as { userData: any };
     if (!userData || !userData.username || !userData.email || !userData.password) {
       return reply.status(400).send({ success: false, message: 'Missing required user fields' });
     }
-
-    const tid = tenantId || (req as any).user?.tenantId || 'default';
     const bcrypt = await import('bcryptjs');
 
     const passwordHash = await bcrypt.hash(userData.password, 10);
@@ -75,7 +71,6 @@ export async function createUserFromAI(req: FastifyRequest, reply: FastifyReply)
       status: userData.status || 'active',
       fullName: userData.fullName || '',
       phoneNumber: userData.phoneNumber || '',
-      tenantId: tid,
     });
 
     console.log(`✅ [AI User] Created user ${newUser.username} (${newUser.email})`);

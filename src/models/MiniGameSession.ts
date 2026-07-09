@@ -5,7 +5,6 @@ export type GameType = 'wheel' | 'scratch' | 'dice' | 'quiz';
 export type GameStatus = 'playing' | 'won' | 'lost';
 
 export interface IMiniGameSession extends Document {
-  tenantId: string;
   userId?: string;
   gameType: GameType;
   status: GameStatus;
@@ -22,7 +21,6 @@ export interface IMiniGameSession extends Document {
 
 const MiniGameSessionSchema = new Schema<IMiniGameSession>(
   {
-    tenantId: { type: String, required: true, index: true },
     userId: { type: String, index: true },
     gameType: {
       type: String,
@@ -47,9 +45,6 @@ const MiniGameSessionSchema = new Schema<IMiniGameSession>(
     collection: 'mini_game_sessions',
   }
 );
-
-MiniGameSessionSchema.index({ tenantId: 1, userId: 1, playedAt: -1 });
-MiniGameSessionSchema.index({ tenantId: 1, 'reward.voucherCode': 1 });
 
 MiniGameSessionSchema.plugin(multiTenancyPlugin);
 

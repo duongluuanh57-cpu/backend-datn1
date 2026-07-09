@@ -1,10 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { PaymentService, PaymentMethodService } from '../services/PaymentService.ts';
 
-function getTenantId(req: FastifyRequest): string {
-  return (req as any).user?.tenantId || 'default';
-}
-
 function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
   const user = (req as any).user;
   if (user?.role !== 'ADMIN' && user?.role !== 'SUBADMIN') {
@@ -20,8 +16,7 @@ export class PaymentMethodController {
   /** GET /api/payment-methods — public, chỉ lấy active */
   static async getActive(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const tenantId = getTenantId(req);
-      const methods = await PaymentMethodService.getAll(tenantId, true);
+      const methods = await PaymentMethodService.getAll(true);
       return reply.send({ success: true, data: methods });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -32,8 +27,7 @@ export class PaymentMethodController {
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
-      const tenantId = getTenantId(req);
-      const methods = await PaymentMethodService.getAll(tenantId, false);
+      const methods = await PaymentMethodService.getAll(false);
       return reply.send({ success: true, data: methods });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -45,7 +39,7 @@ export class PaymentMethodController {
     try {
       if (!requireAdmin(req, reply)) return;
       const body = req.body as { name: string; code: string; icon?: string; sortOrder?: number };
-      const method = await PaymentMethodService.create(body, getTenantId(req));
+      const method = await PaymentMethodService.create(body);
       return reply.status(201).send({ success: true, data: method });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
@@ -58,7 +52,7 @@ export class PaymentMethodController {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
       const body = req.body as { name?: string; icon?: string; isActive?: boolean; sortOrder?: number };
-      const method = await PaymentMethodService.update(id, body, getTenantId(req));
+      const method = await PaymentMethodService.update(id, body);
       if (!method) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
       return reply.send({ success: true, data: method });
     } catch (err: any) {
@@ -71,7 +65,7 @@ export class PaymentMethodController {
     try {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
-      const ok = await PaymentMethodService.delete(id, getTenantId(req));
+      const ok = await PaymentMethodService.delete(id);
       if (!ok) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
       return reply.send({ success: true, message: 'Đã xóa' });
     } catch (err: any) {
@@ -85,14 +79,14 @@ export class PaymentMethodController {
 export class PaymentController {
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
-    const list = await PaymentService.getAll(getTenantId(req));
+    const list = await PaymentService.getAll();
     return reply.send({ success: true, data: list });
   }
 
   static async getById(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const item = await PaymentService.getById(id, getTenantId(req));
+    const item = await PaymentService.getById(id);
     if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
     return reply.send({ success: true, data: item });
   }
@@ -100,14 +94,14 @@ export class PaymentController {
   static async getByOrder(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const { orderId } = req.params as { orderId: string };
-    const items = await PaymentService.getByOrder(orderId, getTenantId(req));
+    const items = await PaymentService.getByOrder(orderId);
     return reply.send({ success: true, data: items });
   }
 
   static async create(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const body = req.body as { orderId: string; method: string };
-    const item = await PaymentService.create(body, getTenantId(req));
+    const item = await PaymentService.create(body);
     return reply.status(201).send({ success: true, data: item });
   }
 
@@ -115,7 +109,7 @@ export class PaymentController {
     if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
     const { transactionCode } = req.body as { transactionCode?: string };
-    const item = await PaymentService.markPaid(id, transactionCode, getTenantId(req));
+    const item = await PaymentService.markPaid(id, transactionCode);
     if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
     return reply.send({ success: true, data: item });
   }
@@ -123,7 +117,7 @@ export class PaymentController {
   static async markFailed(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const item = await PaymentService.markFailed(id, getTenantId(req));
+    const item = await PaymentService.markFailed(id);
     if (!item) return reply.status(404).send({ success: false });
     return reply.send({ success: true, data: item });
   }
@@ -131,7 +125,7 @@ export class PaymentController {
   static async markRefunded(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const item = await PaymentService.markRefunded(id, getTenantId(req));
+    const item = await PaymentService.markRefunded(id);
     if (!item) return reply.status(404).send({ success: false });
     return reply.send({ success: true, data: item });
   }
@@ -139,7 +133,7 @@ export class PaymentController {
   static async remove(req: FastifyRequest, reply: FastifyReply) {
     if (!requireAdmin(req, reply)) return;
     const { id } = req.params as { id: string };
-    const ok = await PaymentService.delete(id, getTenantId(req));
+    const ok = await PaymentService.delete(id);
     if (!ok) return reply.status(404).send({ success: false });
     return reply.send({ success: true, message: 'Đã xóa' });
   }

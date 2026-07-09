@@ -3,6 +3,7 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 import { Product } from '../../models/Product.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Category } from '../../models/Category.ts';
+import { ImageService } from '../../services/ImageService.ts';
 import ejs from 'ejs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,7 @@ export class AdminCRUDController {
     const config=JSON.stringify({
       entityName:'product',title:'Sản phẩm',apiEndpoint:'/api/products',itemsPath:'items',
       columns:[
+        {key:'image',label:'Ảnh',render:'image',width:'60px'},
         {key:'name',label:'Tên sản phẩm'},
         {key:'price',label:'Giá',format:'currency'},
         {key:'quantityInStock',label:'Tồn kho'},
@@ -37,8 +39,7 @@ export class AdminCRUDController {
   static async productDetail(req:FastifyRequest,reply:FastifyReply){
     const u=await ud(req);const apiToken=(req as any).token||'';
     const productId=(req.params as any).id;
-    const tenantId=(req as any).user?.tenantId||'default';
-    const b=r('admin/crud/detail.ejs',{apiToken,productId,tenantId});
+    const b=r('admin/crud/detail.ejs',{apiToken,productId});
     return ren(reply,m(u,'Chi tiết sản phẩm','products','Quản lý Cửa hàng'),b,apiToken);
   }
 
@@ -81,8 +82,7 @@ export class AdminCRUDController {
    */
   static async productSupplement(req:FastifyRequest,reply:FastifyReply){
     const u=await ud(req);const apiToken=(req as any).token||'';
-    const tenantId=(req as any).user?.tenantId||'default';
-    const b=r('admin/supplement.ejs',{apiToken,tenantId});
+    const b=r('admin/supplement.ejs',{apiToken});
     return ren(reply,m(u,'Bổ sung sản phẩm','products','Quản lý Cửa hàng'),b,apiToken);
   }
 
@@ -92,8 +92,30 @@ export class AdminCRUDController {
   static async productSupplementDetail(req:FastifyRequest,reply:FastifyReply){
     const u=await ud(req);const apiToken=(req as any).token||'';
     const productId=(req.params as any).id;
-    const tenantId=(req as any).user?.tenantId||'default';
-    const b=r('admin/supplement-detail.ejs',{apiToken,productId,tenantId});
+    const b=r('admin/supplement-detail.ejs',{apiToken,productId,mode:'supplement'});
     return ren(reply,m(u,'Bổ sung sản phẩm','products','Quản lý Cửa hàng'),b,apiToken);
+  }
+
+  /**
+   * GET /admin/products/:id/edit — Trang chỉnh sửa sản phẩm (full form)
+   */
+  static async productEdit(req:FastifyRequest,reply:FastifyReply){
+    const u=await ud(req);const apiToken=(req as any).token||'';
+    const productId=(req.params as any).id;
+    const b=r('admin/supplement-detail.ejs',{apiToken,productId,mode:'edit'});
+    return ren(reply,m(u,'Chỉnh sửa sản phẩm','products','Quản lý Cửa hàng'),b,apiToken);
+  }
+
+  /**
+   * POST /admin/products/cleanup-images — Xóa ảnh broken (URL không tồn tại trên R2) khỏi DB
+   */
+  static async cleanupProductImages(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const result = await ImageService.cleanupInvalidProductImages();
+      
+      return reply.redirect(`/admin/products?toast=Đã+xóa+${result.removed}+URL+ảnh+không+hợp+lệ+(${result.fixedProducts}+sản+phẩm+được+sửa)&type=success`);
+    } catch (error: any) {
+      return reply.redirect('/admin/products?toast=Lỗi+xử+lý+ảnh&type=error');
+    }
   }
 }

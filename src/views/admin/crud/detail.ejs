@@ -6,6 +6,10 @@
     </a>
     <span style="color:var(--text-muted);">/</span>
     <span id="detail-breadcrumb" style="color:var(--text-primary);font-weight:600;font-size:14px;">Đang tải...</span>
+    <a id="edit-product-btn" href="" style="display:none;margin-left:auto;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--accent);border-radius:8px;color:var(--accent);text-decoration:none;font-size:13px;font-weight:600;transition:all 0.2s;" onmouseover="this.style.background='rgba(201,169,110,0.08)'" onmouseout="this.style.background='transparent'">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      Chỉnh sửa
+    </a>
   </div>
 
   <div id="detail-loading" style="text-align:center;padding:80px 20px;color:var(--text-muted);">
@@ -34,7 +38,7 @@
 <script>
 var PRODUCT_ID = '<%= productId %>';
 var TOKEN = '<%= apiToken %>';
-var TENANT = '<%= tenantId || 'default' %>';
+// TENANT removed — single-tenant mode
 var H = { 'Authorization': 'Bearer ' + TOKEN };
 
 function $(id) { return document.getElementById(id); }
@@ -45,6 +49,9 @@ function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[m]||m; });
 }
+
+// Placeholder image SVG
+var PLACEHOLDER_SVG = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiNlZWUiLz48cGF0aCBkPSJNNjAgOTAgTDEwMCAxMzAgTDE0MCA3MCIgc3Ryb2tlPSIjY2NjIiBzdHJvaWVzOm9wYWNpdHk9IjAuNSIgc3Ryb2tlLXdpZHRoPSIyIi8+PHRleHQgeD0iMTAwIiB5PSIxNzUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgdGV4dC1hbmNob3JtYW55PSJtaWRkbGUiIGZpbGw9IiNlZWUiPlN2b24gảnhPC90ZXh0Pjwvc3ZnPg==';
 
 function renderScentMeta(p) {
   var meta = [
@@ -70,7 +77,7 @@ function renderScentMeta(p) {
   return html;
 }
 
-fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
+fetch('/api/products/' + PRODUCT_ID, { headers: H })
   .then(function(r) { return r.json(); })
   .then(function(res) {
     if (!res.success || !res.data) {
@@ -102,7 +109,7 @@ fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
     var images = Array.isArray(p.images) ? p.images : [];
     var allImages = images.length > 0 ? images : (p.image ? [p.image] : []);
     var imgHtml = allImages.length > 0 ? allImages.map(function(url){ 
-      return '<div style="width:100px;height:100px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;" /></div>';
+      return '<div style="width:100px;height:100px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.src=PLACEHOLDER_SVG" /></div>';
     }).join('') : '<span style="color:var(--text-muted);font-size:13px;">Không có ảnh</span>';
 
     var discount = p.discount || 0;
@@ -110,10 +117,10 @@ fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
       ? '<span style="color:#ef4444;font-weight:600;">-' + discount + '%</span>'
       : '<span style="color:var(--text-muted);">Không có</span>';
 
-    var mainImage = p.image ? '<img src="'+p.image+'" alt="" style="width:100%;height:100%;object-fit:cover;" />' : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--surface);">Không có ảnh</div>';
+    var mainImage = p.image ? '<img src="'+p.image+'" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.src=PLACEHOLDER_SVG" />' : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);background:var(--surface);">Không có ảnh</div>';
 
     var sideImages = allImages.length > 1 ? '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">'+allImages.map(function(url){
-      return '<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;background:var(--surface);"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;" /></div>';
+      return '<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;background:var(--surface);"><img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.src=PLACEHOLDER_SVG" /></div>';
     }).join('')+'</div>' : '';
 
     var html = '<div style="display:flex;gap:24px;flex-wrap:wrap;">'+
@@ -177,7 +184,7 @@ fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
         '<div class="dt-card" style="margin-top:0;">'+
           '<h3>Thương hiệu</h3>'+
           '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'+
-            (p.brandId.logo ? '<img src="'+p.brandId.logo+'" alt="" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:var(--surface);" />' : '')+
+            (p.brandId.logo ? '<img src="'+p.brandId.logo+'" alt="" style="width:64px;height:64px;object-fit:contain;border-radius:8px;background:var(--surface);" onerror="this.src=PLACEHOLDER_SVG" />' : '')+
             '<div>'+
               '<p style="font-size:16px;font-weight:600;color:var(--text-primary);margin:0;">'+escapeHtml(p.brandId.name || '')+'</p>'+
               (p.brandId.origin ? '<p style="font-size:13px;color:var(--text-muted);margin:4px 0 0;">Xuất xứ: '+escapeHtml(p.brandId.origin)+'</p>' : '')+
@@ -190,7 +197,7 @@ fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
         '<h3>Thông tin hệ thống</h3>'+
         '<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:8px;font-size:13px;">'+
           '<div><span style="color:var(--text-muted);">ID:</span> <span style="font-family:monospace;font-size:12px;">'+p._id+'</span></div>'+
-          '<div><span style="color:var(--text-muted);">Tenant:</span> <span style="font-family:monospace;font-size:12px;">'+(p.tenantId||'—')+'</span></div>'+
+          // Tenant info removed — single-tenant mode
           '<div><span style="color:var(--text-muted);">Ngày tạo:</span> '+fmtDate(p.createdAt)+'</div>'+
           '<div><span style="color:var(--text-muted);">Cập nhật:</span> '+fmtDate(p.updatedAt)+'</div>'+
         '</div>'+
@@ -200,6 +207,13 @@ fetch('/api/products/' + PRODUCT_ID + '?tenantId=' + TENANT, { headers: H })
     $('detail-loading').style.display = 'none';
     $('detail-content').style.display = 'block';
     $('detail-content').innerHTML = html;
+
+    // Show edit button
+    var editBtn = document.getElementById('edit-product-btn');
+    if (editBtn) {
+      editBtn.style.display = 'inline-flex';
+      editBtn.href = '/admin/products/' + p._id + '/edit';
+    }
   })
   .catch(function() {
     $('detail-loading').style.display = 'none';

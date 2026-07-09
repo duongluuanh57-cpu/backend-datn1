@@ -70,5 +70,5 @@ export class AdminCRUDControllerPart2 {
     const b=r('admin/crud/list.ejs',{apiToken,config});
     return ren(reply,m(u,'Người dùng','users','Hệ thống'),b,apiToken);
   }
-  static async userDelete(req:FastifyRequest,reply:FastifyReply){await UserRepository.delete((req.params as any).id,(req as any).user?.tenantId||'default');return reply.redirect('/admin/users?toast=Đã+xóa+người+dùng&type=success')}
+  static async userDelete(req:FastifyRequest,reply:FastifyReply){await UserRepository.delete((req.params as any).id);return reply.redirect('/admin/users?toast=Đã+xóa+người+dùng&type=success')}
 }

@@ -2,7 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export interface IProductVariant extends Document {
-  tenantId: string;
   productId: mongoose.Types.ObjectId; // Reference to Product
   size: string; // '30ml', '50ml', '100ml', etc.
   price: number;
@@ -16,7 +15,6 @@ export interface IProductVariant extends Document {
 
 const ProductVariantSchema = new Schema<IProductVariant>(
   {
-    tenantId: { type: String, required: true, index: true },
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
     size: { type: String, required: true },
     price: { type: Number, required: true },

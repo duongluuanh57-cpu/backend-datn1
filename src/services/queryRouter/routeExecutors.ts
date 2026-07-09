@@ -10,14 +10,12 @@ import { Brand } from '../../models/Brand.ts';
 import { Tag } from '../../models/Tag.ts';
 import { Product } from '../../models/Product.ts';
 import type { RouteContext } from './queryRouterTypes.ts';
-import { getTenantIds } from '../../utils/tenantHelper.ts';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
 
 /** Build context từ search results */
 async function buildContext(
   message: string,
-  tenantId: string,
   userRole?: string
 ): Promise<RouteContext> {
   let products: any[] = [];
@@ -26,8 +24,8 @@ async function buildContext(
 
   try {
     const [searchResult, contentResult] = await Promise.all([
-      SearchService.hybridSearch(message, tenantId, 4),
-      ContentSearchService.search(message, tenantId, 3).catch(() => []),
+      SearchService.hybridSearch(message, 4),
+      ContentSearchService.search(message, 3).catch(() => []),
     ]);
     products = searchResult.products;
     mode = searchResult.mode;
@@ -38,11 +36,10 @@ async function buildContext(
 
   let storeOverview = '';
   try {
-    const tenantIds = getTenantIds(tenantId);
     const [allBrands, allTags, productCount] = await Promise.all([
-      Brand.find({ tenantId: { $in: tenantIds }, status: 'active' }).select('name').lean(),
-      Tag.find({ tenantId: { $in: tenantIds }, status: 'active' }).select('name').lean(),
-      Product.countDocuments({ tenantId: { $in: tenantIds } }),
+      Brand.find({ status: 'active' }).select('name').lean(),
+      Tag.find({ status: 'active' }).select('name').lean(),
+      Product.countDocuments({}),
     ]);
     storeOverview = `TỔNG QUAN CỬA HÀNG:
 - Thương hiệu: ${allBrands.map((b: any) => b.name).join(', ')}
@@ -121,10 +118,9 @@ function roleDeniedResponse(): string {
  */
 export async function executeVectorSearch(
   message: string,
-  tenantId: string,
   userRole?: string
 ): Promise<Response> {
-  const ctx = await buildContext(message, tenantId, userRole);
+  const ctx = await buildContext(message, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
   const messages = [
@@ -140,10 +136,9 @@ export async function executeVectorSearch(
  */
 export async function executeSqlSearch(
   message: string,
-  tenantId: string,
   userRole?: string
 ): Promise<Response> {
-  const ctx = await buildContext(message, tenantId, userRole);
+  const ctx = await buildContext(message, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
   const messages = [
@@ -160,7 +155,6 @@ export async function executeSqlSearch(
  */
 export async function executeWebSearch(
   message: string,
-  tenantId: string,
   userRole?: string
 ): Promise<Response> {
   const systemPrompt = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp.
@@ -184,10 +178,9 @@ KHÔNG bịa đặt thông tin hay số liệu cụ thể nếu không chắc ch
  */
 export async function executeGraphSearch(
   message: string,
-  tenantId: string,
   userRole?: string
 ): Promise<Response> {
-  const ctx = await buildContext(message, tenantId, userRole);
+  const ctx = await buildContext(message, userRole);
 
   // Thêm context về related products nếu có sản phẩm
   let graphContext = '';
@@ -197,9 +190,7 @@ export async function executeGraphSearch(
       const productIds = ctx.products.map(p => p._id);
       const brands = [...new Set(ctx.products.map(p => p.brandId).filter(Boolean))];
       
-      const tenantIds = getTenantIds(tenantId);
       const relatedProducts = await Product.find({
-        tenantId: { $in: tenantIds },
         _id: { $nin: productIds },
         $or: [
           { brandId: { $in: brands } },
@@ -250,7 +241,6 @@ Hãy hỏi thêm sở thích của khách để gợi ý chính xác hơn!`;
 export async function executeAdminQuery(
   message: string,
   history: any[],
-  tenantId: string,
   userRole?: string
 ): Promise<{ text?: string; stream?: Response }> {
   // Check role
@@ -260,7 +250,7 @@ export async function executeAdminQuery(
 
   // ── Gọi AdminAgent với function calling ──
   const { process: adminProcess } = await import('../agent/adminAgent.ts');
-  const agentResult = await adminProcess(message, history, tenantId);
+  const agentResult = await adminProcess(message, history);
 
   return { text: agentResult.content };
 }

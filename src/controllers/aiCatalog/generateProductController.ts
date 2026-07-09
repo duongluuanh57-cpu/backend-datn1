@@ -71,8 +71,6 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
 
     if (!name) return reply.status(400).send({ error: 'Name is required' });
 
-    const tenantId = (req as any).user?.tenantId || 'default';
-
     // Build pre-filled context
     const preFilled: Record<string, any> = {};
     if (brand?.trim()) preFilled.brand = brand.trim();
@@ -97,14 +95,14 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
 
     // ── DB Lookups ──
     const [allTags, allBrands, allCategories] = await Promise.all([
-      FuzzyMatchCache.getOrFetch(`tags:${tenantId}:active`, () =>
-        Tag.find({ tenantId, status: 'active' }).lean()
+      FuzzyMatchCache.getOrFetch('tags:active', () =>
+        Tag.find({ status: 'active' }).lean()
       ),
-      FuzzyMatchCache.getOrFetch(`brands:${tenantId}:active`, () =>
-        Brand.find({ tenantId, status: 'active' }).lean()
+      FuzzyMatchCache.getOrFetch('brands:active', () =>
+        Brand.find({ status: 'active' }).lean()
       ),
-      FuzzyMatchCache.getOrFetch(`categories:${tenantId}:active`, () =>
-        Category.find({ tenantId, status: 'active' }).lean()
+      FuzzyMatchCache.getOrFetch('categories:active', () =>
+        Category.find({ status: 'active' }).lean()
       ),
     ]);
 

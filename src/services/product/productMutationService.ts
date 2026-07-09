@@ -16,7 +16,7 @@ export class ProductMutationService {
   /**
    * Cập nhật sản phẩm
    */
-  static async updateProduct(id: string, data: any, tenantId: string): Promise<any | null> {
+  static async updateProduct(id: string, data: any): Promise<any | null> {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined) updateData.description = data.description;
@@ -41,10 +41,10 @@ export class ProductMutationService {
       const trimmedBrand = data.brand.trim();
       const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(trimmedBrand);
       if (isValidObjectId) {
-        brandDoc = await Brand.findOne({ _id: trimmedBrand, tenantId });
+        brandDoc = await Brand.findOne({ _id: trimmedBrand });
       }
       if (!brandDoc) {
-        brandDoc = await Brand.findOne({ name: trimmedBrand, tenantId });
+        brandDoc = await Brand.findOne({ name: trimmedBrand });
       }
       if (brandDoc) {
         updateData.brandId = brandDoc._id;
@@ -55,8 +55,8 @@ export class ProductMutationService {
 
     // Tags mapping — ghi vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
     if (data.tag !== undefined) {
-      const tagSlugs = data.tag.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const tagDocs = await Tag.find({ slug: { $in: tagSlugs }, tenantId }).lean();
+      const tagSlugs = (data.tag as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+      const tagDocs = await Tag.find({ slug: { $in: tagSlugs } }).lean();
       const foundSlugs = new Set(tagDocs.map(t => t.slug));
       const skipped = tagSlugs.filter(s => !foundSlugs.has(s));
       if (skipped.length > 0) {
@@ -64,16 +64,16 @@ export class ProductMutationService {
       }
       const tagIds = tagDocs.map(t => t._id);
       // Xóa tags cũ rồi insert lại
-      await ProductTag.deleteMany({ productId: id, tenantId });
+      await ProductTag.deleteMany({ productId: id });
       if (tagIds.length > 0) {
-        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: id, tagId, tenantId })));
+        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: id, tagId })));
       }
     }
 
     if (data.categories !== undefined) {
       const catNames = data.categories.split(',').map((s: string) => s.trim()).filter(Boolean);
       const catIds = (await Promise.all(catNames.map(async (n: string) => {
-        const cat = await Category.findOne({ name: { $regex: `^${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }, tenantId });
+        const cat = await Category.findOne({ name: { $regex: `^${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
         return cat?._id || null;
       }))).filter(Boolean);
       if (catIds.length > 0) updateData.categories = catIds;
@@ -81,39 +81,45 @@ export class ProductMutationService {
     }
 
     const updatedProduct = await Product.findOneAndUpdate(
-      { _id: id, tenantId },
+      { _id: id },
       { $set: updateData },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     if (updatedProduct) {
-      // Sync Images in ProductImage collection
-      const allImages = [];
-      if (data.image) allImages.push(data.image);
+      // --- Image sync: xóa ảnh cũ trên R2, cập nhật DB ---
+      const oldImages = await ProductImage.find({ productId: id }).lean();
+      const oldUrls = oldImages.map(i => i.url).filter(Boolean);
+
+      const newImages: string[] = [];
+      if (data.image) newImages.push(data.image);
       if (data.images && Array.isArray(data.images)) {
-        allImages.push(...data.images.filter((img: string) => img !== data.image));
+        newImages.push(...data.images.filter((img: string) => img !== data.image));
       }
-      if (allImages.length > 0) {
-        await ProductImage.deleteMany({ productId: id, tenantId });
-        await ProductImage.insertMany(allImages.map((img: string) => ({
+
+      // Xóa ảnh đã bị remove khỏi R2
+      const removed = oldUrls.filter(u => !newImages.includes(u));
+      if (removed.length > 0) {
+        await Promise.all(removed.map(u => ImageService.deleteFromR2(u).catch(() => {})));
+      }
+
+      // Đồng bộ DB — luôn xóa cũ rồi insert lại
+      await ProductImage.deleteMany({ productId: id });
+      if (newImages.length > 0) {
+        await ProductImage.insertMany(newImages.map((url: string) => ({
           productId: id,
-          tenantId,
-          url: img
+          url
         })));
       }
 
       // Sync Variants in ProductVariant collection
       if (data.size !== undefined) {
-        // Delete old variants referenced by this product
-        const existingVariantIds = (updatedProduct.variants || []) as mongoose.Types.ObjectId[];
-        if (existingVariantIds.length > 0) {
-          await ProductVariant.deleteMany({ _id: { $in: existingVariantIds }, tenantId });
-        }
+        // Delete all old variants for this product before re-inserting
+        await ProductVariant.deleteMany({ productId: id });
 
         const parsed = parseSizes(data.size);
         if (parsed.length > 0) {
           const variantsToInsert = parsed.map((item, index) => ({
-            tenantId,
             productId: id,
             size: item.size,
             price: item.price,
@@ -124,21 +130,21 @@ export class ProductMutationService {
           const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
           const newVariantIds = insertedVariants.map(v => v._id);
           await Product.findOneAndUpdate(
-            { _id: id, tenantId },
+            { _id: id },
             { $set: { variants: newVariantIds } }
           );
         } else {
           await Product.findOneAndUpdate(
-            { _id: id, tenantId },
+            { _id: id },
             { $set: { variants: [] } }
           );
         }
       }
 
       // Xóa các cache liên quan sau khi cập nhật
-      await clearProductCache(tenantId);
+      await clearProductCache();
       try {
-        await redis.del(`products:${id}:${tenantId}`);
+        await redis.del(`products:${id}`);
       } catch (_) {}
     }
 
@@ -148,46 +154,45 @@ export class ProductMutationService {
   /**
    * Xóa sản phẩm
    */
-  static async deleteProduct(id: string, tenantId: string): Promise<boolean> {
-    const product = await Product.findOne({ _id: id, tenantId });
+  static async deleteProduct(id: string): Promise<boolean> {
+    const product = await Product.findOne({ _id: id });
     if (!product) return false;
 
     // Fetch images before deletion from DB
-    const images = await ProductImage.find({ productId: id, tenantId }).lean();
+    const images = await ProductImage.find({ productId: id }).lean();
     const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
 
-    const result = await Product.deleteOne({ _id: id, tenantId });
+    const result = await Product.deleteOne({ _id: id });
     if (result.deletedCount > 0) {
       // Clean normalized collections
-      await ProductImage.deleteMany({ productId: id, tenantId });
+      await ProductImage.deleteMany({ productId: id });
       if (variantIds.length > 0) {
-        await ProductVariant.deleteMany({ _id: { $in: variantIds }, tenantId });
+        await ProductVariant.deleteMany({ _id: { $in: variantIds } });
       }
       // Xóa tag links
-      await ProductTag.deleteMany({ productId: id, tenantId });
-      // Delete images and virtual folder from R2
+      await ProductTag.deleteMany({ productId: id });
+      // Delete images and virtual folders from R2
       const foldersToDelete = new Set<string>();
-      for (const img of images) {
-        ImageService.deleteFromR2(img.url).catch(err => {
+      const imgPromises = images.map(img => {
+        const folder = ImageService.getFolderFromUrl(img.url);
+        if (folder) foldersToDelete.add(folder);
+        return ImageService.deleteFromR2(img.url).catch(err => {
           console.error('Lỗi khi xóa ảnh khỏi R2 trong deleteProduct:', err);
         });
-        const folder = ImageService.getFolderFromUrl(img.url);
-        if (folder) {
-          foldersToDelete.add(folder);
-        }
-      }
+      });
       if (product.name) {
         foldersToDelete.add(`products/${slugify(product.name)}`);
       }
-      for (const folder of foldersToDelete) {
+      const folderPromises = [...foldersToDelete].map(folder =>
         ImageService.deleteFolderFromR2(folder).catch(err => {
           console.error('Lỗi khi xóa folder trên R2 trong deleteProduct:', err);
-        });
-      }
+        })
+      );
+      await Promise.all([...imgPromises, ...folderPromises]);
 
-      await clearProductCache(tenantId);
+      await clearProductCache();
       try {
-        await redis.del(`products:${id}:${tenantId}`);
+        await redis.del(`products:${id}`);
       } catch (_) {}
     }
     return result.deletedCount > 0;
@@ -196,49 +201,48 @@ export class ProductMutationService {
   /**
    * Xóa hàng loạt sản phẩm
    */
-  static async bulkDeleteProducts(ids: string[], tenantId: string): Promise<boolean> {
+  static async bulkDeleteProducts(ids: string[]): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
 
     // Fetch products and images before deletion from DB
-    const products = await Product.find({ _id: { $in: ids }, tenantId }).lean();
-    const images = await ProductImage.find({ productId: { $in: ids }, tenantId }).lean();
+    const products = await Product.find({ _id: { $in: ids } }).lean();
+    const images = await ProductImage.find({ productId: { $in: ids } }).lean();
     const allVariantIds = products.flatMap(p => (p.variants || []) as mongoose.Types.ObjectId[]);
 
-    const result = await Product.deleteMany({ _id: { $in: ids }, tenantId });
+    const result = await Product.deleteMany({ _id: { $in: ids } });
     if (result.deletedCount > 0) {
       // Clean normalized collections in bulk
-      await ProductImage.deleteMany({ productId: { $in: ids }, tenantId });
+      await ProductImage.deleteMany({ productId: { $in: ids } });
       if (allVariantIds.length > 0) {
-        await ProductVariant.deleteMany({ _id: { $in: allVariantIds }, tenantId });
+        await ProductVariant.deleteMany({ _id: { $in: allVariantIds } });
       }
       // Xóa tag links
-      await ProductTag.deleteMany({ productId: { $in: ids }, tenantId });
+      await ProductTag.deleteMany({ productId: { $in: ids } });
       // Delete images and virtual folders from R2
       const foldersToDelete = new Set<string>();
-      for (const img of images) {
-        ImageService.deleteFromR2(img.url).catch(err => {
+      const imgPromises = images.map(img => {
+        const folder = ImageService.getFolderFromUrl(img.url);
+        if (folder) foldersToDelete.add(folder);
+        return ImageService.deleteFromR2(img.url).catch(err => {
           console.error('Lỗi khi xóa ảnh khỏi R2 trong bulkDeleteProducts:', err);
         });
-        const folder = ImageService.getFolderFromUrl(img.url);
-        if (folder) {
-          foldersToDelete.add(folder);
-        }
-      }
+      });
       for (const p of products) {
         if (p.name) {
           foldersToDelete.add(`products/${slugify(p.name)}`);
         }
       }
-      for (const folder of foldersToDelete) {
+      const folderPromises = [...foldersToDelete].map(folder =>
         ImageService.deleteFolderFromR2(folder).catch(err => {
           console.error('Lỗi khi xóa folder trên R2 trong bulkDeleteProducts:', err);
-        });
-      }
+        })
+      );
+      await Promise.all([...imgPromises, ...folderPromises]);
 
-      await clearProductCache(tenantId);
+      await clearProductCache();
       for (const id of ids) {
         try {
-          await redis.del(`products:${id}:${tenantId}`);
+          await redis.del(`products:${id}`);
         } catch (_) {}
       }
     }
@@ -248,8 +252,8 @@ export class ProductMutationService {
   /**
    * Tạo sản phẩm mới
    */
-  static async createProduct(data: any, tenantId: string): Promise<any> {
-    const productData: any = { tenantId };
+  static async createProduct(data: any): Promise<any> {
+    const productData: any = {};
     if (data.name !== undefined) productData.name = data.name;
     if (data.price !== undefined) productData.price = data.price;
     if (data.description !== undefined) productData.description = data.description;
@@ -279,9 +283,9 @@ export class ProductMutationService {
 
       if (isValidObjectId) {
         // Tìm theo ID trước (ưu tiên)
-        brandDoc = await Brand.findOne({ _id: trimmedBrand, tenantId });
+        brandDoc = await Brand.findOne({ _id: trimmedBrand });
         if (brandDoc) {
-          console.log(`🔍 [Brand] Tìm theo ID "${trimmedBrand}" (tenantId: ${tenantId}) → Tìm thấy: "${brandDoc.name}"`);
+          console.log(`🔍 [Brand] Tìm theo ID "${trimmedBrand}" → Tìm thấy: "${brandDoc.name}"`);
         } else {
           console.log(`⚠️ [Brand] ID "${trimmedBrand}" không tìm thấy, thử tìm theo tên...`);
         }
@@ -289,15 +293,15 @@ export class ProductMutationService {
 
       // Nếu không tìm thấy theo ID hoặc không phải ObjectId, tìm theo tên
       if (!brandDoc) {
-        brandDoc = await Brand.findOne({ name: trimmedBrand, tenantId });
+        brandDoc = await Brand.findOne({ name: trimmedBrand });
         if (!brandDoc) {
           const { lookup } = await FuzzyMatchCache.getOrFetch(
-            `brands:${tenantId}:all`,
-            () => Brand.find({ tenantId }).lean()
+            `brands:all`,
+            () => Brand.find({}).lean()
           );
           brandDoc = FuzzyMatchCache.fuzzyFind(trimmedBrand, lookup, (b: any) => b.name);
         }
-        console.log(`🔍 [Brand] Tìm theo tên "${trimmedBrand}" (raw: "${data.brand}") (tenantId: ${tenantId}) → ${brandDoc ? `Tìm thấy: "${brandDoc.name}"` : 'KHÔNG TÌM THẤY'}`);
+        console.log(`🔍 [Brand] Tìm theo tên "${trimmedBrand}" (raw: "${data.brand}") → ${brandDoc ? `Tìm thấy: "${brandDoc.name}"` : 'KHÔNG TÌM THẤY'}`);
       }
 
       if (brandDoc) {
@@ -318,7 +322,7 @@ export class ProductMutationService {
     if (data.categories) {
       const catNames = data.categories.split(',').map((s: string) => s.trim()).filter(Boolean);
       const catIds = (await Promise.all(catNames.map(async (n: string) => {
-        const cat = await Category.findOne({ name: { $regex: `^${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }, tenantId });
+        const cat = await Category.findOne({ name: { $regex: `^${n.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
         return cat?._id || null;
       }))).filter(Boolean);
       if (catIds.length > 0) productData.categories = catIds;
@@ -331,7 +335,7 @@ export class ProductMutationService {
 
     // Ghi tag links vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
     if (pendingTagSlugs.length > 0) {
-      const tagDocs = await Tag.find({ slug: { $in: pendingTagSlugs }, tenantId }).lean();
+      const tagDocs = await Tag.find({ slug: { $in: pendingTagSlugs } }).lean();
       const foundSlugs = new Set(tagDocs.map(t => t.slug));
       const skipped = pendingTagSlugs.filter(s => !foundSlugs.has(s));
       if (skipped.length > 0) {
@@ -339,7 +343,7 @@ export class ProductMutationService {
       }
       const tagIds = tagDocs.map(t => t._id);
       if (tagIds.length > 0) {
-        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: saved._id, tagId, tenantId })));
+        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: saved._id, tagId })));
       }
     }
 
@@ -348,7 +352,6 @@ export class ProductMutationService {
       const parsed = parseSizes(data.size);
       if (parsed.length > 0) {
         const variantsToInsert = parsed.map((item, index) => ({
-          tenantId,
           productId: saved._id,
           size: item.size,
           price: item.price,
@@ -359,7 +362,7 @@ export class ProductMutationService {
         const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
         const variantIds = insertedVariants.map(v => v._id);
         await Product.findOneAndUpdate(
-          { _id: saved._id, tenantId },
+          { _id: saved._id },
           { $set: { variants: variantIds } }
         );
       }
@@ -374,13 +377,12 @@ export class ProductMutationService {
     if (allImages.length > 0) {
       await ProductImage.insertMany(allImages.map((url: string) => ({
         productId: saved._id,
-        tenantId,
         url
       })));
     }
 
     // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!
-    await clearProductCache(tenantId);
+    await clearProductCache();
 
     return saved;
   }
@@ -389,15 +391,15 @@ export class ProductMutationService {
 /**
  * Helper: xóa toàn bộ cache product list
  */
-async function clearProductCache(tenantId: string): Promise<void> {
+async function clearProductCache(): Promise<void> {
   try {
     const keysToDelete = [
-      `products:new:tag:${tenantId}`,
-      `products:new:tag:v3:${tenantId}`,
-      `products:limited:tag:v2:${tenantId}`,
-      `products:sale:tag:${tenantId}`,
-      `products:trending:tag:${tenantId}`,
-      `products:trending:tag:v3:${tenantId}`,
+      `products:new:tag`,
+      `products:new:tag:v3`,
+      `products:limited:tag:v2`,
+      `products:sale:tag`,
+      `products:trending:tag`,
+      `products:trending:tag:v3`,
     ];
     await Promise.all(keysToDelete.map(k => redis.del(k)));
   } catch (err) {

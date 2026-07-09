@@ -25,4 +25,9 @@ export class ImageService {
   static deleteFromR2 = R2Deleter.deleteFromR2;
   static getFolderFromUrl = R2Deleter.getFolderFromUrl;
   static deleteFolderFromR2 = R2Deleter.deleteFolderFromR2;
+
+  // Validation & Cleanup
+  static validateImageUrl = R2Deleter.validateImageUrl;
+  static getKeyFromUrl = R2Deleter.getKeyFromUrl;
+  static cleanupInvalidProductImages = R2Deleter.cleanupInvalidProductImages;
 }

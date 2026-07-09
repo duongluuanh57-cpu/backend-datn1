@@ -12,10 +12,6 @@ import CartItem from '../models/CartItem.ts';
 import { redis } from '../config/redis.ts';
 import { createPaymentUrl, verifyIpnResponse, verifyReturnParams } from '../services/VNPayService.ts';
 
-function getTenantId(req: FastifyRequest): string {
-  return (req as any).user?.tenantId || 'default';
-}
-
 function getUserId(req: FastifyRequest): string | null {
   return (req as any).user?.userId || null;
 }
@@ -45,7 +41,6 @@ export class VNPayController {
         return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
       }
 
-      const tenantId = getTenantId(req);
       const ipAddr = getClientIp(req);
 
       const { fullName, email, phone, address, note } = req.body as {
@@ -90,7 +85,6 @@ export class VNPayController {
       const pendingPayment = await PendingPayment.create({
         txnRef,
         userId: new mongoose.Types.ObjectId(userId),
-        tenantId,
         cartSnapshot: {
           items: cartItems,
           totalAmount: cart.totalAmount,
@@ -115,13 +109,18 @@ export class VNPayController {
 
       // Build VNPAY URL — encodeURIComponent trong VNPayService xử lý encoding
       const orderInfo = `Thanh toan don hang ${txnRef}`;
+      // Xác định return URL từ Origin header để động theo môi trường
+      const originUrl = req.headers.origin
+        || (typeof req.headers['x-forwarded-host'] === 'string' ? `https://${req.headers['x-forwarded-host']}` : undefined);
+      const frontendOrigin = originUrl || process.env.FRONTEND_URL || undefined;
+      const returnUrl = frontendOrigin ? `${frontendOrigin.replace(/\/+$/, '')}/payment/return` : undefined;
       const paymentUrl = createPaymentUrl({
         txnRef,
         amount: finalAmount,
         orderInfo,
         ipAddr,
         locale: 'vn',
-      });
+      }, returnUrl);
 
       return reply.send({
         success: true,
@@ -205,7 +204,6 @@ export class VNPayController {
 
       // === Tạo Order ===
       const order = await Order.create({
-        tenantId: pendingPayment.tenantId,
         userId: pendingPayment.userId,
         customerName: pendingPayment.customerInfo.fullName,
         customerPhone: pendingPayment.customerInfo.phone,
@@ -224,7 +222,6 @@ export class VNPayController {
 
       // Tạo OrderItems từ cart snapshot
       const orderItems = pendingPayment.cartSnapshot.items.map((item: any) => ({
-        tenantId: pendingPayment.tenantId,
         orderId: order._id,
         productId: item.productId,
         name: item.name,
@@ -257,11 +254,10 @@ export class VNPayController {
       }
 
       // Resolve paymentMethodId for 'vnpay'
-      const vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay', tenantId: pendingPayment.tenantId }).lean();
+      const vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay' }).lean();
 
       // Tạo Payment record
       await Payment.create({
-        tenantId: pendingPayment.tenantId,
         orderId: order._id,
         paymentMethodId: vnpayMethod?._id || undefined,
         method: 'vnpay',

@@ -20,7 +20,6 @@ const VECTOR_INDEX = 'product_vector_index';
 export class VectorSearchService {
   static async searchProducts(
     queryText: string,
-    tenantId: string,
     limit = 10
   ): Promise<VectorSearchResult[]> {
     const embedding = await generateEmbedding(queryText);
@@ -33,7 +32,6 @@ export class VectorSearchService {
           path: 'embedding',
           numCandidates: Math.max(limit * 5, 30),
           limit,
-          filter: { tenantId },
         },
       },
       { $addFields: { vectorScore: { $meta: 'vectorSearchScore' } } },
