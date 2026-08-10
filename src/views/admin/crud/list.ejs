@@ -11,6 +11,38 @@
         <input type="text" id="crud-search" class="filter-search" placeholder="">
       </div>
 
+      <!-- ── Order Filters (hidden by default, shown inline when entityName === 'order') ── -->
+      <div id="crud-order-filters" style="display:none;align-items:center;gap:8px;">
+        <!-- Order status filter -->
+        <div class="filter-select-wrap">
+          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <select id="crud-order-status-filter" class="filter-select">
+            <option value="">Trạng thái</option>
+            <option value="pending">Chờ xác nhận</option>
+            <option value="processing">Đang xử lý</option>
+            <option value="shipped">Đang giao hàng</option>
+            <option value="delivered">Hoàn thành</option>
+          </select>
+        </div>
+
+        <!-- Cancel request toggle -->
+        <button type="button" id="crud-cancel-request-btn" class="filter-btn-toggle filter-toggle-red">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          Đơn hàng đã hủy
+        </button>
+
+        <!-- Sort filter -->
+        <div class="filter-select-wrap">
+          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5h10M11 9h7M11 13h4"/><path d="M3 4v16"/><path d="M3 4l4 4-4 4"/></svg>
+          <select id="crud-order-sort-filter" class="filter-select">
+            <option value="newest">Mới nhất</option>
+            <option value="oldest">Cũ nhất</option>
+            <option value="totalAsc">Giá trị ↑</option>
+            <option value="totalDesc">Giá trị ↓</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Brand dropdown (product only) -->
       <div id="crud-brand-filter" class="filter-multi-select" style="display:none;">
         <button class="filter-multi-btn" onclick="event.stopPropagation();toggleBrandDropdown()">
@@ -98,39 +130,7 @@
       </div>
     </div>
 
-    <!-- ── Order Filters (hidden by default, shown when entityName === 'order') ── -->
-    <div id="crud-order-filters" class="filter-row" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
-      <!-- Order status filter -->
-      <div class="filter-select-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        <select id="crud-order-status-filter" class="filter-select">
-          <option value="">Trạng thái</option>
-          <option value="pending">Chờ xác nhận</option>
-          <option value="processing">Đang xử lý</option>
-          <option value="shipped">Đang giao hàng</option>
-          <option value="delivered">Hoàn thành</option>
-        </select>
-      </div>
 
-      <!-- Cancel request toggle -->
-      <button type="button" id="crud-cancel-request-btn" class="filter-btn-toggle filter-toggle-red">
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        Đơn hàng đã hủy
-      </button>
-
-
-
-      <!-- Sort filter -->
-      <div class="filter-select-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5h10M11 9h7M11 13h4"/><path d="M3 4v16"/><path d="M3 4l4 4-4 4"/></svg>
-        <select id="crud-order-sort-filter" class="filter-select">
-          <option value="newest">Mới nhất</option>
-          <option value="oldest">Cũ nhất</option>
-          <option value="totalAsc">Giá trị ↑</option>
-          <option value="totalDesc">Giá trị ↓</option>
-        </select>
-      </div>
-    </div>
 
     <!-- ── Review Filters (shown when entityName === 'review') ── -->
     <div id="crud-review-filters" class="filter-row" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);gap:12px;">
@@ -1450,6 +1450,14 @@ if (C.entityName === 'product') {
 if (C.entityName === 'order') {
   var orderFilters = document.getElementById('crud-order-filters');
   if (orderFilters) orderFilters.style.display = 'flex';
+
+  // Giảm độ rộng input tìm kiếm mã đơn hàng
+  var searchWrap = document.querySelector('.filter-search-wrap');
+  if (searchWrap) {
+    searchWrap.style.flex = 'none';
+    searchWrap.style.minWidth = '200px';
+    searchWrap.style.width = '200px';
+  }
 
   // Order status filter
   var orderStatusEl = document.getElementById('crud-order-status-filter');
