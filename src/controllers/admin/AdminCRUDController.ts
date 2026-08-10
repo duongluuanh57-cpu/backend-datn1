@@ -95,6 +95,7 @@ export class AdminCRUDController {
         {key:'index',label:'STT',render:'rowIndex'},
         {key:'name',label:'Danh mục'},
         {key:'slug',label:'Slug'},
+        {key:'productCount',label:'Số SP liên kết',fallback:'0'},
         {key:'status',label:'Trạng thái',render:'editableStatus',statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}],statusApiEndpoint:'/api/categories/:id'},
       ],
       deleteEndpoint:'/admin/categories/:id/delete',

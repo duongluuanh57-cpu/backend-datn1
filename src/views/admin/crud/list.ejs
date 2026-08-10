@@ -56,6 +56,19 @@
         </div>
       </div>
 
+      <!-- ── Category Page Filters (hidden by default, shown inline when entityName === 'category') ── -->
+      <div id="crud-category-page-filters" style="display:none;align-items:center;gap:8px;">
+        <!-- Category status filter -->
+        <div class="filter-select-wrap">
+          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <select id="crud-category-page-status-filter" class="filter-select">
+            <option value="">Trạng thái</option>
+            <option value="active">Hoạt động</option>
+            <option value="inactive">Ẩn</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Brand dropdown (product only) -->
       <div id="crud-brand-filter" class="filter-multi-select" style="display:none;">
         <button class="filter-multi-btn" onclick="event.stopPropagation();toggleBrandDropdown()">
@@ -1115,6 +1128,8 @@ document.getElementById('crud-clear-search').addEventListener('click', function(
   if (orderSortEl) orderSortEl.value = 'newest';
   var tagStatusEl = document.getElementById('crud-tag-status-filter');
   if (tagStatusEl) tagStatusEl.value = '';
+  var catStatusEl = document.getElementById('crud-category-page-status-filter');
+  if (catStatusEl) catStatusEl.value = '';
   // Reset brand origin filter
   ORIGIN = '';
   var originEl = document.getElementById('crud-origin-filter');
@@ -1575,6 +1590,37 @@ if (C.entityName === 'tag') {
   var clearBtn = document.getElementById('crud-clear-search');
   if (clearBtn && tagFilters) {
     tagFilters.appendChild(clearBtn);
+  }
+}
+
+// ── Category-page-specific filter initialization ──
+if (C.entityName === 'category') {
+  var catFilters = document.getElementById('crud-category-page-filters');
+  if (catFilters) catFilters.style.display = 'flex';
+
+  // Giảm độ rộng input tìm kiếm category
+  var searchWrap = document.querySelector('.filter-search-wrap');
+  if (searchWrap) {
+    searchWrap.style.flex = 'none';
+    searchWrap.style.minWidth = '200px';
+    searchWrap.style.width = '200px';
+  }
+
+  // Category status filter
+  var catStatusEl = document.getElementById('crud-category-page-status-filter');
+  if (catStatusEl) {
+    catStatusEl.value = STATUS;
+    catStatusEl.addEventListener('change', function() {
+      STATUS = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // Chuyển nút xóa lọc ra sau bộ lọc trạng thái
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn && catFilters) {
+    catFilters.appendChild(clearBtn);
   }
 }
 

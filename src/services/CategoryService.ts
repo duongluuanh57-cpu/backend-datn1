@@ -28,7 +28,14 @@ export class CategoryService {
       .limit(limit)
       .lean();
 
-    return { items, total, page, totalPages: Math.ceil(total / limit) };
+    const itemsWithCounts = await Promise.all(
+      items.map(async (cat: any) => {
+        const productCount = await Product.countDocuments({ categoryId: cat._id });
+        return { ...cat, productCount };
+      })
+    );
+
+    return { items: itemsWithCounts, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   static async getById(id: string): Promise<any | null> {
