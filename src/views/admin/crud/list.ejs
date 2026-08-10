@@ -396,6 +396,11 @@ function cellContent(row, col, idx) {
   if (col.render === 'reviewUser') {
     return v(val && (val.name || val.email));
   }
+  if (col.render === 'orderCode') {
+    if (!val) return '—';
+    var shortId = val.slice(-8).toUpperCase();
+    return '<span style="font-family:monospace;font-weight:600;color:var(--text-primary);">#' + shortId + '</span>';
+  }
   if (col.render === 'cancelReason') {
     var cancelLabels = {
       want_change_voucher: 'Đổi voucher',

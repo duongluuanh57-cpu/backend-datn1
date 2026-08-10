@@ -49,15 +49,20 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
     }
 
     if (query.search) {
+      const searchStr = query.search.replace(/^#/, '').trim();
       const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      filter.$or = [
-        { 'shippingInfo.customerName': { $regex: '^' + esc(query.search), $options: 'i' } },
-        { 'shippingInfo.customerEmail': { $regex: '^' + esc(query.search), $options: 'i' } },
-        { 'shippingInfo.customerPhone': { $regex: '^' + esc(query.search), $options: 'i' } },
-        { customerName: { $regex: '^' + esc(query.search), $options: 'i' } },
-        { customerEmail: { $regex: '^' + esc(query.search), $options: 'i' } },
-        { customerPhone: { $regex: '^' + esc(query.search), $options: 'i' } },
-      ];
+
+      if (mongoose.Types.ObjectId.isValid(searchStr)) {
+        filter._id = new mongoose.Types.ObjectId(searchStr);
+      } else {
+        filter.$expr = {
+          $regexMatch: {
+            input: { $toString: '$_id' },
+            regex: esc(searchStr),
+            options: 'i'
+          }
+        };
+      }
     }
 
     const dateFilter = buildDateFilter(query.startDate, query.endDate);

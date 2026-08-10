@@ -14,7 +14,7 @@ export class AdminCRUDControllerPart2 {
     const config=JSON.stringify({
       entityName:'order',title:'Đơn hàng',apiEndpoint:'/api/orders/admin/orders',itemsPath:'orders',totalPath:'pagination.total',totalPagesPath:'pagination.totalPages',
       columns:[
-        {key:'index',label:'STT',render:'rowIndex'},
+        {key:'_id',label:'Mã đơn hàng',render:'orderCode'},
         {key:'shippingInfo.customerName',label:'Khách hàng'},
         {key:'totalAmount',label:'Tổng tiền',format:'currency'},
         {key:'status',label:'Trạng thái',render:'editableStatus',statusApiEndpoint:'/api/orders/admin/:id/status',statusOptions:[{v:'pending',l:'Chờ xác nhận'},{v:'processing',l:'Đang xử lý'},{v:'shipped',l:'Đang giao hàng'},{v:'delivered',l:'Hoàn thành'},{v:'cancelled',l:'Đã hủy'}]},
@@ -22,7 +22,7 @@ export class AdminCRUDControllerPart2 {
         {key:'createdAt',label:'Ngày',format:'date'},
       ],
       detailEndpoint:'/admin/orders/:id',
-      searchPlaceholder:'Tên, email, SĐT...',
+      searchPlaceholder:'Nhập mã đơn hàng...',
     });
     const b=renderEjs('admin/crud/list.ejs',{apiToken,config});
     return renderAdminPage(reply,u,'Đơn hàng','orders',b,apiToken,'Quản lý Cửa hàng');
