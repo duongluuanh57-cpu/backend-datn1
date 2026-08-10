@@ -354,7 +354,7 @@ function cellContent(row, col, idx) {
   }
   var val = deepGet(row, col.key);
   if ((val === null || val === undefined || val === '') && col.key === 'shippingInfo.customerName') {
-    val = deepGet(row, 'userId.username') || deepGet(row, 'userId.email') || 'Khách hàng';
+    val = row.customerName || deepGet(row, 'userId.username') || deepGet(row, 'userId.email') || 'Khách hàng';
   }
   if (col.format === 'currency') return fmtCurrency(val);
   if (col.format === 'date') return fmtDate(val);

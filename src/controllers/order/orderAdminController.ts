@@ -54,6 +54,9 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
         { 'shippingInfo.customerName': { $regex: '^' + esc(query.search), $options: 'i' } },
         { 'shippingInfo.customerEmail': { $regex: '^' + esc(query.search), $options: 'i' } },
         { 'shippingInfo.customerPhone': { $regex: '^' + esc(query.search), $options: 'i' } },
+        { customerName: { $regex: '^' + esc(query.search), $options: 'i' } },
+        { customerEmail: { $regex: '^' + esc(query.search), $options: 'i' } },
+        { customerPhone: { $regex: '^' + esc(query.search), $options: 'i' } },
       ];
     }
 
