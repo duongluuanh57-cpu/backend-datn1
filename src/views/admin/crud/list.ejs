@@ -92,7 +92,7 @@
       <!-- Total + Clear -->
       <div class="filter-actions">
         <span class="filter-total"><span id="crud-total-label">Tổng cộng</span>: <b id="crud-total">0</b></span>
-        <a id="crud-clear-search" href="#" class="filter-clear">
+        <a id="crud-clear-search" href="#" class="filter-clear" style="display: none;">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           Xoá lọc
         </a>
@@ -297,6 +297,13 @@ function syncUrl() {
       origin: ORIGIN, rating: REVIEW_RATING, applicableTo: APPLICABLE_TO
     }));
   } catch (e) {}
+
+  // ── Show/hide clear filters button dynamically ──
+  var hasFilters = !!(SEARCH || CATEGORY || BRAND || STOCK || STATUS || PRICE_MIN || PRICE_MAX || CANCEL_REQUESTED || ORDER_START_DATE || ORDER_END_DATE || ORIGIN || REVIEW_RATING || APPLICABLE_TO || (SORT && SORT !== 'newest'));
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn) {
+    clearBtn.style.display = hasFilters ? 'inline-flex' : 'none';
+  }
 }
 
 // ── Build header with checkbox column ──
