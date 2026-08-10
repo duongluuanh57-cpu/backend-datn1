@@ -105,10 +105,10 @@
         <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         <select id="crud-order-status-filter" class="filter-select">
           <option value="">Trạng thái</option>
-          <option value="pending">Chờ xử lý</option>
+          <option value="pending">Chờ xác nhận</option>
           <option value="processing">Đang xử lý</option>
-          <option value="shipped">Đang giao</option>
-          <option value="delivered">Đã giao</option>
+          <option value="shipped">Đang giao hàng</option>
+          <option value="delivered">Hoàn thành</option>
           <option value="cancelled">Đã hủy</option>
         </select>
       </div>
@@ -270,7 +270,7 @@ if (!HAS_URL_FILTERS) {
 <%- include('admin/partials/utils') %>
 
 var COLORS = { pending:'#f59e0b', processing:'#3b82f6', shipped:'#8b5cf6', delivered:'#22c55e', cancelled:'#ef4444' };
-var STATUS_LABELS = { pending:'Chờ XL', processing:'Đang XL', shipped:'Đang giao', delivered:'Đã giao', cancelled:'Đã hủy' };
+var STATUS_LABELS = { pending:'Chờ XN', processing:'Đang XL', shipped:'Đang giao hàng', delivered:'Hoàn thành', cancelled:'Đã hủy' };
 
 document.getElementById('crud-search').placeholder = C.searchPlaceholder || 'Tìm kiếm...';
 document.getElementById('crud-search').value = SEARCH;
@@ -426,9 +426,9 @@ function cellContent(row, col, idx) {
       if (val === 'pending') {
         sopts = [{v:'processing', l:'Đang xử lý'}];
       } else if (val === 'processing') {
-        sopts = [{v:'shipped', l:'Đang giao'}];
+        sopts = [{v:'shipped', l:'Đang giao hàng'}];
       } else if (val === 'shipped') {
-        sopts = [{v:'delivered', l:'Đã giao'}];
+        sopts = [{v:'delivered', l:'Hoàn thành'}];
       } else {
         sopts = [];
       }
@@ -599,8 +599,25 @@ function changeEntityStatus(sel, id, status, apiEndpoint, label) {
         if (sel) {
           sel.className = 'filter-status-select status-' + status;
           if (label) sel.textContent = label;
+
+          // Cập nhật options chuyển trạng thái tiếp theo cho Đơn Hàng mà không cần F5
+          var isOrder = apiEndpoint && apiEndpoint.indexOf('/orders/') !== -1;
+          if (isOrder) {
+            var nextOpts = [];
+            if (status === 'pending') {
+              nextOpts = [{v:'processing', l:'Đang xử lý'}];
+            } else if (status === 'processing') {
+              nextOpts = [{v:'shipped', l:'Đang giao hàng'}];
+            } else if (status === 'shipped') {
+              nextOpts = [{v:'delivered', l:'Hoàn thành'}];
+            }
+            sel.setAttribute('data-opts', JSON.stringify(nextOpts));
+          }
         }
-        showToast('Đã cập nhật trạng thái', 'success');
+        showToast('Đã cập nhật trạng thái thành công', 'success');
+        if (typeof crudFetch === 'function') {
+          crudFetch();
+        }
       } else {
         if (sel) {
           sel.className = 'filter-status-select';

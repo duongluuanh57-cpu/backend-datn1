@@ -17,7 +17,7 @@ export class AdminCRUDControllerPart2 {
         {key:'index',label:'STT',render:'rowIndex'},
         {key:'shippingInfo.customerName',label:'Khách hàng'},
         {key:'totalAmount',label:'Tổng tiền',format:'currency'},
-        {key:'status',label:'Trạng thái',render:'editableStatus',statusApiEndpoint:'/api/orders/admin/:id/status',statusOptions:[{v:'pending',l:'Chờ xử lý'},{v:'processing',l:'Đang xử lý'},{v:'shipped',l:'Đang giao'},{v:'delivered',l:'Đã giao'},{v:'cancelled',l:'Đã hủy'}]},
+        {key:'status',label:'Trạng thái',render:'editableStatus',statusApiEndpoint:'/api/orders/admin/:id/status',statusOptions:[{v:'pending',l:'Chờ xác nhận'},{v:'processing',l:'Đang xử lý'},{v:'shipped',l:'Đang giao hàng'},{v:'delivered',l:'Hoàn thành'},{v:'cancelled',l:'Đã hủy'}]},
         {key:'cancelRequested',label:'Y/c hủy',render:'cancelRequest'},
         {key:'createdAt',label:'Ngày',format:'date'},
       ],
