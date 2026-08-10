@@ -1459,6 +1459,13 @@ if (C.entityName === 'order') {
     searchWrap.style.width = '200px';
   }
 
+  // Chuyển nút xóa lọc ra sau bộ lọc sắp xếp
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn && orderFilters) {
+    orderFilters.appendChild(clearBtn);
+    clearBtn.style.marginLeft = '6px';
+  }
+
   // Order status filter
   var orderStatusEl = document.getElementById('crud-order-status-filter');
   if (orderStatusEl) {
