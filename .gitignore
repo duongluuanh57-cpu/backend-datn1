@@ -8,22 +8,5 @@ coverage
 .idea
 .antigravity
 .gemini
-# Lock files (project uses pnpm; commit pnpm-lock for reproducible builds)
-package-lock.json
-package-lock.yaml
+# Lock files
 pnpm-workspace.yaml
-# Tests
-src/__tests__/
-vitest.config.ts
-# Migration scripts (one-off, not needed for deploy)
-scripts/
-# Docs & misc (not needed for deploy)
-Docs-Backend/
-FEATURES.md
-scratch/
-.codegraph/
-test-auth-orders.js
-src/data/index-cache.json
-edge/
-# Dev scripts
-*.ps1
