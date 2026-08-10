@@ -8,13 +8,13 @@ export class TagController {
    */
   static async getAllTags(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const { page, limit, search } = req.query as { page?: string; limit?: string; search?: string };
+      const { page, limit, search, status } = req.query as { page?: string; limit?: string; search?: string; status?: string };
 
       // If page param is provided, use paginated response
       if (page) {
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? '25', 10)));
-        const result = await TagService.getPaginatedTags(pageNum, limitNum, search ?? '');
+        const result = await TagService.getPaginatedTags(pageNum, limitNum, search ?? '', status);
         return reply.status(200).send({ success: true, data: result });
       }
 

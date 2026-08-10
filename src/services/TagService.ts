@@ -19,18 +19,28 @@ export class TagService {
   static async getPaginatedTags(
     page: number = 1,
     limit: number = 25,
-    search?: string
-  ): Promise<{ items: ITag[]; total: number; page: number; totalPages: number }> {
+    search?: string,
+    status?: string
+  ): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
     const query: Record<string, any> = {};
     if (search) {
       query.name = { $regex: '^' + search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+    }
+    if (status) {
+      query.status = status;
     }
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       Tag.find(query).sort({ name: 1 }).skip(skip).limit(limit).lean(),
       Tag.countDocuments(query),
     ]);
-    return { items: items as unknown as ITag[], total, page, totalPages: Math.ceil(total / limit) };
+    const itemsWithCounts = await Promise.all(
+      items.map(async (tag: any) => {
+        const productCount = await ProductTag.countDocuments({ tagId: tag._id });
+        return { ...tag, productCount };
+      })
+    );
+    return { items: itemsWithCounts, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   /**

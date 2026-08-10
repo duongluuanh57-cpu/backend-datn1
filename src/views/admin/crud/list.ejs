@@ -43,6 +43,19 @@
         </div>
       </div>
 
+      <!-- ── Tag Filters (hidden by default, shown inline when entityName === 'tag') ── -->
+      <div id="crud-tag-filters" style="display:none;align-items:center;gap:8px;">
+        <!-- Tag status filter -->
+        <div class="filter-select-wrap">
+          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <select id="crud-tag-status-filter" class="filter-select">
+            <option value="">Trạng thái</option>
+            <option value="active">Hoạt động</option>
+            <option value="inactive">Ẩn</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Brand dropdown (product only) -->
       <div id="crud-brand-filter" class="filter-multi-select" style="display:none;">
         <button class="filter-multi-btn" onclick="event.stopPropagation();toggleBrandDropdown()">
@@ -1100,6 +1113,8 @@ document.getElementById('crud-clear-search').addEventListener('click', function(
   if (orderStatusEl) orderStatusEl.value = '';
   var orderSortEl = document.getElementById('crud-order-sort-filter');
   if (orderSortEl) orderSortEl.value = 'newest';
+  var tagStatusEl = document.getElementById('crud-tag-status-filter');
+  if (tagStatusEl) tagStatusEl.value = '';
   // Reset brand origin filter
   ORIGIN = '';
   var originEl = document.getElementById('crud-origin-filter');
@@ -1529,6 +1544,37 @@ if (C.entityName === 'order') {
       PAGE = 1;
       crudFetch();
     });
+  }
+}
+
+// ── Tag-specific filter initialization ──
+if (C.entityName === 'tag') {
+  var tagFilters = document.getElementById('crud-tag-filters');
+  if (tagFilters) tagFilters.style.display = 'flex';
+
+  // Giảm độ rộng input tìm kiếm tag
+  var searchWrap = document.querySelector('.filter-search-wrap');
+  if (searchWrap) {
+    searchWrap.style.flex = 'none';
+    searchWrap.style.minWidth = '200px';
+    searchWrap.style.width = '200px';
+  }
+
+  // Tag status filter
+  var tagStatusEl = document.getElementById('crud-tag-status-filter');
+  if (tagStatusEl) {
+    tagStatusEl.value = STATUS;
+    tagStatusEl.addEventListener('change', function() {
+      STATUS = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // Chuyển nút xóa lọc ra sau bộ lọc trạng thái
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn && tagFilters) {
+    tagFilters.appendChild(clearBtn);
   }
 }
 

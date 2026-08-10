@@ -84,6 +84,7 @@ export async function adminRoutes(app: FastifyInstance) {
         {key:'index', label:'STT', render:'rowIndex'},
         {key:'name', label:'Tag'},
         {key:'slug', label:'Slug'},
+        {key:'productCount', label:'Số SP liên kết', fallback:'0'},
         {key:'status', label:'Trạng thái', render:'editableStatus', statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}], statusApiEndpoint:'/api/tags/:id'},
       ],
       deleteEndpoint:'/admin/tags/:id/delete',
