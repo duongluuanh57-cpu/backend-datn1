@@ -109,14 +109,13 @@
           <option value="processing">Đang xử lý</option>
           <option value="shipped">Đang giao hàng</option>
           <option value="delivered">Hoàn thành</option>
-          <option value="cancelled">Đã hủy</option>
         </select>
       </div>
 
       <!-- Cancel request toggle -->
       <button type="button" id="crud-cancel-request-btn" class="filter-btn-toggle filter-toggle-red">
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-        Yêu cầu hủy
+        Đơn hàng đã hủy
       </button>
 
       <!-- Date range -->
@@ -1456,24 +1455,26 @@ if (C.entityName === 'order') {
   // Order status filter
   var orderStatusEl = document.getElementById('crud-order-status-filter');
   if (orderStatusEl) {
-    orderStatusEl.value = STATUS;
+    orderStatusEl.value = STATUS === 'cancelled' ? '' : STATUS;
     orderStatusEl.addEventListener('change', function() {
       STATUS = this.value;
+      var crBtn = document.getElementById('crud-cancel-request-btn');
+      if (crBtn) crBtn.classList.remove('active');
       PAGE = 1;
       crudFetch();
     });
   }
 
-  // Cancel request toggle button
+  // Cancel request toggle button (now Cancelled orders toggle)
   var crBtn = document.getElementById('crud-cancel-request-btn');
   if (crBtn) {
-    if (CANCEL_REQUESTED === 'true') crBtn.classList.add('active');
+    if (STATUS === 'cancelled') crBtn.classList.add('active');
     crBtn.addEventListener('click', function() {
-      if (CANCEL_REQUESTED === 'true') {
-        CANCEL_REQUESTED = '';
+      if (STATUS === 'cancelled') {
+        STATUS = '';
         crBtn.classList.remove('active');
       } else {
-        CANCEL_REQUESTED = 'true';
+        STATUS = 'cancelled';
         crBtn.classList.add('active');
 
         // Tự động xóa/đóng tất cả các bộ lọc khác
@@ -1481,7 +1482,6 @@ if (C.entityName === 'order') {
         var searchInput = document.getElementById('crud-search');
         if (searchInput) searchInput.value = '';
 
-        STATUS = '';
         var statusSelect = document.getElementById('crud-order-status-filter');
         if (statusSelect) statusSelect.value = '';
 
