@@ -125,14 +125,14 @@ export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
     if (order.status !== 'pending') {
       return reply.status(400).send({
         success: false,
-        message: 'Chỉ có thể yêu cầu hủy đơn hàng ở trạng thái chờ thanh toán',
+        message: 'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận',
       });
     }
 
     if (order.cancelRequested) {
       return reply.status(400).send({
         success: false,
-        message: 'Đã gửi yêu cầu hủy cho đơn hàng này trước đó',
+        message: 'Đơn hàng đang chờ xử lý hủy',
       });
     }
 
@@ -143,10 +143,11 @@ export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
       order.cancelReason = cancelReason as any;
     }
 
-    order.cancelRequested = true;
+    order.status = 'cancelled';
+    order.cancelRequested = false;
     await order.save();
 
-    return reply.status(200).send({ success: true, message: 'Đã gửi yêu cầu hủy đơn. Vui lòng chờ admin xác nhận.' });
+    return reply.status(200).send({ success: true, message: 'Hủy đơn hàng thành công' });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message });
   }
