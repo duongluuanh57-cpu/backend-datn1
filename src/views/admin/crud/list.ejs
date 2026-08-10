@@ -397,9 +397,17 @@ function cellContent(row, col, idx) {
   if (col.render === 'reviewUser') {
     return v(val && (val.name || val.email));
   }
-  if (col.render === 'cancelRequest') {
+  if (col.render === 'cancelReason') {
+    var cancelLabels = {
+      want_change_voucher: 'Đổi voucher',
+      want_change_product: 'Đổi sản phẩm',
+      complicated_payment: 'TT phức tạp',
+      found_cheaper: 'Tìm nơi rẻ hơn',
+      changed_mind: 'Đổi ý'
+    };
     if (val) {
-      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Có</span>';
+      var label = cancelLabels[val] || val;
+      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;">' + escapeHtml(label) + '</span>';
     }
     return '<span style="color:var(--text-muted);font-size:12px;">—</span>';
   }
