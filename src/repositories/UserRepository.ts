@@ -47,8 +47,13 @@ export class UserRepository {
     }
 
     if (role && role !== 'ALL') {
-      query.role = role;
+      if (role.includes(',')) {
+        query.role = { $in: role.split(',') };
+      } else {
+        query.role = role;
+      }
     }
+
 
     const total = await User.countDocuments(query);
     const users = await User.find(query)

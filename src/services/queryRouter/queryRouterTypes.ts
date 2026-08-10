@@ -38,6 +38,7 @@ export interface RouteResult {
   content?: string;
   streamResponse?: Response;
   error?: string;
+  products?: any[];
 }
 
 /** Kết quả phân loại route */

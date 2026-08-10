@@ -6,33 +6,35 @@
 import { generateEmbeddingVector } from './aiInteractionService.ts';
 import crypto from 'crypto';
 import { redis } from '../../config/redis.ts';
+import { preprocessForEmbedding } from '../../utils/textNormalizer.ts';
 
 /**
  * Generate embedding vector for text, with deterministic fallback
+ * Preprocesses text (expand abbreviations, remove stopwords, normalize) before embedding
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  // Cache embedding trong Redis 1 ngay (cung cau hoi → cung vector)
-  const cacheKey = `embedding:${crypto.createHash('md5').update(text.toLowerCase().trim()).digest('hex')}`;
+  const processed = preprocessForEmbedding(text);
+
+  const cacheKey = `embedding:${crypto.createHash('md5').update(processed).digest('hex')}`;
   try {
     const cached = await redis.get(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        console.log(`[Embedding] Cache hit for: "${text.substring(0, 40)}..."`);
+        console.log(`[Embedding] Cache hit for: "${processed.substring(0, 40)}..."`);
         return parsed;
       }
     }
   } catch {} /* ignore */
 
   try {
-    const vector = await generateEmbeddingVector(text);
+    const vector = await generateEmbeddingVector(processed);
     // Cache 24h
     try { await redis.set(cacheKey, JSON.stringify(vector), 'EX', 86400); } catch {}
     return vector;
   } catch (error) {
     console.warn('⚠️ [Embedding] Using deterministic fallback:', error);
-    // Deterministic fallback: generate pseudo-random 768-dim vector from hash
-    const hash = crypto.createHash('sha256').update(text).digest();
+    const hash = crypto.createHash('sha256').update(processed).digest();
     const dims = 768;
     const vec = new Array(dims);
     let sum = 0;

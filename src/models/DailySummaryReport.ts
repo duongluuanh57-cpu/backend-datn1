@@ -5,6 +5,7 @@ export interface IDailySummaryReport extends Document {
   totalRevenue: number;
   totalOrders: number;
   completedOrders: number;
+  cancelledOrders: number;
   cancelledRevenue: number;
   updatedAt: Date;
 }
@@ -15,6 +16,7 @@ const DailySummaryReportSchema = new Schema<IDailySummaryReport>(
     totalRevenue: { type: Number, default: 0 },
     totalOrders: { type: Number, default: 0 },
     completedOrders: { type: Number, default: 0 },
+    cancelledOrders: { type: Number, default: 0 },
     cancelledRevenue: { type: Number, default: 0 },
   },
   {

@@ -23,6 +23,9 @@ export async function cartRoutes(app: FastifyInstance) {
   // DELETE /api/cart — Xóa toàn bộ giỏ
   app.delete('/', CartController.clearCart);
 
+  // GET /api/cart/vouchers — Danh sách voucher khả dụng
+  app.get('/vouchers', CartController.listAvailableVouchers);
+
   // POST /api/cart/apply-voucher — Áp dụng mã giảm giá
   app.post('/apply-voucher', CartController.applyVoucher);
 

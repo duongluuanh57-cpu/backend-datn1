@@ -6,6 +6,8 @@ export async function tagRoutes(app: FastifyInstance) {
   // Public routes
   app.get('/', TagController.getAllTags);
   app.get('/:id', TagController.getTagById);
+  app.get('/:id/detail', TagController.getTagDetail);
+  app.get('/:id/products', TagController.getTagProducts);
 
   // Private routes (Admin only)
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, TagController.createTag);

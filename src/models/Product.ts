@@ -1,10 +1,10 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 import { Brand } from './Brand.ts';
 import { Category } from './Category.ts';
 
 export interface IProduct extends Document {
   name: string;
+  slug?: string;
   brandId: mongoose.Types.ObjectId;
   variants?: mongoose.Types.ObjectId[];
 
@@ -12,26 +12,31 @@ export interface IProduct extends Document {
   image?: string;
   categories?: mongoose.Types.ObjectId[];
   reviewsCount?: number;
+  avgRating?: number;
   discountPercentage?: number;
-  discountStartDate?: Date | null;
-  discountEndDate?: Date | null;
   soldCount?: number;
   viewCount?: number;
-  longevity?: string;
-  sillage?: string;
-  durability?: string;
-  scentTrail?: string;
-  style?: string;
-  suitableFor?: string;
-  occasion?: string;
-  season?: string;
-  time?: string;
+  specifications?: {
+    longevity?: string;
+    sillage?: string;
+    scentTrail?: string;
+    style?: string;
+    suitableFor?: string;
+    occasion?: string;
+    season?: string;
+    time?: string;
+  };
 
-  // ── AI embedding (migrated from ProductSEO) ──
-  embedding?: number[];
+  isFeatured?: boolean;
+  isNewArrival?: boolean;
+  isBestSeller?: boolean;
 
-  // ── Supplement workflow ──
-  isSupplemented: boolean;
+  // ── AI Metadata (Vector Embedding + Supplement Workflow) ──
+  aiData?: {
+    embedding?: number[];
+    isSupplemented?: boolean;
+  };
+
   status: string; // 'draft' | 'active' | 'archived'
 
   createdAt: Date;
@@ -40,34 +45,46 @@ export interface IProduct extends Document {
 
 const ProductSchema = new Schema<IProduct>(
   {
-    name: { type: String, required: true, index: true },
+    name: { type: String, required: true, trim: true, index: true },
+    slug: { type: String, unique: true, sparse: true, trim: true, lowercase: true, index: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
-    variants: [{ type: Schema.Types.ObjectId, ref: 'ProductVariant' }],
+    variants: { type: [{ type: Schema.Types.ObjectId, ref: 'ProductVariant' }], default: [] },
 
-    description: { type: String },
-    image: { type: String },
-    categories: [{ type: Schema.Types.ObjectId, ref: 'Category' }],
-    reviewsCount: { type: Number, default: 0 },
-    discountPercentage: { type: Number, default: 0 },
-    discountStartDate: { type: Date, default: null },
-    discountEndDate: { type: Date, default: null },
-    soldCount: { type: Number, default: 0 },
-    viewCount: { type: Number, default: 0 },
-    longevity: { type: String, default: '' },
-    sillage: { type: String, default: '' },
-    durability: { type: String, default: '' },
-    scentTrail: { type: String, default: '' },
-    style: { type: String, default: '' },
-    suitableFor: { type: String, default: '' },
-    occasion: { type: String, default: '' },
-    season: { type: String, default: '' },
-    time: { type: String, default: '' },
+    description: { type: String, default: '', trim: true },
+    image: { type: String, default: '', trim: true },
+    categories: { type: [{ type: Schema.Types.ObjectId, ref: 'Category' }], default: [] },
+    reviewsCount: { type: Number, default: 0, min: 0 },
+    avgRating: { type: Number, default: 0, min: 0, max: 5 },
+    discountPercentage: { type: Number, default: 0, min: 0, max: 100 },
+    soldCount: { type: Number, default: 0, min: 0 },
+    viewCount: { type: Number, default: 0, min: 0 },
+    isFeatured: { type: Boolean, default: false, index: true },
+    isNewArrival: { type: Boolean, default: false, index: true },
+    isBestSeller: { type: Boolean, default: false, index: true },
 
-    // ── AI embedding (migrated from ProductSEO) ──
-    embedding: { type: [Number], default: undefined },
+    specifications: {
+      type: {
+        longevity: { type: String, default: '', trim: true },
+        sillage: { type: String, default: '', trim: true },
+        scentTrail: { type: String, default: '', trim: true },
+        style: { type: String, default: '', trim: true },
+        suitableFor: { type: String, default: '', trim: true },
+        occasion: { type: String, default: '', trim: true },
+        season: { type: String, default: '', trim: true },
+        time: { type: String, default: '', trim: true },
+      },
+      default: {},
+    },
 
-    // ── Supplement workflow ──
-    isSupplemented: { type: Boolean, default: false, index: true },
+    // ── AI Metadata Sub-document ──
+    aiData: {
+      type: {
+        embedding: { type: [Number], default: undefined },
+        isSupplemented: { type: Boolean, default: false },
+      },
+      default: {},
+    },
+
     status: { type: String, default: 'draft', enum: ['draft', 'active', 'archived'], index: true },
   },
   {
@@ -83,6 +100,8 @@ const ProductSchema = new Schema<IProduct>(
 ProductSchema.post('save', async function() {
   try {
     console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
+    void Brand;
+    void Category;
 
     const populated = await this.populate([
       { path: 'brandId', select: 'name' },
@@ -101,7 +120,7 @@ ProductSchema.post('save', async function() {
 
     await Product.updateOne(
       { _id: this._id },
-      { $set: { embedding: vector } }
+      { $set: { 'aiData.embedding': vector } }
     );
   } catch (err) {
     console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
@@ -109,7 +128,9 @@ ProductSchema.post('save', async function() {
 });
 
 ProductSchema.index({ name: 'text', description: 'text' });
-
-ProductSchema.plugin(multiTenancyPlugin);
+ProductSchema.index({ status: 1, createdAt: -1 });
+ProductSchema.index({ status: 1, soldCount: -1 });
+ProductSchema.index({ categories: 1 });
+ProductSchema.index({ brandId: 1, status: 1 });
 
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);

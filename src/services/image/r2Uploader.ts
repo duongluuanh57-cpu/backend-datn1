@@ -12,10 +12,10 @@ export interface ImgBBUploadResult {
 }
 
 /** Cấu trúc thư mục hợp lệ trên R2 */
-const ALLOWED_FOLDERS = ['products', 'brands', 'media', 'banners'] as const;
+const ALLOWED_FOLDERS = ['products', 'brands', 'media', 'banners', 'avatars'] as const;
 
 /**
- * Chuẩn hóa tên thư mục R2. Chỉ cho phép: products, brands, media, banners + subfolder.
+ * Chuẩn hóa tên thư mục R2. Chỉ cho phép: products, brands, media, banners, avatars + subfolder.
  * Fallback về 'media' nếu folder không hợp lệ.
  */
 export function normalizeFolder(folder?: string): string {

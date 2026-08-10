@@ -69,17 +69,17 @@ export class AuthSessionController {
   static async setAdminSession(request: FastifyRequest, reply: FastifyReply) {
     const { token } = request.query as { token: string };
     if (!token) {
-      return reply.redirect('/api/auth/login');
+      return reply.redirect('/login');
     }
     try {
       const decoded = verifyAccessToken(token);
       if (decoded.role !== 'ADMIN' && decoded.role !== 'SUBADMIN') {
-        return reply.redirect('/api/auth/login');
+        return reply.redirect('/login');
       }
       reply.header('Set-Cookie', `admin_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax; HttpOnly`);
       return reply.redirect('/admin');
     } catch {
-      return reply.redirect('/api/auth/login');
+      return reply.redirect('/login');
     }
   }
 

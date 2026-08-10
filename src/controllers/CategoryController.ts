@@ -37,7 +37,7 @@ export class CategoryController {
 
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const body = req.body as { name: string; status?: string; sortOrder?: number };
+      const body = req.body as { name: string; status?: string };
       if (!body.name?.trim()) {
         return reply.status(400).send({ success: false, message: 'Tên category không được để trống' });
       }
@@ -51,7 +51,7 @@ export class CategoryController {
   static async update(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const body = req.body as { name?: string; status?: string; sortOrder?: number };
+      const body = req.body as { name?: string; status?: string };
       const category = await CategoryService.update(id, body);
       if (!category) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, data: category });

@@ -7,6 +7,7 @@
  * 3. Kết hợp với kết quả từ SearchService.hybridSearch() để tăng độ chính xác
  */
 import { SearchService } from '../SearchService.ts';
+import { normalize } from '../../utils/textNormalizer.ts';
 import type { RouteType, RouteClassification, RouteInput } from './queryRouterTypes.ts';
 
 // ── PATTERNS ──────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ function isConfusion(text: string): boolean {
 
 /** Check gibberish fast path */
 function isGibberish(text: string): boolean {
-  const cleanQuery = text.toLowerCase().trim();
+  const cleanQuery = normalize(text);
   const vowelRatio = (cleanQuery.match(/[aeiouáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]/gi) || []).length / cleanQuery.length;
   const maxRepeat = Math.max(...(cleanQuery.match(/(.)\1+/g) || []).map(s => s.length));
   return vowelRatio < 0.15 || maxRepeat >= 5 || /^[^aeiouy]{5,}$/i.test(cleanQuery.split(/\s+/).filter(Boolean).join(''));
@@ -146,7 +147,7 @@ ${_isAdmin ? 'User là ADMIN. ƯU TIÊN admin_query cho mọi yêu cầu liên q
  */
 export async function classifyRoute(input: RouteInput): Promise<RouteClassification> {
   const { message, userRole } = input;
-  const cleanText = message.toLowerCase().trim();
+  const cleanText = normalize(message);
 
   // ── Fast path 1: Greeting ──
   if (isGreeting(cleanText)) {

@@ -1,0 +1,13 @@
+<%#
+  Shared loading spinner + error placeholder.
+  Variables:
+    loadingId   — id for loading div
+    errorId     — id for error div
+    loadingText — text shown while loading (default: 'Đang tải...')
+%>
+<div id="<%= loadingId %>" style="text-align:center;padding:80px 20px;color:var(--text-muted);">
+  <svg style="animation:spin 1s linear infinite;width:32px;height:32px;margin:0 auto 16px;display:block;color:var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+  <%= typeof loadingText !== 'undefined' ? loadingText : 'Đang tải...' %>
+</div>
+<div id="<%= errorId %>" style="display:none;text-align:center;padding:80px 20px;color:var(--danger);"></div>
+<style>@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>

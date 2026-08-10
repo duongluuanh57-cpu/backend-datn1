@@ -335,11 +335,11 @@ export async function ensureBrand(
       };
     }
 
-    const { origin, description } = mockReplyData.data;
+    const { origin } = mockReplyData.data;
 
     // 3. Lưu brand qua BrandService
     const newBrand = await BrandService.createBrand(
-      { name, origin: origin || '', description: description || '', logo: '', status: 'active', featured: false },
+      { name, origin: origin || '', logo: '', status: 'active', featured: false },
     );
 
     console.log(`✅ [ensureBrand] Created brand "${newBrand.name}" (ID: ${newBrand._id})`);

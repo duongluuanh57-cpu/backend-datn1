@@ -1,0 +1,277 @@
+<div id="flash-sale-edit-app">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+    <a href="/admin/flash-sales" onclick="if(window.history.length>1){window.history.back();return false;}" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Quay lại danh sách
+    </a>
+    <span style="color:var(--text-muted);">/</span>
+    <span id="fse-title" style="color:var(--text-primary);font-weight:600;font-size:14px;"><%= IS_NEW ? 'Tạo đợt Flash Sale mới' : 'Chỉnh sửa đợt Flash Sale' %></span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span id="fse-status-msg" style="font-size:12px;"></span>
+      <button type="button" onclick="saveFlashSale()" style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600;box-shadow:0 2px 8px rgba(201,169,110,0.25);">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Lưu đợt Flash Sale
+      </button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+    <!-- Thống tin cơ bản -->
+    <div class="stat-card" style="flex-direction:column;align-items:stretch;padding:20px;">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:16px;">Thông tin sự kiện</h3>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-muted);">TÊN SỰ KIỆN FLASH SALE *</label>
+          <input type="text" id="fse-name" placeholder="VD: Flash Sale Khung Giờ Vàng 20h-22h" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Thời gian & Trạng thái -->
+    <div class="stat-card" style="flex-direction:column;align-items:stretch;padding:20px;">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:16px;">Thời gian diễn ra</h3>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-muted);">BẮT ĐẦU TỪ *</label>
+          <input type="datetime-local" id="fse-startDate" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text-muted);">KẾT THÚC VÀO *</label>
+          <input type="datetime-local" id="fse-endDate" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font-size:13px;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chọn sản phẩm tham gia Flash Sale -->
+  <div class="stat-card" style="flex-direction:column;align-items:stretch;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      <h3 style="font-size:16px;font-weight:600;margin:0;">Sản phẩm tham gia Flash Sale (<span id="fse-items-count">0</span>)</h3>
+      <div style="position:relative;width:320px;">
+        <input type="text" id="fse-prod-search" placeholder="Gõ tên SP để chọn..." style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:13px;">
+        <div id="fse-prod-results" style="display:none;position:absolute;top:100%;left:0;right:0;max-height:220px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.15);z-index:100;"></div>
+      </div>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Sản phẩm</th>
+          <th>Giá gốc</th>
+          <th>Giảm thường</th>
+          <th>% Giảm Flash Sale (cộng thêm)</th>
+          <th>Giá Flash Sale</th>
+          <th>Số lượng Sale (Stock Limit)</th>
+          <th style="text-align:right;">Xóa</th>
+        </tr>
+      </thead>
+      <tbody id="fse-items-tbody">
+        <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted);">Chưa có sản phẩm nào được chọn</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var IS_NEW = <%= IS_NEW ? 'true' : 'false' %>;
+var FLASH_SALE_ID = '<%= flashSaleId %>';
+var TOKEN = '<%= apiToken %>';
+var H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
+
+var SELECTED_ITEMS = []; // List of { productId, name, price, baseDiscount, extraDiscountPercentage, stockLimit, soldCount }
+
+function toDTInput(dateStr) {
+  if (!dateStr) return '';
+  var d = new Date(dateStr);
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function fmtMoney(n) { return (n || 0).toLocaleString('vi-VN') + 'đ'; }
+
+function renderItems() {
+  document.getElementById('fse-items-count').textContent = SELECTED_ITEMS.length;
+  var tbody = document.getElementById('fse-items-tbody');
+  if (SELECTED_ITEMS.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted);">Chưa chọn sản phẩm nào cho đợt Flash Sale</td></tr>';
+    return;
+  }
+  var html = '';
+  SELECTED_ITEMS.forEach(function(item, idx) {
+    var baseDisc = item.baseDiscount || 0;
+    var extraDisc = item.extraDiscountPercentage || 0;
+    var totalDisc = Math.min(100, baseDisc + extraDisc);
+    var originalPrice = item.price || 0;
+    var flashPrice = Math.round(originalPrice * (1 - totalDisc / 100));
+
+    html += '<tr>' +
+      '<td style="max-width:220px;"><strong style="color:var(--text-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;line-height:1.3;" title="' + escapeHtml(item.name) + '">' + escapeHtml(item.name) + '</strong></td>' +
+      '<td>' + fmtMoney(originalPrice) + '</td>' +
+      '<td>' + baseDisc + '%</td>' +
+      '<td>' +
+        '<div style="display:flex;align-items:center;gap:4px;">' +
+          '<input type="number" min="0" max="100" value="' + extraDisc + '" onchange="updateExtraDisc(' + idx + ', this.value)" style="width:70px;padding:6px;border-radius:6px;border:1px solid var(--border);text-align:center;font-weight:600;color:var(--accent);">' +
+          '<span>%</span>' +
+        '</div>' +
+      '</td>' +
+      '<td><strong style="color:#22c55e;">' + fmtMoney(flashPrice) + '</strong> <span style="font-size:11px;color:var(--text-muted);">(-' + totalDisc + '%)</span></td>' +
+      '<td>' +
+        '<input type="number" min="0" value="' + (item.stockLimit || 0) + '" onchange="updateStockLimit(' + idx + ', this.value)" style="width:90px;padding:6px;border-radius:6px;border:1px solid var(--border);text-align:center;">' +
+      '</td>' +
+      '<td style="text-align:right;">' +
+        '<button onclick="removeItem(' + idx + ')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-weight:600;">✕ Xóa</button>' +
+      '</td>' +
+    '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function updateExtraDisc(idx, val) {
+  var v = Math.min(100, Math.max(0, parseFloat(val) || 0));
+  SELECTED_ITEMS[idx].extraDiscountPercentage = v;
+  renderItems();
+}
+
+function updateStockLimit(idx, val) {
+  var v = Math.max(0, parseInt(val, 10) || 0);
+  SELECTED_ITEMS[idx].stockLimit = v;
+}
+
+function removeItem(idx) {
+  SELECTED_ITEMS.splice(idx, 1);
+  renderItems();
+}
+
+// Search product dropdown
+var searchTimer = null;
+document.getElementById('fse-prod-search').addEventListener('input', function() {
+  var q = this.value.trim();
+  clearTimeout(searchTimer);
+  if (!q) { document.getElementById('fse-prod-results').style.display = 'none'; return; }
+  searchTimer = setTimeout(function() {
+    fetch('/api/products?search=' + encodeURIComponent(q) + '&limit=8', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        var prods = (res.data && res.data.products) ? res.data.products : (res.data || []);
+        var resDiv = document.getElementById('fse-prod-results');
+        if (!prods || prods.length === 0) {
+          resDiv.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--text-muted);">Không thấy sản phẩm</div>';
+          resDiv.style.display = 'block';
+          return;
+        }
+        var h = '';
+        prods.forEach(function(p) {
+          var baseDisc = p.discount || p.discountPercentage || 0;
+          var rawOrig = p.originalPrice || (baseDisc > 0 ? Math.round((p.price || 0) / (1 - baseDisc / 100)) : (p.price || 0));
+          h += '<div data-pid="' + escapeHtml(p._id) + '" data-pname="' + escapeHtml(p.name) + '" data-price="' + rawOrig + '" data-disc="' + baseDisc + '" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;display:flex;justify-content:space-between;align-items:center;" onmouseover="this.style.background=\'rgba(201,169,110,0.1)\'" onmouseout="this.style.background=\'transparent\'">' +
+            '<span>' + escapeHtml(p.name) + '</span>' +
+            '<span style="font-weight:600;color:var(--accent);">' + fmtMoney(rawOrig) + '</span>' +
+          '</div>';
+        });
+        resDiv.innerHTML = h;
+        Array.prototype.forEach.call(resDiv.querySelectorAll('[data-pid]'), function(el) {
+          el.addEventListener('click', function() {
+            addProductToFS(el.getAttribute('data-pid'), el.getAttribute('data-pname'), parseFloat(el.getAttribute('data-price')), parseFloat(el.getAttribute('data-disc')));
+          });
+        });
+        resDiv.style.display = 'block';
+      });
+  }, 300);
+});
+
+function addProductToFS(id, name, price, discount) {
+  document.getElementById('fse-prod-results').style.display = 'none';
+  document.getElementById('fse-prod-search').value = '';
+  if (SELECTED_ITEMS.length >= 20) {
+    showToast('Mỗi đợt Flash Sale chỉ được chọn tối đa 20 sản phẩm', 'error');
+    return;
+  }
+  if (SELECTED_ITEMS.some(function(it) { return it.productId === id; })) {
+    showToast('Sản phẩm đã được chọn', 'info');
+    return;
+  }
+  SELECTED_ITEMS.push({
+    productId: id,
+    name: name,
+    price: price,
+    baseDiscount: discount || 0,
+    extraDiscountPercentage: 10, // mặc định giảm thêm 10%
+    stockLimit: 20,
+    soldCount: 0
+  });
+  renderItems();
+}
+
+function saveFlashSale() {
+  var name = document.getElementById('fse-name').value.trim();
+  var startDate = document.getElementById('fse-startDate').value;
+  var endDate = document.getElementById('fse-endDate').value;
+
+  if (!name) { showToast('Vui lòng nhập tên sự kiện Flash Sale', 'error'); return; }
+  if (!startDate || !endDate) { showToast('Vui lòng chọn thời gian bắt đầu và kết thúc', 'error'); return; }
+  if (new Date(startDate) >= new Date(endDate)) { showToast('Thời gian kết thúc phải sau thời gian bắt đầu', 'error'); return; }
+
+  var items = SELECTED_ITEMS.map(function(it) {
+    return {
+      productId: it.productId,
+      extraDiscountPercentage: it.extraDiscountPercentage,
+      stockLimit: it.stockLimit,
+      soldCount: it.soldCount || 0
+    };
+  });
+
+  var body = {
+    name: name,
+    startDate: new Date(startDate).toISOString(),
+    endDate: new Date(endDate).toISOString(),
+    items: items
+  };
+
+  var url = IS_NEW ? '/api/flash-sales/admin' : '/api/flash-sales/admin/' + FLASH_SALE_ID;
+  var method = IS_NEW ? 'POST' : 'PATCH';
+
+  document.getElementById('fse-status-msg').textContent = 'Đang lưu...';
+  fetch(url, { method: method, headers: H, body: JSON.stringify(body) })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success) {
+        showToast('Lưu đợt Flash Sale thành công!', 'success');
+        setTimeout(function() { location.href = '/admin/flash-sales'; }, 500);
+      } else {
+        document.getElementById('fse-status-msg').textContent = '❌ ' + (res.message || 'Lỗi');
+        showToast(res.message || 'Lỗi lưu Flash Sale', 'error');
+      }
+    });
+}
+
+// Load data when editing
+if (!IS_NEW && FLASH_SALE_ID) {
+  fetch('/api/flash-sales/admin/' + FLASH_SALE_ID, { headers: { 'Authorization': 'Bearer ' + TOKEN } })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success && res.data) {
+        var fs = res.data;
+        document.getElementById('fse-name').value = fs.name || '';
+        document.getElementById('fse-startDate').value = toDTInput(fs.startDate);
+        document.getElementById('fse-endDate').value = toDTInput(fs.endDate);
+
+
+        if (fs.items) {
+          SELECTED_ITEMS = fs.items.map(function(it) {
+            var p = it.productId || {};
+            return {
+              productId: p._id || it.productId,
+              name: p.name || 'Sản phẩm',
+              price: p.price || 0,
+              baseDiscount: p.discountPercentage || p.discount || 0,
+              extraDiscountPercentage: it.extraDiscountPercentage || 0,
+              stockLimit: it.stockLimit || 0,
+              soldCount: it.soldCount || 0
+            };
+          });
+          renderItems();
+        }
+      }
+    });
+}
+</script>

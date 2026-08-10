@@ -1,0 +1,19 @@
+<div id="category-detail">
+  <%- include('admin/partials/page-header', {
+    backHref: '/admin/categories',
+    breadcrumbId: 'detail-breadcrumb',
+    actionBtnId: 'edit-category-btn',
+    actionBtnHref: '#',
+    actionBtnLabel: 'Chỉnh sửa'
+  }) %>
+
+  <%- include('admin/partials/page-loading', {
+    loadingId: 'detail-loading',
+    errorId: 'detail-error',
+    loadingText: 'Đang tải thông tin danh mục...'
+  }) %>
+
+  <div id="detail-content" style="display:none;"></div>
+</div>
+
+<%- include('admin/partials/detail-category-script') %>

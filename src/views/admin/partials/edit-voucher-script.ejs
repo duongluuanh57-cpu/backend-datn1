@@ -1,0 +1,189 @@
+<style>
+  #voucher-edit .dt-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  #voucher-edit .supp-form-group { display: flex; flex-direction: column; gap: 6px; }
+  #voucher-edit .supp-form-group label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  #voucher-edit .supp-form-group input[type="text"],
+  #voucher-edit .supp-form-group input[type="number"],
+  #voucher-edit .supp-form-group input[type="datetime-local"],
+  #voucher-edit .supp-form-group select {
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; color: var(--text-primary);
+    background: var(--bg); outline: none; transition: border-color 0.2s; font-family: inherit;
+  }
+  #voucher-edit .supp-form-group input:focus,
+  #voucher-edit .supp-form-group select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,169,110,0.1); }
+</style>
+
+<script>
+var VOUCHER_ID = '<%= voucherId || "" %>';
+var IS_NEW = '<%= (typeof IS_NEW !== "undefined" && IS_NEW) ? true : false %>' === 'true';
+var TOKEN = '<%= apiToken %>';
+var H = { 'Authorization': 'Bearer ' + TOKEN };
+
+function $(id) { return document.getElementById(id); }
+
+function toDatetimeLocal(d) {
+  if (!d) return '';
+  var date = new Date(d);
+  var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + 'T' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+
+function toggleTypeFields() {
+  var type = $('ve-type').value;
+  $('max-discount-group').style.display = type === 'percentage' ? 'flex' : 'none';
+  var valInput = $('ve-value');
+  var rawVal = valInput.value.replace(/\D/g, '');
+  if (type === 'percentage') {
+    valInput.placeholder = 'VD: 10 (cho 10%)';
+    if (rawVal) { var n = parseInt(rawVal, 10); if (n > 100) n = 100; if (n < 1) n = 1; valInput.value = n; } else { valInput.value = ''; }
+  } else {
+    valInput.placeholder = 'VD: 50.000đ';
+    if (rawVal) { valInput.value = parseInt(rawVal, 10).toLocaleString('vi-VN') + 'đ'; } else { valInput.value = ''; }
+  }
+}
+function toggleVoucherCategoryFields() {
+  var category = $('ve-voucherCategory').value;
+  $('discount-fields-container').style.display = category === 'freeship' ? 'none' : 'flex';
+  if (category !== 'freeship') toggleTypeFields();
+}
+function toggleScopeFields() {
+  $('min-tier-group').style.display = $('ve-applicableTo').value === 'membership' ? 'flex' : 'none';
+}
+
+function setupCurrencyField(el) {
+  if (!el) return;
+  el.addEventListener('input', function() {
+    var raw = el.value.replace(/\D/g, '');
+    if (!raw) { el.value = ''; return; }
+    el.value = parseInt(raw, 10).toLocaleString('vi-VN') + 'đ';
+    if (el.selectionStart >= el.value.length - 1) el.setSelectionRange(el.value.length - 1, el.value.length - 1);
+  });
+  el.addEventListener('keydown', function(e) {
+    if (['Backspace','Delete','ArrowLeft','ArrowRight','Tab'].indexOf(e.key) !== -1) return;
+    if (!/^\d$/.test(e.key)) e.preventDefault();
+  });
+}
+
+function setupValueField() {
+  $('ve-value').addEventListener('input', function() {
+    var type = $('ve-type').value;
+    var el = $('ve-value');
+    if (type === 'percentage') {
+      var val = el.value.replace(/\D/g, '');
+      if (val) { var n = parseInt(val, 10); if (n > 100) n = 100; if (n < 1) n = 1; el.value = n; } else { el.value = ''; }
+      return;
+    }
+    var raw = el.value.replace(/\D/g, '');
+    if (!raw) { el.value = ''; return; }
+    el.value = parseInt(raw, 10).toLocaleString('vi-VN') + 'đ';
+    if (el.selectionStart >= el.value.length - 1) el.setSelectionRange(el.value.length - 1, el.value.length - 1);
+  });
+  $('ve-value').addEventListener('keydown', function(e) {
+    if (['Backspace','Delete','ArrowLeft','ArrowRight','Tab'].indexOf(e.key) !== -1) return;
+    if (!/^\d$/.test(e.key)) e.preventDefault();
+  });
+}
+
+if (!IS_NEW && VOUCHER_ID) {
+  fetch('/api/vouchers/' + VOUCHER_ID, { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (!res.success || !res.data) {
+        $('ve-loading').style.display = 'none'; $('ve-error').style.display = 'block';
+        $('ve-error').innerHTML = '<p style="font-size:16px;font-weight:600;">Không tìm thấy mã giảm giá</p>';
+        return;
+      }
+      var v = res.data;
+      $('ve-breadcrumb').textContent = 'Chỉnh sửa · ' + (v.code || '');
+      document.title = 'Chỉnh sửa ' + (v.code || 'Mã giảm giá') + ' — Admin';
+      setupCurrencyField($('ve-maxDiscount'));
+      setupCurrencyField($('ve-minOrderAmount'));
+      setupValueField();
+      $('ve-code').value = v.code || '';
+      $('ve-voucherCategory').value = v.voucherCategory || 'discount';
+      var type = v.type || 'fixed';
+      $('ve-type').value = type;
+      $('ve-value').value = type === 'percentage' ? (v.value || '') : (v.value ? (v.value.toLocaleString('vi-VN') + 'đ') : '');
+      $('ve-maxDiscount').value = v.maxDiscount ? (v.maxDiscount.toLocaleString('vi-VN') + 'đ') : '';
+      $('ve-minOrderAmount').value = v.minOrderAmount ? (v.minOrderAmount.toLocaleString('vi-VN') + 'đ') : '0đ';
+      $('ve-startDate').value = toDatetimeLocal(v.startDate);
+      $('ve-endDate').value = toDatetimeLocal(v.endDate);
+      $('ve-applicableTo').value = v.applicableTo || 'all';
+      $('ve-minTier').value = v.minTier || '';
+      $('ve-maxUsage').value = v.maxUsage || 0;
+      $('ve-status').value = v.status || 'active';
+      toggleVoucherCategoryFields(); toggleScopeFields();
+      $('ve-loading').style.display = 'none';
+      $('ve-form').style.display = 'block';
+    })
+    .catch(function() { $('ve-loading').style.display = 'none'; $('ve-error').style.display = 'block'; });
+} else {
+  setupCurrencyField($('ve-maxDiscount'));
+  setupCurrencyField($('ve-minOrderAmount'));
+  setupValueField();
+  var now = new Date(); var end = new Date(); end.setDate(now.getDate() + 30);
+  $('ve-startDate').value = toDatetimeLocal(now);
+  $('ve-endDate').value = toDatetimeLocal(end);
+  $('ve-minOrderAmount').value = '0đ';
+  toggleVoucherCategoryFields(); toggleScopeFields();
+}
+
+function saveVoucher() {
+  var code = $('ve-code').value.trim().toUpperCase();
+  if (!code) { showToast('Vui lòng nhập mã giảm giá', 'error'); $('ve-code').focus(); return; }
+  var category = $('ve-voucherCategory').value;
+  var type = 'fixed'; var value = 0; var maxDiscount = undefined;
+  if (category === 'discount') {
+    type = $('ve-type').value;
+    if (type === 'percentage') {
+      value = parseFloat($('ve-value').value);
+      if (isNaN(value) || value < 1 || value > 100) { showToast('Phần trăm giảm phải từ 1 đến 100%', 'error'); return; }
+      var md = parseFloat($('ve-maxDiscount').value.replace(/\D/g, ''));
+      maxDiscount = isNaN(md) ? undefined : md;
+    } else {
+      value = parseFloat($('ve-value').value.replace(/\D/g, ''));
+      if (isNaN(value) || value <= 0) { showToast('Vui lòng nhập giá trị giảm hợp lệ', 'error'); return; }
+    }
+  }
+  var startDate = $('ve-startDate').value; var endDate = $('ve-endDate').value;
+  if (!startDate || !endDate) { showToast('Vui lòng nhập ngày bắt đầu và ngày kết thúc', 'error'); return; }
+  if (new Date(startDate) >= new Date(endDate)) { showToast('Ngày kết thúc phải lớn hơn ngày bắt đầu', 'error'); return; }
+  var maxUsage = parseInt($('ve-maxUsage').value, 10);
+  var minOrderAmount = parseFloat($('ve-minOrderAmount').value.replace(/\D/g, ''));
+  var data = { code: code, voucherCategory: category, type: type, value: value, maxDiscount: maxDiscount, startDate: new Date(startDate).toISOString(), endDate: new Date(endDate).toISOString(), applicableTo: $('ve-applicableTo').value, minTier: $('ve-minTier').value || null, minOrderAmount: isNaN(minOrderAmount) ? 0 : minOrderAmount, maxUsage: isNaN(maxUsage) ? 0 : maxUsage, status: $('ve-status').value };
+  var btn = $('ve-btn-save');
+  btn.disabled = true; btn.style.opacity = '0.6';
+  $('ve-save-status').textContent = 'Đang lưu...'; $('ve-save-status').style.color = 'var(--text-muted)';
+  var url = IS_NEW ? '/api/vouchers' : '/api/vouchers/' + VOUCHER_ID;
+  var method = IS_NEW ? 'POST' : 'PATCH';
+  fetch(url, { method: method, headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      btn.disabled = false; btn.style.opacity = '1';
+      if (res.success) {
+        $('ve-save-status').textContent = '✅ Đã lưu!'; $('ve-save-status').style.color = '#22c55e';
+        var filterQs = '';
+        try {
+          var sf = JSON.parse(localStorage.getItem('crud-filters-voucher') || 'null');
+          if (sf) {
+            var p = new URLSearchParams();
+            if (sf.page > 1) p.set('page', sf.page);
+            if (sf.search) p.set('search', sf.search);
+            if (sf.status) p.set('status', sf.status);
+            if (sf.applicableTo) p.set('applicableTo', sf.applicableTo);
+            filterQs = p.toString();
+          }
+        } catch (e) {}
+        var toastParam = 'toast=Đã+' + (IS_NEW ? 'tạo' : 'cập+nhật') + '+mã+giảm+giá+thành+công&type=success';
+        window.location.href = '/admin/vouchers?' + toastParam + (filterQs ? '&' + filterQs : '');
+      } else {
+        $('ve-save-status').textContent = '❌ ' + (res.message || 'Lỗi'); $('ve-save-status').style.color = '#ef4444';
+        showToast(res.message || 'Không thể lưu mã giảm giá', 'error');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false; btn.style.opacity = '1';
+      showToast('Lỗi kết nối đến server', 'error');
+    });
+}
+</script>

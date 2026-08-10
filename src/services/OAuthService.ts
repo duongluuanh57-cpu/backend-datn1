@@ -67,6 +67,20 @@ export class OAuthService {
     });
   }
 
+  /**
+   * Sinh username duy nhất bằng cách thêm hậu tố tăng dần
+   * khi username gốc đã tồn tại trong DB.
+   */
+  private static async generateUniqueUsername(base: string): Promise<string> {
+    let username = base;
+    let counter = 1;
+    while (await UserRepository.findByUsername(username)) {
+      username = `${base}_${counter}`;
+      counter++;
+    }
+    return username;
+  }
+
 
   /**
    * Tìm user trong DB theo oauthId. Nếu chưa có thì tạo mới.
@@ -90,14 +104,26 @@ export class OAuthService {
           oauthId: profile.oauthId,
         } as any);
       } else {
-        // Tạo user mới hoàn toàn
-        user = await UserRepository.create({
-          email: profile.email,
-          username: profile.username,
-          oauthProvider: provider,
-          oauthId: profile.oauthId,
-          role: 'USER',
-        } as Partial<IUser>);
+        // Tạo user mới hoàn toàn — đảm bảo username không trùng user cũ
+        const baseUsername = profile.username;
+        let username = await OAuthService.generateUniqueUsername(baseUsername);
+
+        // Retry phòng race-condition: 2 request đồng thời cùng tạo username giống nhau
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            user = await UserRepository.create({
+              email: profile.email,
+              username,
+              oauthProvider: provider,
+              oauthId: profile.oauthId,
+              role: 'USER',
+            } as Partial<IUser>);
+            break;
+          } catch (err: any) {
+            if (err?.code !== 11000) throw err;
+            username = await OAuthService.generateUniqueUsername(baseUsername);
+          }
+        }
       }
     }
 

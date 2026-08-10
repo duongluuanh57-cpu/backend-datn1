@@ -1,14 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { PaymentService, PaymentMethodService } from '../services/PaymentService.ts';
-
-function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
-  const user = (req as any).user;
-  if (user?.role !== 'ADMIN' && user?.role !== 'SUBADMIN') {
-    reply.status(403).send({ success: false, message: 'Không có quyền truy cập' });
-    return false;
-  }
-  return true;
-}
+import { requireAdmin } from '../utils/adminAuth.ts';
 
 // ─── Payment Methods ───
 

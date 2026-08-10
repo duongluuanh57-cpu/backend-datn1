@@ -102,7 +102,7 @@ Hãy phân rã và trả về JSON:`;
             steps: z.array(z.object({
               id: z.number(),
               tool: z.string(),
-              args: z.record(z.any()),
+              args: z.record(z.string(), z.any()),
               dependsOn: z.array(z.number()),
               condition: z.string().nullable(),
               description: z.string(),

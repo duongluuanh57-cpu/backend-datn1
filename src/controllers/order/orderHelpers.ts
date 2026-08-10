@@ -2,21 +2,9 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { Product } from '../../models/Product.ts';
+import { requireAdmin } from '../../utils/adminAuth.ts';
 
-/**
- * Require admin/subadmin role
- */
-export function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
-  const user = (req as any).user;
-  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUBADMIN')) {
-    reply.status(403).send({
-      success: false,
-      message: 'Bạn không có quyền thực hiện hành động này',
-    });
-    return false;
-  }
-  return true;
-}
+export { requireAdmin } from '../../utils/adminAuth.ts';
 
 /**
  */
@@ -69,4 +57,22 @@ export function buildDateFilter(startDate?: string, endDate?: string): Record<st
     dateQuery.$lte = end;
   }
   return dateQuery;
+}
+
+/**
+ * Tự động hủy các đơn hàng VNPay chưa thanh toán quá 15 phút
+ */
+export async function autoCancelExpiredVNPayOrders(userId?: string): Promise<void> {
+  const { Order } = await import('../../models/Order.ts');
+  const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+  const query: any = {
+    paymentMethod: 'vnpay',
+    paymentStatus: 'unpaid',
+    status: 'pending',
+    createdAt: { $lt: fifteenMinsAgo },
+  };
+  if (userId) {
+    query.userId = new mongoose.Types.ObjectId(userId);
+  }
+  await Order.updateMany(query, { $set: { status: 'cancelled' } });
 }

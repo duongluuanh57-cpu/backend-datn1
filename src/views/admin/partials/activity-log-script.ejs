@@ -1,0 +1,136 @@
+<script>
+var AL_PAGE = 1;
+var AL_LIMIT = 30;
+var AL_TOTAL_PAGES = 1;
+var H = { 'Authorization': 'Bearer ' + window.API_TOKEN };
+
+function alFetch() {
+  var action = document.getElementById('al-filter-action').value;
+  var resource = document.getElementById('al-filter-resource').value;
+  document.getElementById('al-feed').innerHTML = skeletonFeed(5);
+  var params = '?page=' + AL_PAGE + '&limit=' + AL_LIMIT;
+  if (action) params += '&action=' + encodeURIComponent(action);
+  if (resource) params += '&resource=' + encodeURIComponent(resource);
+  fetch('/admin/activity-log-api' + params, { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (!res.success) { document.getElementById('al-feed').innerHTML = '<div class="al-empty">Lỗi tải dữ liệu</div>'; return; }
+      var data = res.data;
+      AL_TOTAL_PAGES = data.totalPages || 1;
+      document.getElementById('al-total').textContent = data.total || 0;
+      renderFeed(data.items || []);
+      alRenderPagination();
+    })
+    .catch(function() { document.getElementById('al-feed').innerHTML = '<div class="al-empty">Lỗi kết nối</div>'; });
+}
+
+function alFilterChange() { AL_PAGE = 1; alFetch(); }
+function alRefresh() { AL_PAGE = 1; alFetch(); }
+function alReset() {
+  document.getElementById('al-filter-action').value = '';
+  document.getElementById('al-filter-resource').value = '';
+  AL_PAGE = 1; alFetch();
+}
+
+function skeletonFeed(count) {
+  var html = '';
+  for (var i = 0; i < count; i++) {
+    html += '<div class="al-skeleton">' +
+      '<div class="al-skeleton-circle skeleton"></div>' +
+      '<div style="flex:1;display:flex;flex-direction:column;gap:8px;">' +
+        '<div class="skeleton" style="width:' + (40 + Math.floor(Math.random() * 40)) + '%;height:14px;border-radius:4px;"></div>' +
+        '<div class="skeleton" style="width:' + (60 + Math.floor(Math.random() * 30)) + '%;height:12px;border-radius:4px;"></div>' +
+        '<div class="skeleton" style="width:' + (30 + Math.floor(Math.random() * 30)) + '%;height:12px;border-radius:4px;"></div>' +
+      '</div></div>';
+  }
+  return html;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]||m; });
+}
+
+function getActionLabel(action) {
+  var map = { 'LOGIN':'Đăng nhập','LOGOUT':'Đăng xuất','REGISTER':'Đăng ký','PASSWORD_CHANGE':'Đổi mật khẩu','DELETE_USER':'Xoá người dùng','UPDATE_USER':'Cập nhật người dùng','CREATE':'Tạo mới','UPDATE':'Cập nhật','DELETE':'Xoá' };
+  return map[action] || action;
+}
+function getActionIcon(action, status) {
+  if (status === 'FAILURE') return '✕';
+  var map = { 'LOGIN':'→','LOGOUT':'←','REGISTER':'+','PASSWORD_CHANGE':'🔑','DELETE_USER':'✕','UPDATE_USER':'✎','CREATE':'+','UPDATE':'✎','DELETE':'✕' };
+  return map[action] || '●';
+}
+function getIconClass(status) { return status === 'FAILURE' ? 'failure' : 'success'; }
+
+function renderFeed(items) {
+  var feed = document.getElementById('al-feed');
+  if (!items || items.length === 0) { feed.innerHTML = '<div class="al-empty">Không có hoạt động nào</div>'; return; }
+  var html = '';
+  items.forEach(function(item) {
+    var userObj = item.userId || {};
+    var userName = userObj.fullName || userObj.username || userObj.email || '—';
+    var userEmail = userObj.email || '';
+    var action = item.action || '';
+    var resource = item.resource || '—';
+    var status = item.status || 'SUCCESS';
+    var meta = item.metadata || {};
+    var createdAt = item.createdAt || '';
+    var timeStr = '';
+    if (createdAt) {
+      var d = new Date(createdAt);
+      timeStr = d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    }
+    var metaHtml = '';
+    if (meta.ip) metaHtml += '<span class="al-meta-tag" title="IP">' + escapeHtml(meta.ip) + '</span>';
+    if (meta.userAgent) { var ua = meta.userAgent.length > 50 ? meta.userAgent.substring(0, 50) + '…' : meta.userAgent; metaHtml += '<span class="al-meta-tag" title="' + escapeHtml(meta.userAgent) + '">' + escapeHtml(ua) + '</span>'; }
+    if (meta.rememberMe !== undefined) metaHtml += '<span class="al-meta-tag">Ghi nhớ: ' + (meta.rememberMe ? 'Có' : 'Không') + '</span>';
+    if (meta.resourceId) metaHtml += '<span class="al-meta-tag">ID: ' + escapeHtml(String(meta.resourceId)) + '</span>';
+    if (meta.details) { var detailStr = typeof meta.details === 'object' ? JSON.stringify(meta.details).substring(0, 80) : String(meta.details).substring(0, 80); metaHtml += '<span class="al-meta-tag" title="' + escapeHtml(String(meta.details)) + '">' + escapeHtml(detailStr) + '</span>'; }
+    html += '<div class="al-item">' +
+      '<div class="al-icon ' + getIconClass(status) + '">' + getActionIcon(action, status) + '</div>' +
+      '<div class="al-body">' +
+        '<div class="al-header">' +
+          '<span class="al-user">' + escapeHtml(userName) + '</span>' +
+          '<span class="al-action ' + action + '">' + escapeHtml(getActionLabel(action)) + '</span>' +
+          '<span class="al-status ' + status + '">' + (status === 'SUCCESS' ? 'Thành công' : 'Thất bại') + '</span>' +
+          '<span class="al-time">' + timeStr + '</span>' +
+        '</div>' +
+        '<div class="al-resource"><strong>Đối tượng:</strong> ' + escapeHtml(resource) + (userEmail ? ' &middot; <strong>Email:</strong> ' + escapeHtml(userEmail) : '') + '</div>' +
+        (metaHtml ? '<div class="al-meta">' + metaHtml + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  });
+  feed.innerHTML = html;
+}
+
+function alRenderPagination() {
+  var el = document.getElementById('al-pagination');
+  if (!AL_TOTAL_PAGES || AL_TOTAL_PAGES <= 1) { el.innerHTML = ''; return; }
+  var html = '';
+  html += '<button class="pg-btn' + (AL_PAGE <= 1 ? ' pg-disabled' : '') + '" onclick="if(' + AL_PAGE + '>1){AL_PAGE=' + (AL_PAGE - 1) + ';alFetch();}"' + (AL_PAGE <= 1 ? ' disabled' : '') + '>&lsaquo;</button>';
+  var pages = [];
+  if (AL_TOTAL_PAGES <= 7) { for (var i = 1; i <= AL_TOTAL_PAGES; i++) pages.push(i); }
+  else {
+    pages.push(1);
+    if (AL_PAGE > 3) pages.push('...');
+    for (var j = Math.max(2, AL_PAGE - 1); j <= Math.min(AL_TOTAL_PAGES - 1, AL_PAGE + 1); j++) pages.push(j);
+    if (AL_PAGE < AL_TOTAL_PAGES - 2) pages.push('...');
+    pages.push(AL_TOTAL_PAGES);
+  }
+  pages.forEach(function(p) {
+    if (p === '...') { html += '<span class="pg-ellipsis">...</span>'; }
+    else { html += '<button class="pg-btn' + (p === AL_PAGE ? ' pg-active' : '') + '" onclick="AL_PAGE=' + p + ';alFetch();">' + p + '</button>'; }
+  });
+  html += '<button class="pg-btn' + (AL_PAGE >= AL_TOTAL_PAGES ? ' pg-disabled' : '') + '" onclick="if(' + AL_PAGE + '<' + AL_TOTAL_PAGES + '){AL_PAGE=' + (AL_PAGE + 1) + ';alFetch();}"' + (AL_PAGE >= AL_TOTAL_PAGES ? ' disabled' : '') + '>&rsaquo;</button>';
+  el.innerHTML = html;
+  var styleExists = document.getElementById('al-pg-style');
+  if (!styleExists) {
+    var style = document.createElement('style');
+    style.id = 'al-pg-style';
+    style.textContent = '.pg-btn{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;padding:0 10px;border-radius:8px;border:1px solid var(--color-border-subtle);background:var(--color-background-surface);color:var(--color-text-secondary);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.15s ease;font-family:inherit;}.pg-btn:hover:not(.pg-active):not(.pg-disabled){border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-muted);}.pg-active{background:#C9A96E;color:#fff;border-color:#C9A96E;cursor:default;}.pg-disabled{opacity:0.35;cursor:not-allowed;}.pg-ellipsis{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;font-size:13px;color:var(--color-text-disabled);letter-spacing:2px;}';
+    document.head.appendChild(style);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() { alFetch(); });
+</script>

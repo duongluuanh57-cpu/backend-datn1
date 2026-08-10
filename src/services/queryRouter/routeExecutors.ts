@@ -66,7 +66,9 @@ function buildSystemPrompt(
 ): string {
   const basePrompt = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp.
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
-KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống"`;
+KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống"
+
+QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.`;
 
   const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
 
@@ -118,16 +120,24 @@ function roleDeniedResponse(): string {
  */
 export async function executeVectorSearch(
   message: string,
+  history: any[],
   userRole?: string
-): Promise<Response> {
+): Promise<{ stream: Response; products: any[] }> {
   const ctx = await buildContext(message, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
-  const messages = [
-    { role: 'user' as const, content: message }
-  ];
+  const chatMessages = [...history];
+  if (chatMessages.length > 0) {
+    chatMessages[chatMessages.length - 1] = {
+      ...chatMessages[chatMessages.length - 1],
+      content: message,
+    };
+  } else {
+    chatMessages.push({ role: 'user' as const, content: message });
+  }
 
-  return AIService.createChatStream(messages, systemPrompt);
+  const stream = await AIService.createChatStream(chatMessages, systemPrompt);
+  return { stream, products: ctx.products || [] };
 }
 
 /**
@@ -136,16 +146,24 @@ export async function executeVectorSearch(
  */
 export async function executeSqlSearch(
   message: string,
+  history: any[],
   userRole?: string
-): Promise<Response> {
+): Promise<{ stream: Response; products: any[] }> {
   const ctx = await buildContext(message, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
-  const messages = [
-    { role: 'user' as const, content: message }
-  ];
+  const chatMessages = [...history];
+  if (chatMessages.length > 0) {
+    chatMessages[chatMessages.length - 1] = {
+      ...chatMessages[chatMessages.length - 1],
+      content: message,
+    };
+  } else {
+    chatMessages.push({ role: 'user' as const, content: message });
+  }
 
-  return AIService.createChatStream(messages, systemPrompt);
+  const stream = await AIService.createChatStream(chatMessages, systemPrompt);
+  return { stream, products: ctx.products || [] };
 }
 
 /**
@@ -155,8 +173,9 @@ export async function executeSqlSearch(
  */
 export async function executeWebSearch(
   message: string,
+  history: any[],
   userRole?: string
-): Promise<Response> {
+): Promise<{ stream: Response; products: any[] }> {
   const systemPrompt = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp.
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
 
@@ -165,11 +184,18 @@ Hãy trả lời dựa trên kiến thức bạn có.
 Nếu không chắc chắn, hãy nói "Mình sẽ cập nhật thêm thông tin này, bạn quay lại sau nhé! 😊"
 KHÔNG bịa đặt thông tin hay số liệu cụ thể nếu không chắc chắn.`;
 
-  const messages = [
-    { role: 'user' as const, content: message }
-  ];
+  const chatMessages = [...history];
+  if (chatMessages.length > 0) {
+    chatMessages[chatMessages.length - 1] = {
+      ...chatMessages[chatMessages.length - 1],
+      content: message,
+    };
+  } else {
+    chatMessages.push({ role: 'user' as const, content: message });
+  }
 
-  return AIService.createChatStream(messages, systemPrompt);
+  const stream = await AIService.createChatStream(chatMessages, systemPrompt);
+  return { stream, products: [] };
 }
 
 /**
@@ -178,15 +204,15 @@ KHÔNG bịa đặt thông tin hay số liệu cụ thể nếu không chắc ch
  */
 export async function executeGraphSearch(
   message: string,
+  history: any[],
   userRole?: string
-): Promise<Response> {
+): Promise<{ stream: Response; products: any[] }> {
   const ctx = await buildContext(message, userRole);
 
   // Thêm context về related products nếu có sản phẩm
   let graphContext = '';
   if (ctx.products.length > 0) {
     try {
-      // Tìm sản phẩm cùng brand hoặc cùng category để gợi ý
       const productIds = ctx.products.map(p => p._id);
       const brands = [...new Set(ctx.products.map(p => p.brandId).filter(Boolean))];
       
@@ -205,7 +231,7 @@ export async function executeGraphSearch(
       if (relatedProducts.length > 0) {
         graphContext = `SẢN PHẨM LIÊN QUAN (cùng hãng):\n${relatedProducts.map((p: any) => {
           const brandName = p.brandId?.name || '';
-          return `- ${p.name}${brandName ? ` (${brandName})` : ''}`;
+          return `- ${p.name}${brandName ? ` (${brandName})` : ''}: [CARD:${p._id}]`;
         }).join('\n')}`;
       }
     } catch (err) {
@@ -217,16 +243,25 @@ export async function executeGraphSearch(
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
 
 Bạn đang ở chế độ GỢI Ý. Hãy tư vấn nhiệt tình, đề xuất sản phẩm phù hợp dựa trên nhu cầu của khách.
+QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]).
+
 ${ctx.products.length > 0 ? `SẢN PHẨM KHỚP:\n${ctx.products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}` : ''}
 ${graphContext ? `\n${graphContext}` : ''}
 
 Hãy hỏi thêm sở thích của khách để gợi ý chính xác hơn!`;
 
-  const messages = [
-    { role: 'user' as const, content: message }
-  ];
+  const chatMessages = [...history];
+  if (chatMessages.length > 0) {
+    chatMessages[chatMessages.length - 1] = {
+      ...chatMessages[chatMessages.length - 1],
+      content: message,
+    };
+  } else {
+    chatMessages.push({ role: 'user' as const, content: message });
+  }
 
-  return AIService.createChatStream(messages, systemPrompt);
+  const stream = await AIService.createChatStream(chatMessages, systemPrompt);
+  return { stream, products: ctx.products || [] };
 }
 
 /**

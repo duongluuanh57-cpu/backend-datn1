@@ -1,0 +1,52 @@
+<!-- ═══ Trang Chỉnh sửa / Thêm mới Tag ═══ -->
+<div id="tag-edit">
+  <!-- ── Header ── -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+    <a href="/admin/tags" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Quay lại danh sách
+    </a>
+    <span style="color:var(--text-muted);">/</span>
+    <span id="te-breadcrumb" style="color:var(--text-primary);font-weight:600;font-size:14px;">Đang tải...</span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span id="te-save-status" style="font-size:12px;"></span>
+      <button type="button" id="te-btn-save" onclick="saveTag()"
+        style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;box-shadow:0 2px 8px rgba(201,169,110,0.25);white-space:nowrap;"
+        onmouseover="this.style.filter='brightness(1.1)'" onmouseout="this.style.filter=''">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <span id="te-btn-label">Lưu thay đổi</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Loading / Error (edit mode only) ── -->
+  <div id="te-loading" style="text-align:center;padding:80px 20px;color:var(--text-muted);display:none;">
+    <svg style="animation:spin 1s linear infinite;width:28px;height:28px;margin:0 auto 12px;color:var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+    Đang tải thông tin tag...
+  </div>
+  <div id="te-error" style="display:none;text-align:center;padding:80px 20px;">
+    <p style="font-size:16px;font-weight:600;">Lỗi kết nối</p>
+    <p style="margin-top:8px;font-size:13px;color:var(--text-muted);">Không thể tải thông tin tag. Vui lòng thử lại.</p>
+  </div>
+
+  <!-- ── Form ── -->
+  <div id="te-form" style="display:none;">
+    <form id="tag-edit-form" onsubmit="event.preventDefault();">
+      <div style="max-width:500px;">
+        <div class="dt-card">
+          <h3 style="font-size:14px;font-weight:600;margin:0 0 16px;color:var(--text-primary);">Thông tin tag</h3>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div class="supp-form-group"><label>Tên tag</label><input type="text" id="te-name" placeholder="Nhập tên tag" /></div>
+            <div class="supp-form-group"><label>Slug</label><input type="text" id="te-slug" placeholder="tu-dong-tao-tu-ten" /></div>
+            <div class="supp-form-group">
+              <label>Trạng thái</label>
+              <select id="te-status"><option value="active">Hoạt động</option><option value="inactive">Ẩn</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('admin/partials/edit-tag-script') %>

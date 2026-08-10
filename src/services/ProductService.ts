@@ -8,11 +8,6 @@
  *   - productQueryService.ts      → ProductQueryService (getNewProducts, getLimitedProducts, getTrendingProducts, getSaleProducts, getAllProducts, getProductById)
  *   - productMutationService.ts   → ProductMutationService (createProduct, updateProduct, deleteProduct, bulkDeleteProducts)
  */
-export { slugify, parseSizes, resolveCategoryNames } from './product/productHelpers.ts';
-export { formatMultipleProducts } from './product/productFormatterService.ts';
-export { ProductQueryService } from './product/productQueryService.ts';
-export { ProductMutationService } from './product/productMutationService.ts';
-
 // Re-import cho backward-compatible class
 import { ProductQueryService as _ProductQueryService } from './product/productQueryService.ts';
 import { ProductMutationService as _ProductMutationService } from './product/productMutationService.ts';
@@ -54,6 +49,9 @@ export class ProductService {
   }
   static async getProductById(id: string) {
     return _ProductQueryService.getProductById(id);
+  }
+  static async getProductByIdAdmin(id: string) {
+    return _ProductQueryService.getProductByIdAdmin(id);
   }
 
   // --- Mutation methods ---

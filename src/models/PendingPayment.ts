@@ -9,7 +9,9 @@ export interface IPendingPayment extends Document {
     totalItems: number;
     voucherCode?: string | null;
     voucherDiscount?: number;
+    freeshipVoucherCode?: string | null;
   };
+  shippingMethodCode?: string;
   shippingFee: number;
   finalAmount: number;
   customerInfo: {
@@ -21,6 +23,7 @@ export interface IPendingPayment extends Document {
   };
   status: 'pending' | 'completed' | 'failed' | 'expired';
   ipAddr?: string;
+  clearsCart: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,7 +38,9 @@ const PendingPaymentSchema = new Schema<IPendingPayment>(
       totalItems: { type: Number, required: true },
       voucherCode: { type: String, default: null },
       voucherDiscount: { type: Number, default: 0 },
+      freeshipVoucherCode: { type: String, default: null },
     },
+    shippingMethodCode: { type: String, default: 'standard' },
     shippingFee: { type: Number, default: 0 },
     finalAmount: { type: Number, required: true },
     customerInfo: {
@@ -52,6 +57,7 @@ const PendingPaymentSchema = new Schema<IPendingPayment>(
       index: true,
     },
     ipAddr: { type: String },
+    clearsCart: { type: Boolean, default: true },
   },
   {
     timestamps: true,

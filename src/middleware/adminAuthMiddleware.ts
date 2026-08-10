@@ -24,7 +24,7 @@ export async function adminAuthMiddleware(req: FastifyRequest, reply: FastifyRep
   }
 
   if (!token) {
-    return reply.redirect('/api/auth/login');
+    return reply.redirect('/login');
   }
 
   try {
@@ -39,6 +39,6 @@ export async function adminAuthMiddleware(req: FastifyRequest, reply: FastifyRep
     (req as any).user = { ...decoded };
     (req as any).token = token;
   } catch {
-    return reply.redirect('/api/auth/login');
+    return reply.redirect('/login');
   }
 }

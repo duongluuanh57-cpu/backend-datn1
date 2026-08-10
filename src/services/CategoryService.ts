@@ -1,18 +1,10 @@
 import { Category } from '../models/Category.ts';
 import { Product } from '../models/Product.ts';
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
+import { slugify } from '../utils/textNormalizer.ts';
 
 export class CategoryService {
   static async getAll(): Promise<any[]> {
-    return Category.find({}).sort({ sortOrder: 1, name: 1 }).lean();
+    return Category.find({}).sort({ name: 1 }).lean();
   }
 
   static async getPaginatedCategories(
@@ -31,7 +23,7 @@ export class CategoryService {
 
     const total = await Category.countDocuments(query);
     const items = await Category.find(query)
-      .sort({ sortOrder: 1, name: 1 })
+      .sort({ name: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
@@ -43,26 +35,23 @@ export class CategoryService {
     return Category.findOne({ _id: id }).lean();
   }
 
-  static async create(data: { name: string; status?: string; sortOrder?: number }): Promise<any> {
+  static async create(data: { name: string; status?: string }): Promise<any> {
     const slug = slugify(data.name);
-    const maxOrder = await Category.findOne({}).sort({ sortOrder: -1 }).lean();
     const category = new Category({
       name: data.name,
       slug,
       status: data.status || 'active',
-      sortOrder: data.sortOrder ?? (maxOrder ? maxOrder.sortOrder! + 1 : 0),
     });
     return category.save();
   }
 
-  static async update(id: string, data: { name?: string; status?: string; sortOrder?: number }): Promise<any | null> {
+  static async update(id: string, data: { name?: string; status?: string }): Promise<any | null> {
     const updateData: any = {};
     if (data.name !== undefined) {
       updateData.name = data.name;
       updateData.slug = slugify(data.name);
     }
     if (data.status !== undefined) updateData.status = data.status;
-    if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
     return Category.findOneAndUpdate({ _id: id }, { $set: updateData }, { new: true }).lean();
   }
 

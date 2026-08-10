@@ -2,12 +2,8 @@ import {
   DeleteObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
-  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getS3Client } from './r2Client.ts';
-import { Product } from '../../models/Product.ts';
-import { ProductImage } from '../../models/ProductImage.ts';
-import { redis } from '../../config/redis.ts';
 
 export class R2Deleter {
   /**
@@ -156,42 +152,6 @@ export class R2Deleter {
   }
 
   /**
-   * Kiểm tra xem file có tồn tại trên R2 không (dùng HeadObject)
-   */
-  static async validateImageUrl(url: string): Promise<boolean> {
-    if (!url || typeof url !== 'string' || !url.trim()) return false;
-
-    const publicDomain = process.env.R2_PUBLIC_DOMAIN;
-    if (!publicDomain) return false;
-
-    const bucketName = process.env.R2_BUCKET_NAME || 'lessence-media';
-
-    try {
-      // Lấy key từ URL
-      let key = '';
-      if (url.includes(publicDomain)) {
-        key = url.split(publicDomain).pop()?.replace(/^\//, '') || '';
-      } else if (url.includes('.r2.dev')) {
-        const urlObj = new URL(url);
-        key = urlObj.pathname.replace(/^\//, '');
-      }
-
-      if (!key) return false;
-
-      const client = getS3Client();
-      await client.send(
-        new HeadObjectCommand({
-          Bucket: bucketName,
-          Key: key,
-        })
-      );
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  /**
    * Lấy key từ URL (helper)
    */
   static getKeyFromUrl(url: string): string {
@@ -211,72 +171,5 @@ export class R2Deleter {
       }
     }
     return '';
-  }
-
-  /**
-   * Cleanup ảnh không tồn tại trên R2 - quét toàn bộ sản phẩm
-   * Trả về số lượng ảnh đã xóa khỏi DB
-   */
-  static async cleanupInvalidProductImages(): Promise<{ removed: number; fixedProducts: number }> {
-    const bucketName = process.env.R2_BUCKET_NAME || 'lessence-media';
-    let removed = 0;
-    let fixedProducts = 0;
-
-    try {
-      // Lấy tất cả sản phẩm
-      const products = await Product.find({}).select('_id image').lean();
-
-      for (const product of products) {
-        const productId = product._id;
-        const mainImage = product.image;
-        let hasChanges = false;
-
-        // Check ảnh chính (Product.image)
-        if (mainImage) {
-          const isValid = await this.validateImageUrl(mainImage);
-          if (!isValid) {
-            await Product.updateOne({ _id: productId }, { $unset: { image: '' } });
-            hasChanges = true;
-            removed++;
-          }
-        }
-
-        // Check ảnh phụ (ProductImage)
-        const images = await ProductImage.find({ productId }).select('url').lean();
-        for (const img of images) {
-          const isValid = await this.validateImageUrl(img.url);
-          if (!isValid) {
-            await ProductImage.deleteOne({ _id: img._id });
-            removed++;
-            hasChanges = true;
-          }
-        }
-
-        if (hasChanges) {
-          fixedProducts++;
-          // Clear cache cho sản phẩm này
-          try {
-            await redis.del(`products:${productId}`);
-          } catch (_) {}
-        }
-      }
-
-      // Clear cache product lists
-      const cacheKeys = [
-        `products:new:tag`,
-        `products:new:tag:v3`,
-        `products:limited:tag:v2`,
-        `products:sale:tag`,
-        `products:trending:tag`,
-        `products:trending:tag:v3`,
-      ];
-      await Promise.all(cacheKeys.map(k => redis.del(k).catch(() => {})));
-
-      console.log(`[ImageService] Cleanup completed: ${removed} invalid image URLs removed, ${fixedProducts} products fixed`);
-      return { removed, fixedProducts };
-    } catch (error) {
-      console.error('[ImageService Cleanup Error]', error);
-      return { removed, fixedProducts };
-    }
   }
 }

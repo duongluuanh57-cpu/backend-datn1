@@ -1,0 +1,6 @@
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[m]||m; });
+}
+function fmt(n) { var v = Number(n) || 0; return v.toLocaleString('vi-VN'); }
+function fmtCurrency(n) { return fmt(n) + 'đ'; }

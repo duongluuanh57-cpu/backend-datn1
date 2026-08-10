@@ -22,7 +22,7 @@ async function runKeywordSearch(query: string, limit: number) {
 
   // ── 1. Text search trên Product (inverted index) ──
   const textSearchProducts = Product.find(
-    { $text: { $search: cleanQuery } },
+    { $text: { $search: cleanQuery }, status: 'active' },
     { textScore: { $meta: 'textScore' } }
   )
     .sort({ textScore: { $meta: 'textScore' }, soldCount: -1 })
@@ -50,7 +50,7 @@ async function runKeywordSearch(query: string, limit: number) {
   const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
 
   const regexSearch = mongoose.connection.db!.collection('products').aggregate([
-    { $match: { $or: nameConditions } },
+    { $match: { $or: nameConditions, status: 'active' } },
     { $sort: { soldCount: -1, rating: -1 } },
     { $limit: limit * BUFFER },
     { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brandData' } },
@@ -72,7 +72,7 @@ async function runKeywordSearch(query: string, limit: number) {
   let brandProductResults: any[] = [];
   if (brandIds.length > 0) {
     brandProductResults = await Product.find(
-      { brandId: { $in: brandIds } }
+      { brandId: { $in: brandIds }, status: 'active' }
     )
       .sort({ soldCount: -1, rating: -1 })
       .limit(limit)

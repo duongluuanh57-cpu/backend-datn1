@@ -1,22 +1,30 @@
 <%# AI Chat Panel — toggleable right sidebar (interview now inline) %>
-<div id="aiChatPanel" style="position:fixed;top:var(--header-h);right:-380px;width:380px;height:calc(100vh - var(--header-h));background:var(--bg-darker);border-left:1px solid var(--border);z-index:35;transition:right 0.3s ease;display:flex;flex-direction:column;">
-  <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-weight:600;font-size:14px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;vertical-align:middle;margin-right:6px;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> AI Assistant</span>
-    <button onclick="toggleAIChat()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;">✕</button>
+<div id="aiChatPanel" style="position:fixed;top:16px;right:16px;bottom:16px;left:16px;width:calc(100vw - 32px);height:calc(100vh - 32px);max-height:calc(100vh - 32px);background:var(--bg-darker);border:1px solid var(--border);border-radius:24px;z-index:1000;display:none;flex-direction:column;overflow:hidden;">
+  <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <span style="font-weight:600;font-size:16px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg> AI Assistant</span>
+    <button onclick="toggleAIChat()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:20px;width:36px;height:36px;border-radius:12px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseenter="this.style.background='var(--surface)'" onmouseleave="this.style.background='none'">✕</button>
   </div>
-  <div id="aiMessages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;">
-    <div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--text-secondary);align-self:flex-start;max-width:85%;">
+  <div id="aiMessages" style="flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:12px;">
+    <div style="background:var(--bg-card);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--text-secondary);align-self:flex-start;max-width:85%;">
       Xin chào! Tôi có thể giúp gì cho bạn? Hãy hỏi tôi về sản phẩm, đơn hàng, hoặc thống kê.
     </div>
   </div>
-  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
-    <input id="aiInput" type="text" placeholder="Nhập câu hỏi..." class="admin-input" style="flex:1;"
+  <div id="aiSuggestions" style="padding:12px 24px;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border);">
+    <button onclick="pickSuggestion(0)" class="sug-btn" id="sugBtn0" style="display:none;animation-delay:0s;"></button>
+    <button onclick="pickSuggestion(1)" class="sug-btn" id="sugBtn1" style="display:none;animation-delay:0.06s;"></button>
+    <button onclick="pickSuggestion(2)" class="sug-btn" id="sugBtn2" style="display:none;animation-delay:0.12s;"></button>
+    <button onclick="pickSuggestion(3)" class="sug-btn" id="sugBtn3" style="display:none;animation-delay:0.18s;"></button>
+    <button onclick="pickSuggestion(4)" class="sug-btn" id="sugBtn4" style="display:none;animation-delay:0.24s;"></button>
+    <button onclick="refreshSuggestions()" class="sug-refresh" id="sugRefreshBtn" title="Đổi gợi ý"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></button>
+  </div>
+  <div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:10px;">
+    <input id="aiInput" type="text" placeholder="Nhập câu hỏi..." class="admin-input" style="flex:1;font-size:14px;padding:12px 16px;"
       onkeydown="if(event.key==='Enter')sendAIMessage()">
-    <button onclick="sendAIMessage()" class="admin-btn admin-btn-primary" style="padding:10px 16px;font-size:13px;">Gửi</button>
+    <button onclick="sendAIMessage()" class="admin-btn admin-btn-primary" style="padding:12px 24px;font-size:14px;font-weight:600;">Gửi</button>
   </div>
 </div>
 
-<button id="aiChatToggle" onclick="toggleAIChat()" style="position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:var(--color-primary);color:#fff;border:none;cursor:pointer;z-index:36;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(201,169,110,0.3);">
+<button id="aiChatToggle" onclick="toggleAIChat()" style="position:fixed;bottom:32px;right:32px;width:64px;height:64px;border-radius:24px;background:var(--color-primary);color:#fff;border:none;cursor:pointer;z-index:9999;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 24px rgba(201,169,110,0.35);">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
 </button>
 
@@ -26,11 +34,13 @@
   .think-dot:nth-child(2) { animation-delay:0.2s; }
   .think-dot:nth-child(3) { animation-delay:0.4s; }
   #aiInput.editing { border:2px dashed var(--color-primary); outline:none; box-shadow:0 0 0 3px rgba(201,169,110,0.12); }
-  .brand-option { display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text-primary);transition:all 0.15s;margin-bottom:4px; }
-  .brand-option:hover { border-color:var(--accent);background:rgba(201,169,110,0.05); }
-  .brand-option.selected { border-color:var(--accent);background:rgba(201,169,110,0.1); }
-  .brand-search { width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;color:var(--text-primary);background:var(--bg);box-sizing:border-box;margin-bottom:8px; }
-  .brand-search:focus { outline:none;border-color:var(--accent); }
+  @keyframes sug-bounce { 0%{transform:translateY(10px);opacity:0} 60%{transform:translateY(-2px)} 100%{transform:translateY(0);opacity:1} }
+  .sug-btn { padding:8px 12px; border-radius:20px; font-size:12px; font-weight:500; border:none; background:rgba(201,169,110,0.12); color:var(--text-primary); cursor:pointer; transition:all 0.15s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; text-align:center; animation:sug-bounce 0.35s ease-out both; }
+  .sug-btn:hover { background:rgba(201,169,110,0.25); color:var(--accent); }
+  #aiSuggestions { display:none; padding:10px 24px; gap:8px; align-items:center; border-top:1px solid var(--border); }
+  #aiSuggestions.sug-open { display:grid; grid-template-columns:repeat(5,1fr) auto; }
+  .sug-refresh { width:28px; height:28px; border-radius:50%; border:none; background:rgba(201,169,110,0.12); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.15s; flex-shrink:0; color:var(--text-primary); }
+  .sug-refresh:hover { background:rgba(201,169,110,0.25); color:var(--accent); }
 
   /* ── Inline interview styles ── */
   .iv-option { display:flex; align-items:center; gap:10px; padding:10px 14px; border:1px solid var(--border); border-radius:10px; cursor:pointer; transition:all 0.15s; margin-bottom:6px; }
@@ -73,17 +83,69 @@ function escapeHtml(str) {
 }
 function toggleAIChat() {
   aiOpen = !aiOpen;
-  document.getElementById('aiChatPanel').style.right = aiOpen ? '0' : '-380px';
+  document.getElementById('aiChatPanel').style.display = aiOpen ? 'flex' : 'none';
   document.getElementById('aiChatToggle').style.display = aiOpen ? 'none' : 'flex';
+  document.body.style.overflow = aiOpen ? 'hidden' : '';
 }
 var _aiLoading = false;
 var _aiLoadingEl = null;
 var _chatHistory = [];
 var MAX_HISTORY = 20;
+var _suggestions = [];
+var _suggestionSource = '';
+
+function showSuggestions(message, items, source) {
+  _suggestions = items || [];
+  _suggestionSource = source || '';
+  appendBubble(message);
+  var input = document.getElementById('aiInput');
+  if (input) { input.disabled = true; input.placeholder = 'Chọn một gợi ý bên dưới...'; }
+  for (var i = 0; i < 5; i++) {
+    var btn = document.getElementById('sugBtn' + i);
+    if (btn) {
+      if (i < _suggestions.length) {
+        btn.textContent = _suggestions[i].name;
+        btn.style.display = '';
+        btn.style.animation = 'none';
+        btn.offsetHeight;
+        btn.style.animation = '';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+  }
+  document.getElementById('aiSuggestions').classList.add('sug-open');
+}
+function hideSuggestions() {
+  document.getElementById('aiSuggestions').classList.remove('sug-open');
+  var input = document.getElementById('aiInput');
+  if (input) { input.disabled = false; input.placeholder = 'Nhập câu hỏi...'; input.focus(); }
+  for (var i = 0; i < 5; i++) {
+    var btn = document.getElementById('sugBtn' + i);
+    if (btn) { btn.style.display = 'none'; btn.textContent = ''; }
+  }
+  _suggestions = [];
+  _suggestionSource = '';
+}
+function pickSuggestion(index) {
+  if (!_suggestions[index]) return;
+  var item = _suggestions[index];
+  var actionMsg = item.action || ('tạo thương hiệu ' + item.name);
+  hideSuggestions();
+  sendAIMessage(actionMsg);
+}
+function refreshSuggestions() {
+  if (_aiLoading || !_suggestionSource) return;
+  var msg = _suggestionSource === 'ai'
+    ? 'Đề xuất 5 tên hãng mới'
+    : 'Đề xuất 5 hãng sản phẩm khác';
+  hideSuggestions();
+  sendAIMessage(msg);
+}
 
 // ── Bubble helpers ──
 function aiBubble(html, extraStyle) {
-  return '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;white-space:pre-line;' + (extraStyle||'') + '">' + html + '</div>';
+  return '<div style="background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;white-space:pre-line;' + (extraStyle||'') + '">' + html + '</div>';
 }
 function appendBubble(html, extraStyle) {
   var c = document.getElementById('aiMessages');
@@ -94,7 +156,7 @@ function showThinking() {
   _aiLoading = true;
   var container = document.getElementById('aiMessages');
   _aiLoadingEl = document.createElement('div');
-  _aiLoadingEl.style.cssText = 'background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
+  _aiLoadingEl.style.cssText = 'background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
   _aiLoadingEl.innerHTML = '<span class="think-dot"></span><span class="think-dot"></span><span class="think-dot"></span>';
   container.appendChild(_aiLoadingEl);
   container.scrollTop = container.scrollHeight;
@@ -108,10 +170,11 @@ function sendAIMessage(msgOverride) {
   var input = document.getElementById('aiInput');
   var msg = msgOverride || input.value.trim();
   if (!msg || _aiLoading) return;
+  hideSuggestions();
   var container = document.getElementById('aiMessages');
 
   var userBubble = document.createElement('div');
-  userBubble.style.cssText = 'background:var(--color-primary);padding:10px 14px 10px 14px;border-radius:10px;font-size:13px;color:#fff;align-self:flex-end;max-width:85%;display:flex;align-items:flex-start;gap:8px;';
+  userBubble.style.cssText = 'background:var(--color-primary);padding:14px 18px;border-radius:20px;font-size:14px;color:#fff;align-self:flex-end;max-width:85%;display:flex;align-items:flex-start;gap:8px;';
   userBubble.innerHTML =
     '<span style="flex:1;word-break:break-word;">' + escapeHtml(msg) + '</span>' +
     '<span onclick="editUserMessage(this)" data-msg="' + escapeHtml(msg.replace(/"/g,'"')) + '" style="flex-shrink:0;cursor:pointer;opacity:0.5;margin-top:1px;transition:opacity 0.15s;" onmouseenter="this.style.opacity=\'1\'" onmouseleave="this.style.opacity=\'0.5\'" title="Sửa câu hỏi">' +
@@ -132,7 +195,7 @@ function sendAIMessage(msgOverride) {
     if (contentType.includes('application/json')) {
       return r.json().then(function(d) {
         if (d.type === 'interview_trigger') return { isInterview: true, brandName: d.brandName, message: d.message };
-        if (d.type === 'create_choice') return { isCreateChoice: true, message: d.message };
+        if (d.type === 'brand_suggestions') return { isBrandSuggestions: true, brands: d.brands, message: d.message, source: d.source };
         if (d.type === 'entity_preview') return { isEntity: true, entity: d.entity, data: d.data, message: d.message };
         if (d.type === 'entity_created') return { isCreated: true, message: d.message };
         if (d.error) return { isError: true, message: d.error };
@@ -143,14 +206,14 @@ function sendAIMessage(msgOverride) {
   }).then(function(reply) {
     hideThinking();
     if (reply.isError) {
-      container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;white-space:pre-line;">' + escapeHtml(reply.message) + '</div>';
+      container.innerHTML += '<div style="background:var(--bg-card);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--danger);align-self:flex-start;max-width:85%;white-space:pre-line;">' + escapeHtml(reply.message) + '</div>';
       container.scrollTop = container.scrollHeight; return;
     }
     if (reply.isInterview) {
       appendBubble(escapeHtml(reply.message));
       startInterviewInline(reply.brandName);
-    } else if (reply.isCreateChoice) {
-      renderCreateChoice(container, reply.message);
+    } else if (reply.isBrandSuggestions) {
+      showSuggestions(reply.message, reply.brands, reply.source);
     } else if (reply.isEntity) {
       renderEntityPreview(container, reply.entity, reply.data, reply.message);
     } else if (reply.isCreated) {
@@ -162,7 +225,7 @@ function sendAIMessage(msgOverride) {
     }
   }).catch(function(err) {
     hideThinking();
-    container.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);white-space:pre-line;">Lỗi kết nối: ' + escapeHtml(err ? err.message || err : 'unknown') + '</div>';
+    container.innerHTML += '<div style="background:var(--bg-card);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--danger);white-space:pre-line;">Lỗi kết nối: ' + escapeHtml(err ? err.message || err : 'unknown') + '</div>';
   });
 }
 
@@ -199,6 +262,7 @@ function submitInlineEdit() {
 }
 function resendMessage(msg) {
   if (!msg || _aiLoading) return;
+  hideSuggestions();
   var container = document.getElementById('aiMessages'); showThinking();
   fetch('/api/ai/admin/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.API_TOKEN || '') },
@@ -207,7 +271,7 @@ function resendMessage(msg) {
     var ct = r.headers.get('content-type') || '';
     if (ct.includes('application/json')) return r.json().then(function(d) {
       if (d.type === 'interview_trigger') return { isInterview: true, brandName: d.brandName, message: d.message };
-      if (d.type === 'create_choice') return { isCreateChoice: true, message: d.message };
+      if (d.type === 'brand_suggestions') return { isBrandSuggestions: true, brands: d.brands, message: d.message, source: d.source };
       if (d.type === 'entity_preview') return { isEntity: true, entity: d.entity, data: d.data, message: d.message };
       if (d.type === 'entity_created') return { isCreated: true, message: d.message };
       if (d.error) return { isError: true, message: d.error };
@@ -218,7 +282,7 @@ function resendMessage(msg) {
     hideThinking();
     if (reply.isError) { appendBubble(escapeHtml(reply.message), 'color:var(--danger);'); return; }
     if (reply.isInterview) { appendBubble(escapeHtml(reply.message)); startInterviewInline(reply.brandName); }
-    else if (reply.isCreateChoice) { renderCreateChoice(container, reply.message); }
+    else if (reply.isBrandSuggestions) { showSuggestions(reply.message, reply.brands, reply.source); }
     else if (reply.isEntity) { renderEntityPreview(container, reply.entity, reply.data, reply.message); }
     else if (reply.isCreated) { appendBubble(escapeHtml(reply.message), 'color:#16a34a;'); }
     else { appendBubble(escapeHtml(reply.text)); }
@@ -233,7 +297,7 @@ function cancelInlineEdit(bubble, oldMsg) {
 var pendingEntityData = null; var pendingEntityType = null;
 function renderEntityPreview(container, entity, data, message) {
   pendingEntityData = data; pendingEntityType = entity;
-  var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
+  var html = '<div style="background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
   html += '<div style="white-space:pre-line;margin-bottom:10px;">' + escapeHtml(message) + '</div>';
   html += '<div style="display:flex;gap:8px;"><button onclick="confirmCreateEntity()" style="padding:6px 14px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">✅ Tạo luôn</button><button onclick="cancelCreateEntity()" style="padding:6px 14px;background:var(--bg);color:var(--text-muted);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">Hủy</button></div></div>';
   container.innerHTML += html; container.scrollTop = container.scrollHeight;
@@ -241,13 +305,13 @@ function renderEntityPreview(container, entity, data, message) {
 function confirmCreateEntity() {
   if (!pendingEntityType || !pendingEntityData) return;
   var c = document.getElementById('aiMessages');
-  c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--text-muted);align-self:flex-start;max-width:85%;">⏳ Đang tạo...</div>'; c.scrollTop = c.scrollHeight;
+  c.innerHTML += '<div style="background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--text-muted);align-self:flex-start;max-width:85%;">⏳ Đang tạo...</div>'; c.scrollTop = c.scrollHeight;
   fetch('/api/ai/admin/chat', { method:'POST', headers:{ 'Content-Type':'application/json','Authorization':'Bearer '+(window.API_TOKEN||'') }, body:JSON.stringify({ message:'.confirm',action:'confirm_create',entity:pendingEntityType,data:pendingEntityData }) })
-  .then(function(r){return r.json();}).then(function(d){ c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:'+(d.type==='entity_created'?'#16a34a':'var(--danger)')+';align-self:flex-start;max-width:85%;">'+escapeHtml(d.message)+'</div>'; c.scrollTop = c.scrollHeight; })
-  .catch(function(){ c.innerHTML += '<div style="background:var(--bg-card);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi khi tạo</div>'; });
+  .then(function(r){return r.json();}).then(function(d){ c.innerHTML += '<div style="background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:'+(d.type==='entity_created'?'#16a34a':'var(--danger)')+';align-self:flex-start;max-width:85%;">'+escapeHtml(d.message)+'</div>'; c.scrollTop = c.scrollHeight; })
+  .catch(function(){ c.innerHTML += '<div style="background:var(--bg-card);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi khi tạo</div>'; });
   pendingEntityData = null; pendingEntityType = null;
 }
-function cancelCreateEntity() { var c = document.getElementById('aiMessages'); c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--text-muted);align-self:flex-start;max-width:85%;">Đã hủy.</div>'; c.scrollTop = c.scrollHeight; pendingEntityData = null; pendingEntityType = null; }
+function cancelCreateEntity() { var c = document.getElementById('aiMessages'); c.innerHTML += '<div style="background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--text-muted);align-self:flex-start;max-width:85%;">Đã hủy.</div>'; c.scrollTop = c.scrollHeight; pendingEntityData = null; pendingEntityType = null; }
 
 // ── Brand Selection (inline) ──
 function startInterviewInline(brandName) {
@@ -268,54 +332,6 @@ function startInterviewInline(brandName) {
   .catch(function(err) { hideThinking(); appendBubble('Lỗi kết nối: ' + escapeHtml(err.message), 'color:var(--danger);'); });
 }
 
-function renderCreateChoice(container, message) {
-  var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
-  html += '<div style="margin-bottom:10px;">' + escapeHtml(message) + '</div>';
-  html += '<div style="display:flex;gap:8px;">';
-  html += '<button onclick="pickExistingBrand()" style="padding:8px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;">Brand có sẵn</button>';
-  html += '<button onclick="pickNewBrand()" style="padding:8px 16px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;">Brand mới</button>';
-  html += '</div></div>';
-  container.innerHTML += html; container.scrollTop = container.scrollHeight;
-}
-function pickExistingBrand() { renderBrandList(document.getElementById('aiMessages'), ''); }
-function pickNewBrand() {
-  var c = document.getElementById('aiMessages');
-  _aiLoading = true;
-  fetch('/api/ai/admin/random-brands', { headers: { 'Authorization': 'Bearer ' + (window.API_TOKEN || '') } })
-    .then(function(r) { return r.json(); }).then(function(res) {
-      _aiLoading = false;
-      if (!res.success || !res.data || !res.data.length) { c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Không lấy được danh sách brand ạ.</div>'; c.scrollTop = c.scrollHeight; return; }
-      var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
-      html += '<div style="margin-bottom:8px;">Dạ em gợi ý 5 brand ngẫu nhiên ạ:</div>';
-      res.data.forEach(function(b) { html += '<div class="brand-option" onclick="selectBrand(\'' + b.name + '\')">' + escapeHtml(b.name) + (b.origin ? ' <span style="color:var(--text-muted);font-size:11px;">(' + escapeHtml(b.origin) + ')</span>' : '') + '</div>'; });
-      html += '<button onclick="pickNewBrand()" style="margin-top:8px;padding:6px 12px;background:var(--bg);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:11px;">🔄 Đổi brand khác</button>';
-      html += '</div>'; c.innerHTML += html; c.scrollTop = c.scrollHeight;
-    }).catch(function(err) { _aiLoading = false; c.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi: ' + escapeHtml(err.message) + '</div>'; c.scrollTop = c.scrollHeight; });
-}
-function renderBrandList(container, brandName) {
-  _aiLoading = true;
-  fetch('/api/brands?page=1&limit=200', { headers: { 'Authorization': 'Bearer ' + (window.API_TOKEN || '') } })
-    .then(function(r) { return r.json(); }).then(function(res) {
-      _aiLoading = false;
-      var brands = res.data || [];
-      if (!brands.length) { container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Chưa có brand nào ạ.</div>'; container.scrollTop = container.scrollHeight; return; }
-      var html = '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;">';
-      html += '<div style="margin-bottom:8px;">Dạ sếp chọn brand muốn tạo sản phẩm ạ:</div>';
-      html += '<input class="brand-search" type="text" placeholder="Tìm brand..." oninput="filterBrands(this.value)">';
-      html += '<div id="brandListWrap" style="max-height:200px;overflow-y:auto;">';
-      brands.forEach(function(b) { html += '<div class="brand-option" data-brand-name="' + escapeHtml(b.name.toLowerCase()) + '" onclick="selectBrand(\'' + escapeHtml(b.name) + '\')">' + escapeHtml(b.name) + (b.origin ? ' <span style="color:var(--text-muted);font-size:11px;">(' + escapeHtml(b.origin) + ')</span>' : '') + '</div>'; });
-      html += '</div></div>';
-      container.innerHTML += html; container.scrollTop = container.scrollHeight;
-    }).catch(function(err) { _aiLoading = false; container.innerHTML += '<div style="background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--danger);align-self:flex-start;max-width:85%;">Lỗi: ' + escapeHtml(err.message) + '</div>'; container.scrollTop = container.scrollHeight; });
-}
-function filterBrands(q) {
-  var opts = document.querySelectorAll('#brandListWrap .brand-option');
-  var lq = (q || '').toLowerCase();
-  opts.forEach(function(opt) { var name = opt.getAttribute('data-brand-name') || ''; opt.style.display = (!lq || name.indexOf(lq) >= 0) ? '' : 'none'; });
-}
-function selectBrand(brandName) {
-  sendAIMessage('tạo sản phẩm cho hãng ' + brandName);
-}
 
 // ═══════════════════════════════════════════
 // ── INLINE INTERVIEW WIZARD (No Popup!) ──
@@ -338,7 +354,7 @@ function renderInterviewStepInline(res) {
 
   function addToBubble(bodyHtml, footerHtml) {
     var wrap = document.createElement('div');
-    wrap.style.cssText = 'background:var(--color-surface);padding:10px 14px;border-radius:10px;font-size:13px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
+    wrap.style.cssText = 'background:var(--color-surface);padding:14px 18px;border-radius:20px;font-size:14px;color:var(--color-text-secondary);align-self:flex-start;max-width:85%;';
     // Clear all previous iv-step containers so only the latest step is interactive
     document.querySelectorAll('.iv-step-body').forEach(function(el){ el.closest('div[style*="border-radius:10px"]')?.remove(); });
     // Also clear iv-step-footer siblings

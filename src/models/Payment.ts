@@ -1,15 +1,16 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export interface IPayment extends Document {
   orderId: mongoose.Types.ObjectId;
-  paymentMethodId: mongoose.Types.ObjectId;
+  paymentMethodId?: mongoose.Types.ObjectId;
   method: string;
   status: PaymentStatus;
   transactionCode?: string;
   txnRef?: string;
+  bankCode?: string;
+  payDate?: string;
   paidAt?: Date;
   refundedAt?: Date;
   createdAt: Date;
@@ -19,7 +20,7 @@ export interface IPayment extends Document {
 const PaymentSchema = new Schema<IPayment>(
   {
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-    paymentMethodId: { type: Schema.Types.ObjectId, ref: 'PaymentMethod', required: true, index: true },
+    paymentMethodId: { type: Schema.Types.ObjectId, ref: 'PaymentMethod', index: true },
     method: { type: String, required: true },
     status: {
       type: String,
@@ -28,7 +29,9 @@ const PaymentSchema = new Schema<IPayment>(
       index: true,
     },
     transactionCode: { type: String },
-    txnRef: { type: String, sparse: true },
+    txnRef: { type: String, sparse: true, index: true },
+    bankCode: { type: String },
+    payDate: { type: String },
     paidAt: { type: Date },
     refundedAt: { type: Date },
   },
@@ -37,8 +40,6 @@ const PaymentSchema = new Schema<IPayment>(
     collection: 'payments',
   }
 );
-
-PaymentSchema.plugin(multiTenancyPlugin);
 
 export const Payment =
   mongoose.models.Payment ||

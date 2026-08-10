@@ -6,7 +6,7 @@ export interface IAIFeedback extends Document {
   answer: string;
   rating: number;
   embedding: number[];
-  userId?: string;
+  userId?: mongoose.Types.ObjectId;
   createdAt: Date;
 }
 
@@ -16,7 +16,7 @@ const AIFeedbackSchema: Schema = new Schema({
   answer: { type: String, required: true },
   rating: { type: Number, required: true, min: 1, max: 5 },
   embedding: { type: [Number], default: undefined },
-  userId: { type: String, default: null },
+  userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   createdAt: { type: Date, default: Date.now },
 });
 

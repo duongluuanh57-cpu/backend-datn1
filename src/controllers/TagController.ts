@@ -13,7 +13,7 @@ export class TagController {
       // If page param is provided, use paginated response
       if (page) {
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
-        const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
+        const limitNum = Math.min(100, Math.max(1, parseInt(limit ?? '25', 10)));
         const result = await TagService.getPaginatedTags(pageNum, limitNum, search ?? '');
         return reply.status(200).send({ success: true, data: result });
       }
@@ -47,6 +47,61 @@ export class TagController {
       return reply.status(200).send({
         success: true,
         data: tag,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * GET /api/tags/:id/detail
+   * Returns tag detail with product count and recent products
+   */
+  static async getTagDetail(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      
+      const tag = await TagService.getTagDetail(id);
+      if (!tag) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy tag này',
+        });
+      }
+      
+      return reply.status(200).send({
+        success: true,
+        data: tag,
+      });
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message,
+      });
+    }
+  }
+
+  /**
+   * GET /api/tags/:id/products
+   * Returns paginated products of a tag (for "load more")
+   */
+  static async getTagProducts(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const { page = '1', limit = '20' } = req.query as { page?: string; limit?: string };
+
+      const data = await TagService.getTagProducts(
+        id,
+        Math.max(1, parseInt(page, 10) || 1),
+        Math.min(100, Math.max(1, parseInt(limit, 10) || 20))
+      );
+
+      return reply.status(200).send({
+        success: true,
+        data,
       });
     } catch (error: any) {
       return reply.status(500).send({

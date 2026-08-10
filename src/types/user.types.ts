@@ -7,15 +7,14 @@ export const RegisterSchema = z.object({
 });
 
 export const LoginSchema = z.object({
-  email: z.string().email('Email không hợp lệ'),
+  email: z.string().min(1, 'Vui lòng nhập email hoặc tên đăng nhập'),
   password: z.string().min(1, 'Vui lòng nhập mật khẩu'),
 });
 
 export const ChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại'),
+  currentPassword: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại').optional(),
   newPassword: z.string().min(6, 'Mật khẩu mới phải có ít nhất 6 ký tự'),
 });
 
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
-export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;

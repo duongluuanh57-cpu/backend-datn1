@@ -1,30 +1,42 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { MiniGameService } from '../services/MiniGameService.ts';
-
-function getUserId(req: FastifyRequest): string | undefined {
-  return (req as any).user?._id?.toString();
-}
+import { getUserId } from '../utils/helpers.ts';
 
 const REWARD_SEGMENTS = [
-  // Wheel of Fortune rewards
-  { weight: 20, discountType: 'percentage' as const, discountAmount: 5 },
-  { weight: 15, discountType: 'percentage' as const, discountAmount: 10 },
-  { weight: 10, discountType: 'percentage' as const, discountAmount: 15 },
-  { weight: 5, discountType: 'percentage' as const, discountAmount: 20 },
-  { weight: 10, discountType: 'fixed' as const, discountAmount: 30000 },
-  { weight: 5, discountType: 'fixed' as const, discountAmount: 50000 },
-  { weight: 5, discountType: 'fixed' as const, discountAmount: 100000 },
-  { weight: 30, discountType: 'percentage' as const, discountAmount: 0 }, // No win
+  { discountType: 'fixed' as const,      discountAmount: 1,  label: 'Freeship Hỏa tốc' }, // Ô 0
+  { discountType: 'percentage' as const, discountAmount: 5,  label: 'Voucher giảm 5%' },   // Ô 1
+  { discountType: 'fixed' as const,      discountAmount: 1,  label: 'Freeship Hỏa tốc' }, // Ô 2
+  { discountType: 'percentage' as const, discountAmount: 0,  label: 'May mắn' },          // Ô 3 (Trượt)
+  { discountType: 'fixed' as const,      discountAmount: 1,  label: 'Freeship Hỏa tốc' }, // Ô 4
+  { discountType: 'percentage' as const, discountAmount: 10, label: 'Voucher giảm 10%' },  // Ô 5
+];
+
+// Trọng số xuất hiện (tổng 100) để chọn giải thưởng ngẫu nhiên
+const SEGMENTS_WEIGHTS = [
+  { index: 0, weight: 15 }, // Freeship Hỏa tốc
+  { index: 1, weight: 20 }, // Giảm 5%
+  { index: 2, weight: 15 }, // Freeship Hỏa tốc
+  { index: 3, weight: 25 }, // May mắn
+  { index: 4, weight: 15 }, // Freeship Hỏa tốc
+  { index: 5, weight: 10 }, // Giảm 10%
 ];
 
 function pickRandomReward() {
-  const totalWeight = REWARD_SEGMENTS.reduce((sum, s) => sum + s.weight, 0);
+  const totalWeight = SEGMENTS_WEIGHTS.reduce((sum, s) => sum + s.weight, 0);
   let random = Math.floor(Math.random() * totalWeight);
-  for (const segment of REWARD_SEGMENTS) {
-    random -= segment.weight;
-    if (random < 0) return segment;
+  for (const seg of SEGMENTS_WEIGHTS) {
+    random -= seg.weight;
+    if (random < 0) {
+      return {
+        ...REWARD_SEGMENTS[seg.index],
+        segmentIndex: seg.index,
+      };
+    }
   }
-  return REWARD_SEGMENTS[0];
+  return {
+    ...REWARD_SEGMENTS[3],
+    segmentIndex: 3,
+  };
 }
 
 export class MiniGameController {
@@ -32,19 +44,20 @@ export class MiniGameController {
   static async status(req: FastifyRequest, reply: FastifyReply) {
     try {
       const userId = getUserId(req);
-      const remaining = await MiniGameService.getRemainingPlays(userId);
+      if (!userId) {
+        return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập.' });
+      }
+
+      // Đồng bộ lượt quay trước
+      const remaining = await MiniGameService.syncUserSpinTurns(userId);
       const canPlay = await MiniGameService.canPlay(userId);
 
       return reply.send({
         success: true,
         data: {
           remainingPlays: remaining,
-          dailyLimit: MiniGameService.getDailyLimit(),
-          cooldownSeconds: MiniGameService.getCooldownSeconds(),
           canPlay: canPlay.allowed,
-          ...(canPlay as any).cooldownRemaining
-            ? { cooldownRemaining: (canPlay as any).cooldownRemaining }
-            : {},
+          message: canPlay.allowed ? `Bạn đang có ${remaining} lượt quay.` : canPlay.reason,
         },
       });
     } catch (err: any) {
@@ -56,8 +69,11 @@ export class MiniGameController {
   static async play(req: FastifyRequest, reply: FastifyReply) {
     try {
       const userId = getUserId(req);
-      const { gameType } = req.body as { gameType: string };
+      if (!userId) {
+        return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập.' });
+      }
 
+      const { gameType } = req.body as { gameType: string };
       if (!gameType || !['wheel', 'scratch', 'dice', 'quiz'].includes(gameType)) {
         return reply.status(400).send({
           success: false,
@@ -65,29 +81,30 @@ export class MiniGameController {
         });
       }
 
-      // Check daily limit + cooldown
+      // 1. Đồng bộ lượt quay trước
+      await MiniGameService.syncUserSpinTurns(userId);
+
+      // 2. Check xem có thể chơi không
       const canPlay = await MiniGameService.canPlay(userId);
       if (!canPlay.allowed) {
-        return reply.status(429).send({
+        return reply.status(400).send({
           success: false,
           message: canPlay.reason,
-          ...(canPlay as any).cooldownRemaining
-            ? { cooldownRemaining: (canPlay as any).cooldownRemaining }
-            : {},
         });
       }
 
-      // Determine reward (server-side random)
+      // 3. Roll phần thưởng
       const reward = pickRandomReward();
       const won = reward.discountAmount > 0;
 
-      // Save result & create voucher
+      // 4. Lưu kết quả game, trừ lượt quay của user, cấp UserVoucher
       const session = await MiniGameService.saveResult(
         {
           gameType: gameType as any,
           won,
           discountType: won ? reward.discountType : undefined,
           discountAmount: won ? reward.discountAmount : undefined,
+          segmentIndex: reward.segmentIndex,
         },
         userId
       );
@@ -99,12 +116,9 @@ export class MiniGameController {
           voucherCode: (session as any).reward?.voucherCode,
           discountType: reward.discountType,
           discountAmount: reward.discountAmount,
+          segmentIndex: reward.segmentIndex, // Trả thêm index của ô dừng về cho client
           message: won
-            ? `Chúc mừng! Bạn đã trúng thưởng ${
-                reward.discountType === 'percentage'
-                  ? `${reward.discountAmount}%`
-                  : `${reward.discountAmount.toLocaleString()}đ`
-              }!`
+            ? `Chúc mừng! Bạn đã trúng thưởng ${reward.label}!`
             : 'Chúc bạn may mắn lần sau!',
         },
       });
@@ -117,9 +131,23 @@ export class MiniGameController {
   static async history(req: FastifyRequest, reply: FastifyReply) {
     try {
       const userId = getUserId(req);
-      const history = await MiniGameService.getHistory(userId);
+      if (!userId) {
+        return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập.' });
+      }
 
+      const history = await MiniGameService.getHistory(userId);
       return reply.send({ success: true, data: history });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
+
+  /** GET /api/mini-games/recent-wins */
+  static async recentWins(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const limit = Number((req.query as any).limit) || 10;
+      const recent = await MiniGameService.getRecentWins(limit);
+      return reply.send({ success: true, data: recent });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }

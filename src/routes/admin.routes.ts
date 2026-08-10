@@ -4,28 +4,18 @@ import { csrfProtection } from '../middleware/csrfMiddleware.ts';
 import { AdminPageController } from '../controllers/admin/AdminPageController.ts';
 import { AdminCRUDController } from '../controllers/admin/AdminCRUDController.ts';
 import { AdminCRUDControllerPart2 } from '../controllers/admin/AdminCRUDControllerPart2.ts';
+import { DashboardStatsController } from '../controllers/admin/dashboardStatsController.ts';
 import { Tag } from '../models/Tag.ts';
+import { ProductTag } from '../models/ProductTag.ts';
+import { AuditLog } from '../models/AuditLog.ts';
 import { UserRepository } from '../repositories/UserRepository.ts';
-import ejs from 'ejs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { readFileSync } from 'fs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const viewsDir = join(__dirname, '../views');
-function renderEjs(templatePath: string, data: Record<string, any> = {}): string {
-  const tmpl = readFileSync(join(viewsDir, templatePath), 'utf-8');
-  return ejs.render(tmpl, data, { views: [viewsDir] });
-}
-function getCommonData(userDoc: any, pageTitle: string, currentPage: string, breadcrumb?: string) {
-  const userName = userDoc?.fullName || userDoc?.username || 'Admin';
-  return { pageTitle, currentPage, userName, userRole: userDoc?.role === 'ADMIN' ? 'Quản trị viên' : 'Nhân viên', userInitials: (userName.charAt(0) || 'A').toUpperCase(), breadcrumb: breadcrumb || '' };
-}
+import { FlashSaleService } from '../services/FlashSaleService.ts';
+import { renderEjs, renderAdminPage } from '../utils/viewHelpers.ts';
 
 export async function adminRoutes(app: FastifyInstance) {
   // Rate limit cho admin: 120 req/phút (2x so với user thường)
   app.addHook('preHandler', adminAuthMiddleware);
+
 
   // Rate limit cứng cho form submit
   app.addHook('preHandler', async (req, reply) => {
@@ -53,12 +43,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // Dashboard
   app.get('/', AdminPageController.dashboard);
+  app.get('/dashboard-stats', DashboardStatsController.getSummaryStats);
 
   // ── Products CRUD ──
   app.get('/products', AdminCRUDController.productList);
+  app.get('/products/create', AdminCRUDController.productCreate);
   app.get('/products/:id', AdminCRUDController.productDetail);
   app.post('/products/:id/delete', AdminCRUDController.productDelete);
-  app.post('/products/cleanup-images', AdminCRUDController.cleanupProductImages);
 
   // ── Edit product (full form) — phải đặt TRƯỚC /products/supplement/:id
   app.get('/products/:id/edit', AdminCRUDController.productEdit);
@@ -71,10 +62,16 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── Brands CRUD ──
   app.get('/brands', AdminCRUDController.brandList);
+  app.get('/brands/create', AdminCRUDController.brandCreate);
+  app.get('/brands/:id/edit', AdminCRUDController.brandEdit);
+  app.get('/brands/:id', AdminCRUDController.brandDetail);
   app.post('/brands/:id/delete', AdminCRUDController.brandDelete);
 
   // ── Categories CRUD ──
   app.get('/categories', AdminCRUDController.categoryList);
+  app.get('/categories/create', AdminCRUDController.categoryCreate);
+  app.get('/categories/:id/edit', AdminCRUDController.categoryEdit);
+  app.get('/categories/:id', AdminCRUDController.categoryDetail);
   app.post('/categories/:id/delete', AdminCRUDController.categoryDelete);
 
   // ── Tags CRUD ──
@@ -82,20 +79,29 @@ export async function adminRoutes(app: FastifyInstance) {
     const u = await UserRepository.findById((req as any).user?.userId);
     const apiToken = (req as any).token || '';
     const config = JSON.stringify({
-      entityName:'tag', title:'Tags', apiEndpoint:'/api/tags', itemsPath:'',
+      entityName:'tag', title:'Tags', apiEndpoint:'/api/tags', itemsPath:'items', totalPath:'total', totalPagesPath:'totalPages',
       columns:[
+        {key:'index', label:'STT', render:'rowIndex'},
         {key:'name', label:'Tag'},
         {key:'slug', label:'Slug'},
-        {key:'status', label:'Trạng thái', render:'status', statusMap:{active:'Hoạt động'}, colorMap:{active:'#22c55e'}, fallbackStatus:'Ẩn', fallbackColor:'#ef4444'},
+        {key:'status', label:'Trạng thái', render:'editableStatus', statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}], statusApiEndpoint:'/api/tags/:id'},
       ],
       deleteEndpoint:'/admin/tags/:id/delete',
+      bulkDeleteEndpoint:'/api/tags/bulk-delete',
+      detailEndpoint:'/admin/tags/:id',
       searchPlaceholder:'Tìm tag...',
     });
     const b = renderEjs('admin/crud/list.ejs', { apiToken, config });
-    return reply.view('admin/layout.ejs', { ...getCommonData(u, 'Tags', 'tags', 'Quản lý Cửa hàng'), body: b, apiToken });
+    return renderAdminPage(reply, u, 'Tags', 'tags', b, apiToken, 'Quản lý Cửa hàng');
   });
+  app.get('/tags/create', AdminCRUDController.tagCreate);
+  app.get('/tags/:id/edit', AdminCRUDController.tagEdit);
+  app.get('/tags/:id', AdminCRUDController.tagDetail);
   app.post('/tags/:id/delete', async (req, reply) => {
-    await Tag.findByIdAndDelete((req.params as any).id);
+    const tagId = (req.params as any).id;
+    await Tag.findByIdAndDelete(tagId);
+    await ProductTag.deleteMany({ tagId: tagId });
+    await FlashSaleService.clearCache();
     return reply.redirect('/admin/tags?toast=Đã+xóa+tag&type=success');
   });
 
@@ -105,15 +111,78 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── Vouchers CRUD ──
   app.get('/vouchers', AdminCRUDControllerPart2.voucherList);
+  app.get('/vouchers/:id', AdminCRUDControllerPart2.voucherDetail);
+  app.get('/vouchers/create', AdminCRUDControllerPart2.voucherCreate);
+  app.get('/vouchers/:id/edit', AdminCRUDControllerPart2.voucherEdit);
   app.post('/vouchers/:id/delete', AdminCRUDControllerPart2.voucherDelete);
+
+  // ── Flash Sales CRUD ──
+  app.get('/flash-sales', AdminCRUDControllerPart2.flashSaleList);
+  app.get('/flash-sales/create', AdminCRUDControllerPart2.flashSaleCreate);
+  app.get('/flash-sales/:id/edit', AdminCRUDControllerPart2.flashSaleEdit);
 
   // ── Users CRUD ──
   app.get('/users', AdminCRUDControllerPart2.userList);
+  app.get('/system-users', AdminCRUDControllerPart2.systemUserList);
   app.post('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
+
+
+  // ── Reviews CRUD ──
+  app.get('/reviews', AdminCRUDControllerPart2.reviewList);
+  app.get('/reviews/:id', AdminCRUDControllerPart2.reviewDetail);
+  app.post('/reviews/:id/moderate', AdminCRUDControllerPart2.reviewModerate);
 
   // ── Settings ──
   app.get('/settings', AdminPageController.settingsPage);
   app.post('/settings', AdminPageController.settingsSave);
+
+  // ── Activity Log API ──
+  app.get('/activity-log-api', async (req, reply) => {
+    const page = parseInt((req.query as any).page, 10) || 1;
+    const limit = Math.min(parseInt((req.query as any).limit, 10) || 30, 100);
+    const skip = (page - 1) * limit;
+    const action = (req.query as any).action || '';
+    const resource = (req.query as any).resource || '';
+
+    const filter: any = {};
+    if (action) filter.action = action;
+    if (resource) filter.resource = resource;
+
+    const [logs, total] = await Promise.all([
+      AuditLog.find(filter)
+        .populate('userId', 'username fullName email')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      AuditLog.countDocuments(filter),
+    ]);
+
+    return reply.send({
+      success: true,
+      data: {
+        items: logs.map((l: any) => ({
+          _id: l._id,
+          userId: l.userId,
+          action: l.action,
+          resource: l.resource,
+          metadata: l.metadata || {},
+          status: l.status,
+          createdAt: l.createdAt,
+        })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  });
+
+  // ── Activity Log page ──
+  app.get('/activity-log', AdminPageController.activityLog);
+
+  // ── Architecture Diagram ──
+  app.get('/architecture', AdminPageController.architecture);
 
   // Logout
   app.post('/logout', AdminPageController.logout);

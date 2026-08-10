@@ -36,10 +36,15 @@ export class UserAddressController {
       if (!user) return reply.status(404).send({ success: false, message: 'Người dùng không tồn tại' });
 
       const body = req.body as {
-        label?: string;
+        addressType?: 'home' | 'office';
+        fullName?: string;
+        phoneNumber?: string;
         address?: string;
         province?: string;
         district?: string;
+        ward?: string;
+        latitude?: number;
+        longitude?: number;
         isDefault?: boolean;
       };
 
@@ -57,10 +62,15 @@ export class UserAddressController {
 
       const newAddress = await UserAddress.create({
         userId: new mongoose.Types.ObjectId(userId),
-        label: body.label?.trim() || 'Địa chỉ của tôi',
+        addressType: body.addressType || 'home',
+        fullName: body.fullName?.trim() || '',
+        phoneNumber: body.phoneNumber?.trim() || '',
         address: body.address?.trim() || '',
         province: body.province?.trim() || '',
         district: body.district?.trim() || '',
+        ward: body.ward?.trim() || '',
+        latitude: body.latitude,
+        longitude: body.longitude,
         isDefault,
       });
 
@@ -85,10 +95,15 @@ export class UserAddressController {
       }
 
       const body = req.body as {
-        label?: string;
+        addressType?: 'home' | 'office';
+        fullName?: string;
+        phoneNumber?: string;
         address?: string;
         province?: string;
         district?: string;
+        ward?: string;
+        latitude?: number;
+        longitude?: number;
         isDefault?: boolean;
       };
 
@@ -101,10 +116,15 @@ export class UserAddressController {
       }
 
       const updateData: any = {};
-      if (body.label !== undefined) updateData.label = body.label.trim();
+      if (body.addressType !== undefined) updateData.addressType = body.addressType;
+      if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
+      if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
       if (body.address !== undefined) updateData.address = body.address.trim();
       if (body.province !== undefined) updateData.province = body.province.trim();
       if (body.district !== undefined) updateData.district = body.district.trim();
+      if (body.ward !== undefined) updateData.ward = body.ward.trim();
+      if (body.latitude !== undefined) updateData.latitude = body.latitude;
+      if (body.longitude !== undefined) updateData.longitude = body.longitude;
       if (body.isDefault !== undefined) updateData.isDefault = body.isDefault;
 
       const updated = await UserAddress.findOneAndUpdate(

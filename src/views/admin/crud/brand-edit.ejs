@@ -1,0 +1,36 @@
+<!-- ═══ Trang Thêm mới / Chỉnh sửa Thương hiệu ═══ -->
+<div id="brand-edit">
+  <!-- ── Header ── -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+    <a href="/admin/brands" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Quay lại danh sách
+    </a>
+    <span style="color:var(--text-muted);">/</span>
+    <span id="be-breadcrumb" style="color:var(--text-primary);font-weight:600;font-size:14px;"><%= IS_NEW ? 'Thêm thương hiệu mới' : 'Đang tải...' %></span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span id="be-save-status" style="font-size:12px;"></span>
+      <button type="button" id="be-btn-save" onclick="saveBrand()"
+        style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;box-shadow:0 2px 8px rgba(201,169,110,0.25);white-space:nowrap;"
+        onmouseover="this.style.filter='brightness(1.1)';this.style.boxShadow='0 4px 16px rgba(201,169,110,0.35)'" onmouseout="this.style.filter='';this.style.boxShadow='0 2px 8px rgba(201,169,110,0.25)'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        <%= IS_NEW ? 'Tạo thương hiệu' : 'Lưu thay đổi' %>
+      </button>
+    </div>
+  </div>
+
+  <% if (!IS_NEW) { %>
+  <%- include('admin/partials/page-loading', { loadingId: 'be-loading', errorId: 'be-error', loadingText: 'Đang tải thông tin thương hiệu...' }) %>
+  <% } %>
+
+  <!-- ── Form ── -->
+  <div id="be-form" style="<%= IS_NEW ? 'display:block;' : 'display:none;' %>">
+    <form id="brand-edit-form" onsubmit="event.preventDefault();">
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start;">
+        <%- include('admin/partials/edit-brand-form') %>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('admin/partials/edit-brand-script') %>

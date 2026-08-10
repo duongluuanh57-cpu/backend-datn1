@@ -1,9 +1,6 @@
 /**
  * Barrel file — re-exports all auth sub-services for backward compatibility.
  */
-export { AuthRegisterService } from './auth/authRegisterService.ts';
-export { AuthSessionService } from './auth/authSessionService.ts';
-
 import { AuthRegisterService } from './auth/authRegisterService.ts';
 import { AuthSessionService } from './auth/authSessionService.ts';
 

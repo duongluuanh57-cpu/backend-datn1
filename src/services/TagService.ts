@@ -1,18 +1,8 @@
 import { Tag } from '../models/Tag.ts';
 import type { ITag } from '../models/Tag.ts';
-
-function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-}
+import { ProductTag } from '../models/ProductTag.ts';
+import { slugify } from '../utils/textNormalizer.ts';
+import { FlashSaleService } from './FlashSaleService.ts';
 
 export class TagService {
   /**
@@ -70,11 +60,19 @@ export class TagService {
     if (data.name && !data.slug) {
       updateData.slug = slugify(data.name);
     }
-    return await Tag.findOneAndUpdate(
+    const updatedTag = await Tag.findOneAndUpdate(
       { _id: id },
       { $set: updateData },
       { new: true }
     );
+
+    // Nếu Tag chuyển sang trạng thái Ẩn (inactive), tự động gỡ Tag khỏi tất cả sản phẩm
+    if (data.status === 'inactive') {
+      await ProductTag.deleteMany({ tagId: id });
+    }
+    await FlashSaleService.clearCache();
+
+    return updatedTag;
   }
 
   /**
@@ -82,12 +80,86 @@ export class TagService {
    */
   static async deleteTag(id: string): Promise<boolean> {
     const result = await Tag.deleteOne({ _id: id });
+    await ProductTag.deleteMany({ tagId: id });
+    await FlashSaleService.clearCache();
     return result.deletedCount > 0;
   }
 
   static async bulkDeleteTags(ids: string[]): Promise<number> {
     if (!ids || ids.length === 0) return 0;
     const result = await Tag.deleteMany({ _id: { $in: ids } });
+    await ProductTag.deleteMany({ tagId: { $in: ids } });
+    await FlashSaleService.clearCache();
     return result.deletedCount;
+  }
+
+  static async getTagDetail(id: string) {
+    const tag = await Tag.findOne({ _id: id }).lean();
+    if (!tag) return null;
+
+    const [productCount, recentProductTags] = await Promise.all([
+      ProductTag.countDocuments({ tagId: id }),
+      ProductTag.find({ tagId: id })
+        .populate('productId', 'name slug price images status')
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .lean(),
+    ]);
+
+    const products = recentProductTags
+      .filter((pt: any) => pt.productId)
+      .map((pt: any) => ({
+        _id: pt.productId._id,
+        name: pt.productId.name,
+        slug: pt.productId.slug,
+        price: pt.productId.price,
+        image: pt.productId.images?.[0] || '',
+        status: pt.productId.status,
+      }));
+
+    return {
+      ...tag,
+      productCount,
+      products,
+    };
+  }
+
+  /**
+   * Fetch paginated products of a tag (for "load more")
+   */
+  static async getTagProducts(
+    id: string,
+    page: number = 1,
+    limit: number = 20
+  ): Promise<{ items: any[]; total: number; page: number; totalPages: number; hasMore: boolean }> {
+    const skip = (page - 1) * limit;
+    const [total, productTags] = await Promise.all([
+      ProductTag.countDocuments({ tagId: id }),
+      ProductTag.find({ tagId: id })
+        .populate('productId', 'name slug price images status')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const items = productTags
+      .filter((pt: any) => pt.productId)
+      .map((pt: any) => ({
+        _id: pt.productId._id,
+        name: pt.productId.name,
+        slug: pt.productId.slug,
+        price: pt.productId.price,
+        image: pt.productId.images?.[0] || '',
+        status: pt.productId.status,
+      }));
+
+    return {
+      items,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      hasMore: skip + items.length < total,
+    };
   }
 }

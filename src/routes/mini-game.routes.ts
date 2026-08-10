@@ -14,9 +14,10 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
  */
 export async function miniGameRoutes(app: FastifyInstance) {
   // Public
-  app.get('/status', MiniGameController.status);
+  app.get('/recent-wins', MiniGameController.recentWins);
 
-  // Auth
+  // Auth required for other mini game operations
+  app.get('/status', { preHandler: authMiddleware }, MiniGameController.status);
   app.post('/play', { preHandler: authMiddleware }, MiniGameController.play);
   app.get('/history', { preHandler: authMiddleware }, MiniGameController.history);
 }

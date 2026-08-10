@@ -1,11 +1,9 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 export type GameType = 'wheel' | 'scratch' | 'dice' | 'quiz';
 export type GameStatus = 'playing' | 'won' | 'lost';
 
 export interface IMiniGameSession extends Document {
-  userId?: string;
+  userId?: mongoose.Types.ObjectId | string;
   gameType: GameType;
   status: GameStatus;
   reward?: {
@@ -21,7 +19,7 @@ export interface IMiniGameSession extends Document {
 
 const MiniGameSessionSchema = new Schema<IMiniGameSession>(
   {
-    userId: { type: String, index: true },
+    userId: { type: Schema.Types.Mixed, index: true },
     gameType: {
       type: String,
       required: true,
@@ -45,8 +43,6 @@ const MiniGameSessionSchema = new Schema<IMiniGameSession>(
     collection: 'mini_game_sessions',
   }
 );
-
-MiniGameSessionSchema.plugin(multiTenancyPlugin);
 
 export const MiniGameSession =
   mongoose.models.MiniGameSession ||

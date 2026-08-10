@@ -8,6 +8,7 @@ if (!redisUrl) {
 
 export const redis = new Redis(redisUrl || 'redis://127.0.0.1:6379', {
   maxRetriesPerRequest: 3, // Thay vì null - retry tối đa 3 lần cho mỗi request
+  connectTimeout: 5000, // Timeout socket connect 5s, tránh nghẽn boot khi cloud Redis lạnh
   retryStrategy: (times: number) => {
     const delay = Math.min(times * 50, 2000); // Exponential backoff: 50ms, 100ms, 150ms, max 2s
     console.warn(`⚠️ [Redis] Retrying connection (attempt ${times}), next retry in ${delay}ms`);
@@ -48,7 +49,14 @@ export async function connectRedis() {
   try {
     // Chỉ gọi connect nếu Redis đang ở trạng thái 'wait' (chưa bắt đầu kết nối)
     if (redis.status === 'wait') {
-      await redis.connect();
+      console.log('⏳ Connecting to Redis...');
+      // Race timeout 6s để không bao giờ treo boot khi Redis không tới được
+      await Promise.race([
+        redis.connect(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Redis connect timeout')), 6000)
+        ),
+      ]);
     }
     console.log('📡 Redis: Connection established successfully');
     redisAvailable = true;
@@ -102,26 +110,12 @@ export async function safeRedisSet(key: string, value: string, mode?: string, du
   }
   try {
     if (mode && duration) {
-      return await redis.set(key, value, mode, duration);
+      return await redis.set(key, value, mode as any, duration);
     }
     return await redis.set(key, value);
   } catch (error) {
     console.error(`❌ Redis set failed for key ${key}:`, error);
     redisAvailable = false;
     return null;
-  }
-}
-
-// Safe Redis del với fallback
-export async function safeRedisDel(...keys: string[]): Promise<number> {
-  if (!isRedisAvailable()) {
-    return 0;
-  }
-  try {
-    return await redis.del(...keys);
-  } catch (error) {
-    console.error(`❌ Redis del failed for keys ${keys.join(', ')}:`, error);
-    redisAvailable = false;
-    return 0;
   }
 }

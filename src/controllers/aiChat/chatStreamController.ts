@@ -58,14 +58,21 @@ export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
       const fb = result.streamResponse;
       if (!fb.body) throw new Error('No body from AI');
 
-      reply.raw.writeHead(200, {
+      const headers: Record<string, string> = {
         'Content-Type': 'text/plain; charset=utf-8',
         'Transfer-Encoding': 'chunked',
         'X-Accel-Buffering': 'no',
         'Cache-Control': 'no-cache, no-transform',
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Credentials': 'true',
-      });
+      };
+
+      if (result.products && result.products.length > 0) {
+        headers['X-Products'] = encodeURIComponent(JSON.stringify(result.products));
+        headers['Access-Control-Expose-Headers'] = 'X-Products';
+      }
+
+      reply.raw.writeHead(200, headers);
 
       const reader = fb.body.getReader();
       while (true) {

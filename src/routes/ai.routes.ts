@@ -1,7 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { AIChatController } from '../controllers/AIChatController.ts';
-import { AICatalogController } from '../controllers/AICatalogController.ts';
+import { chatStream } from '../controllers/aiChat/chatStreamController.ts';
+import { adminChat } from '../controllers/aiChat/adminChatController.ts';
+import { handleFeedback } from '../controllers/aiChat/feedbackController.ts';
+import { generateBrand } from '../controllers/aiCatalog/generateBrandController.ts';
+import { generateUser, createUserFromAI } from '../controllers/aiCatalog/generateUserController.ts';
+import { generateCategory, createCategoryFromAI } from '../controllers/aiCatalog/generateCategoryController.ts';
+import { generateTag, createTagFromAI } from '../controllers/aiCatalog/generateTagController.ts';
+import { generateVoucher, createVoucherFromAI } from '../controllers/aiCatalog/generateVoucherController.ts';
+import { suggestPrice } from '../controllers/aiCatalog/suggestPriceController.ts';
+import { productFillMissing } from '../controllers/aiCatalog/productFillMissingController.ts';
+import { generateProduct } from '../controllers/aiCatalog/generateProductController.ts';
 import { AIVisionController } from '../controllers/AIVisionController.ts';
 import { AICoreController } from '../controllers/AICoreController.ts';
 import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
@@ -23,72 +32,72 @@ export async function aiRoutes(app: FastifyInstance) {
     schema: {
       body: AIGenerateNameSchema,
     },
-    handler: AICatalogController.generateBrand,
+    handler: generateBrand,
   });
 
   // POST /api/ai/generate-user - AI tạo thông tin người dùng
   server.post('/generate-user', {
-    handler: AICatalogController.generateUser,
+    handler: generateUser,
   });
 
   // POST /api/ai/generate-category - AI tạo danh mục
   server.post('/generate-category', {
-    handler: AICatalogController.generateCategory,
+    handler: generateCategory,
   });
 
   // POST /api/ai/generate-tag - AI tạo tag
   server.post('/generate-tag', {
-    handler: AICatalogController.generateTag,
+    handler: generateTag,
   });
 
   // POST /api/ai/generate-voucher - AI tạo voucher
   server.post('/generate-voucher', {
-    handler: AICatalogController.generateVoucher,
+    handler: generateVoucher,
   });
 
   // POST /api/ai/create-user - Tạo user từ dữ liệu AI
   server.post('/create-user', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
-    handler: AICatalogController.createUserFromAI,
+    handler: createUserFromAI,
   });
 
   // POST /api/ai/create-category - Tạo category từ dữ liệu AI
   server.post('/create-category', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
-    handler: AICatalogController.createCategoryFromAI,
+    handler: createCategoryFromAI,
   });
 
   // POST /api/ai/create-tag - Tạo tag từ dữ liệu AI
   server.post('/create-tag', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
-    handler: AICatalogController.createTagFromAI,
+    handler: createTagFromAI,
   });
 
   // POST /api/ai/create-voucher - Tạo voucher từ dữ liệu AI
   server.post('/create-voucher', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
-    handler: AICatalogController.createVoucherFromAI,
+    handler: createVoucherFromAI,
   });
 
   // POST /api/ai/chat - Streaming Vercel AI SDK (dành cho user)
   server.post('/chat', {
-    handler: AIChatController.chatStream,
+    handler: chatStream,
   });
 
   // POST /api/ai/admin/chat - Admin chat (yêu cầu auth + role ADMIN/SUBADMIN)
   server.post('/admin/chat', {
     preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
-    handler: AIChatController.adminChat,
+    handler: adminChat,
   });
 
   // POST /api/ai/suggest-price - Gợi ý giá thị trường + % cộng thêm
   server.post('/suggest-price', {
-    handler: AICatalogController.suggestPrice,
+    handler: suggestPrice,
   });
 
   // POST /api/ai/feedback - Nhận đánh giá sao từ user, AI tự điều chỉnh và stream phản hồi
   server.post('/feedback', {
-    handler: AIChatController.handleFeedback,
+    handler: handleFeedback,
   });
 
   // POST /api/ai/scan-gallery-image - AI quét ảnh và tự động điền tiêu đề và câu trích dẫn song ngữ
@@ -119,5 +128,17 @@ export async function aiRoutes(app: FastifyInstance) {
       const brands = await (Brand as any).aggregate([{ $sample: { size: 5 } }, { $project: { _id: 1, name: 1, origin: 1 } }]);
       return reply.send({ success: true, data: brands });
     },
+  });
+
+  // POST /api/ai/admin/product-fill-missing — AI điền thông tin bị thiếu cho sản phẩm
+  server.post('/admin/product-fill-missing', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: productFillMissing,
+  });
+
+  // POST /api/ai/generate-product — Tạo thông tin sản phẩm từ tên (dùng cho auto-fill)
+  server.post('/generate-product', {
+    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    handler: generateProduct,
   });
 }

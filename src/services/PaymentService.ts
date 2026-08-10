@@ -42,14 +42,14 @@ export class PaymentMethodService {
 export class PaymentService {
   static async getAll() {
     return Payment.find({})
-      .populate({ path: 'orderId', select: 'customerName totalAmount status' })
+      .populate({ path: 'orderId', select: 'shippingInfo totalAmount status' })
       .sort({ createdAt: -1 })
       .lean();
   }
 
   static async getById(id: string) {
     return Payment.findOne({ _id: id })
-      .populate({ path: 'orderId', select: 'customerName customerPhone totalAmount status' })
+      .populate({ path: 'orderId', select: 'shippingInfo totalAmount status' })
       .lean();
   }
 

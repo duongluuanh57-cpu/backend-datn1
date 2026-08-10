@@ -48,7 +48,7 @@ export async function graphqlRoute(app: FastifyInstance) {
         schema,
         document,
         variableValues: variables || {},
-        contextValue: {},
+        contextValue: { authorization: req.headers.authorization },
       });
 
       if (result.errors && result.errors.length > 0) {

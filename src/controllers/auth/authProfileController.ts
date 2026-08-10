@@ -1,11 +1,13 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../../services/AuthService.ts';
+import { VoucherService } from '../../services/VoucherService.ts';
 import { hashPassword, comparePassword } from '../../utils/auth.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { User } from '../../models/User.ts';
 import { UserAddress } from '../../models/UserAddress.ts';
 import { Order } from '../../models/Order.ts';
+import { ImageService } from '../../services/ImageService.ts';
 import mongoose from 'mongoose';
 
 function computeMemberTier(totalSpent: number): 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong' {
@@ -18,25 +20,29 @@ function computeMemberTier(totalSpent: number): 'MEMBER' | 'Bac' | 'Vang' | 'Kim
 export class AuthProfileController {
   /**
    * POST /api/auth/change-password
-   * Body: { currentPassword, newPassword }
+   * Body: { currentPassword?, newPassword }
+   * - Nếu user có passwordHash: bắt buộc currentPassword để xác thực
+   * - Nếu user chưa có passwordHash (OAuth): không cần currentPassword, set mật khẩu mới
    * Yêu cầu: Đã xác thực (Authorization: Bearer <access_token>)
    */
   static async changePassword(request: FastifyRequest, reply: FastifyReply) {
     try {
-      const body = request.body as { currentPassword: string; newPassword: string };
+      const body = request.body as { currentPassword?: string; newPassword: string };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
 
       const user = await UserRepository.findById(userId);
       if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-      if (!user.passwordHash) {
-        return reply.status(400).send({ success: false, message: 'Người dùng không có mật khẩu (OAuth)' });
-      }
-
-      const isMatch = await comparePassword(body.currentPassword, user.passwordHash);
-      if (!isMatch) {
-        return reply.status(400).send({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+      // Nếu user đã có mật khẩu → kiểm tra mật khẩu hiện tại
+      if (user.passwordHash) {
+        if (!body.currentPassword) {
+          return reply.status(400).send({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại' });
+        }
+        const isMatch = await comparePassword(body.currentPassword, user.passwordHash);
+        if (!isMatch) {
+          return reply.status(400).send({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+        }
       }
 
       const newHash = await hashPassword(body.newPassword);
@@ -61,6 +67,7 @@ export class AuthProfileController {
         fullName?: string;
         phoneNumber?: string;
         gender?: string;
+        dateOfBirth?: string;
       };
       const userId = (request as any).user?.userId;
       if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -92,6 +99,7 @@ export class AuthProfileController {
       if (body.fullName !== undefined) updateData.fullName = body.fullName.trim();
       if (body.phoneNumber !== undefined) updateData.phoneNumber = body.phoneNumber.trim();
       if (body.gender !== undefined) updateData.gender = body.gender;
+      if (body.dateOfBirth !== undefined) updateData.dateOfBirth = body.dateOfBirth;
 
       if (Object.keys(updateData).length === 0) {
         return reply.status(400).send({ success: false, message: 'Không có thông tin nào để cập nhật' });
@@ -118,6 +126,56 @@ export class AuthProfileController {
    }
 
   /**
+   * POST /api/auth/upload-avatar
+   * Upload avatar lên R2, cập nhật user.avatar
+   * Yêu cầu: multipart/form-data với field "avatar"
+   */
+  static async uploadAvatar(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = (request as any).user?.userId;
+      if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
+
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ success: false, message: 'Không tìm thấy file ảnh' });
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return reply.status(400).send({ success: false, message: 'Chỉ chấp nhận file ảnh (JPEG, PNG, WebP, GIF)' });
+      }
+
+      const buffer = await file.toBuffer();
+
+      // Upload lên R2 folder avatars/
+      const result = await ImageService.compressAndUpload(buffer, {
+        folder: 'avatars',
+        maxWidth: 512,
+        quality: 85,
+        name: `avatar-${userId}`,
+      });
+
+      // Xóa avatar cũ trên R2 nếu có
+      const user = await User.findById(userId).lean();
+      if (user && (user as any).avatar) {
+        ImageService.deleteFromR2((user as any).avatar).catch(() => {});
+      }
+
+      // Cập nhật user.avatar trong DB
+      await User.findByIdAndUpdate(userId, { avatar: result.url });
+
+      return reply.send({
+        success: true,
+        message: 'Cập nhật avatar thành công',
+        data: { avatar: result.url },
+      });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message || 'Lỗi khi upload avatar' });
+    }
+  }
+
+  /**
    * GET /api/auth/me
    * Yêu cầu: Đã xác thực
    */
@@ -138,8 +196,11 @@ export class AuthProfileController {
 
       const tier = computeMemberTier(totalSpent);
       if ((user as any).memberTier !== tier) {
+        const oldTier = (user as any).memberTier || 'MEMBER';
         await User.findByIdAndUpdate(userId, { memberTier: tier });
         (user as any).memberTier = tier;
+        // Tự động cấp voucher của hạng mới
+        await VoucherService.grantMembershipVouchers(userId, tier, oldTier);
       }
       (user as any).totalSpent = totalSpent;
 
@@ -152,6 +213,7 @@ export class AuthProfileController {
         success: true,
         data: {
           ...safeUser,
+          hasPassword: !!passwordHash,
           defaultAddress: defaultAddress || null,
         }
       });

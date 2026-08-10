@@ -1,6 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 /**
  * ProductTag — bảng TRUNG GIAN liên kết Product ↔ Tag (nhiều-nhiều)
  *
@@ -37,8 +35,6 @@ const ProductTagSchema = new Schema<IProductTag>(
 
 // Một sản phẩm không thể gán cùng một tag hai lần
 ProductTagSchema.index({ productId: 1, tagId: 1 }, { unique: true });
-
-ProductTagSchema.plugin(multiTenancyPlugin);
 
 export const ProductTag =
   mongoose.models.ProductTag ||

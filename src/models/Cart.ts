@@ -5,6 +5,7 @@ export interface ICart extends Document {
   totalAmount: number;
   voucherCode?: string;
   voucherDiscount?: number;
+  freeshipVoucherCode?: string;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -15,6 +16,7 @@ const CartSchema = new Schema<ICart>(
     totalAmount: { type: Number, default: 0 },
     voucherCode: { type: String, default: null },
     voucherDiscount: { type: Number, default: 0 },
+    freeshipVoucherCode: { type: String, default: null },
   },
   { timestamps: true }
 );

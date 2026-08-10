@@ -1,0 +1,21 @@
+<div id="brand-detail">
+  <style>.bd-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:24px;}.bd-card h3{font-size:16px;font-weight:600;margin:0 0 12px;color:var(--text-primary);}</style>
+
+  <%- include('admin/partials/page-header', {
+    backHref: '/admin/brands',
+    breadcrumbId: 'detail-breadcrumb',
+    actionBtnId: 'edit-brand-btn',
+    actionBtnHref: '#',
+    actionBtnLabel: 'Chỉnh sửa'
+  }) %>
+
+  <%- include('admin/partials/page-loading', {
+    loadingId: 'detail-loading',
+    errorId: 'detail-error',
+    loadingText: 'Đang tải thông tin thương hiệu...'
+  }) %>
+
+  <div id="detail-content" style="display:none;"></div>
+</div>
+
+<%- include('admin/partials/detail-brand-script') %>

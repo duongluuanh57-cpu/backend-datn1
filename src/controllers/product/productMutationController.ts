@@ -19,11 +19,12 @@ export class ProductMutationController {
       const updated = await Product.findById(id).populate('variants').lean();
       if (updated) {
         const isFull = !!(updated.name && updated.description && updated.description.length > 50 && updated.brandId && updated.image && updated.variants && updated.variants.length > 0 && updated.categories && updated.categories.length >= 2);
-        if (isFull && (!updated.isSupplemented || updated.status !== 'active')) {
-          await Product.updateOne({ _id: id }, { $set: { isSupplemented: true, status: 'active' } });
+        const isSupplemented = updated.aiData?.isSupplemented;
+        if (isFull && (!isSupplemented || updated.status !== 'active')) {
+          await Product.updateOne({ _id: id }, { $set: { 'aiData.isSupplemented': true, status: 'active' } });
           return reply.status(200).send({
             success: true,
-            data: { ...updated, isSupplemented: true, status: 'active' },
+            data: { ...updated, aiData: { ...updated.aiData, isSupplemented: true }, status: 'active' },
             autoActivated: true,
             message: 'Sản phẩm đã được bổ sung đầy đủ và tự động kích hoạt!',
           });

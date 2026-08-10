@@ -1,10 +1,6 @@
 /**
  * Barrel file — re-exports all image sub-services for backward compatibility.
  */
-export { ImageOptimizer } from './image/imageOptimizer.ts';
-export { R2Uploader, type ImgBBUploadResult } from './image/r2Uploader.ts';
-export { R2Deleter } from './image/r2Deleter.ts';
-
 import { ImageOptimizer } from './image/imageOptimizer.ts';
 import { R2Uploader } from './image/r2Uploader.ts';
 import { R2Deleter } from './image/r2Deleter.ts';
@@ -26,8 +22,6 @@ export class ImageService {
   static getFolderFromUrl = R2Deleter.getFolderFromUrl;
   static deleteFolderFromR2 = R2Deleter.deleteFolderFromR2;
 
-  // Validation & Cleanup
-  static validateImageUrl = R2Deleter.validateImageUrl;
+  // Helpers
   static getKeyFromUrl = R2Deleter.getKeyFromUrl;
-  static cleanupInvalidProductImages = R2Deleter.cleanupInvalidProductImages;
 }

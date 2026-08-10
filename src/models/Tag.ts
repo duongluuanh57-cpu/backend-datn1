@@ -1,6 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 export interface ITag extends Document {
   name: string;
   slug: string;
@@ -20,7 +18,5 @@ const TagSchema = new Schema<ITag>(
     collection: 'tags'
   }
 );
-
-TagSchema.plugin(multiTenancyPlugin);
 
 export const Tag = mongoose.models.Tag || mongoose.model<ITag>('Tag', TagSchema);

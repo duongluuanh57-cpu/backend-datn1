@@ -18,7 +18,6 @@ Your tasks:
 1. Generate a category name in Vietnamese (short, descriptive, e.g. "Nước hoa Nam cao cấp")
 2. Generate an English slug from the name (lowercase, hyphens instead of spaces, no special chars)
 3. Set status to "active"
-4. Set sortOrder to a reasonable number (0-100)
 
 Output STRICTLY a valid JSON object conforming to the schema below.
 Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
@@ -27,8 +26,7 @@ JSON Schema:
 {
   "name": "Tên danh mục bằng tiếng Việt",
   "slug": "ten-danh-muc-bang-tieng-viet",
-  "status": "active",
-  "sortOrder": 0
+  "status": "active"
 }
 `;
 
@@ -58,7 +56,6 @@ export async function createCategoryFromAI(req: FastifyRequest, reply: FastifyRe
       name: categoryData.name,
       slug: categoryData.slug,
       status: categoryData.status || 'active',
-      sortOrder: categoryData.sortOrder || 0,
     });
 
     console.log(`✅ [AI Category] Created category ${newCategory.name} (${newCategory.slug})`);

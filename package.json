@@ -7,10 +7,19 @@
     "dev": "cross-env NODE_OPTIONS='--max-old-space-size=2048' tsx watch src/server.ts",
     "build": "cross-env NODE_OPTIONS='--max-old-space-size=2048' esbuild src/server.ts --bundle --platform=node --target=node22 --outfile=dist/server.js --format=esm --minify --external:sharp --external:dotenv --packages=external && node --input-type=module -e \"import {cpSync} from 'fs'; cpSync('src/views', 'dist/views', {recursive: true})\"",
     "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "clean": "node --input-type=module -e \"import {rmSync,existsSync} from 'fs'; if (existsSync('dist')) {rmSync('dist', {recursive: true, force: true}); console.log('🧹 Cleaned dist folder')}\"",
     "migrate:remove-tenantid": "tsx src/scripts/migrate-remove-tenantId.ts",
-    "migrate:backfill-cartitem-userid": "tsx src/scripts/migrate-backfill-cartitem-userid.ts"
+    "migrate:remove-category-image": "tsx src/scripts/migrate-remove-category-image.ts",
+    "migrate:backfill-cartitem-userid": "tsx src/scripts/migrate-backfill-cartitem-userid.ts",
+    "migrate:fix-cancel-request-status": "tsx src/scripts/fix-cancel-request-status.ts",
+    "seed:vouchers": "tsx src/scripts/seed-vouchers.ts",
+    "seed:orders": "tsx src/scripts/seed-orders.ts",
+    "seed:daily-summary": "tsx src/scripts/seed-daily-summary.ts",
+    "seed:customers": "tsx src/scripts/seed-customers.ts",
+    "update:user-names": "tsx src/scripts/update-user-names.ts",
+    "seed:audit-log": "tsx src/scripts/seed-audit-log.ts"
   },
   "keywords": [],
   "author": "",
@@ -50,15 +59,14 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/ejs": "^3.1.5",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.7.0",
     "@types/node-cron": "^3.0.11",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.0",
-    "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.7"
   }
 }

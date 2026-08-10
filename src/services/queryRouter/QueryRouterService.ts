@@ -113,26 +113,26 @@ export class QueryRouterService {
 
         // ── AI-powered routes ──
         case 'vector_search': {
-          const stream = await executeVectorSearch(message, userRole);
-          result = { type: 'stream', streamResponse: stream };
+          const { stream, products } = await executeVectorSearch(message, messages || [], userRole);
+          result = { type: 'stream', streamResponse: stream, products };
           break;
         }
 
         case 'sql_search': {
-          const stream = await executeSqlSearch(message, userRole);
-          result = { type: 'stream', streamResponse: stream };
+          const { stream, products } = await executeSqlSearch(message, messages || [], userRole);
+          result = { type: 'stream', streamResponse: stream, products };
           break;
         }
 
         case 'web_search': {
-          const stream = await executeWebSearch(message, userRole);
-          result = { type: 'stream', streamResponse: stream };
+          const { stream, products } = await executeWebSearch(message, messages || [], userRole);
+          result = { type: 'stream', streamResponse: stream, products };
           break;
         }
 
         case 'graph_search': {
-          const stream = await executeGraphSearch(message, userRole);
-          result = { type: 'stream', streamResponse: stream };
+          const { stream, products } = await executeGraphSearch(message, messages || [], userRole);
+          result = { type: 'stream', streamResponse: stream, products };
           break;
         }
 
@@ -157,8 +157,8 @@ export class QueryRouterService {
 
         default: {
           // Fallback: dùng vector search
-          const stream = await executeVectorSearch(message, userRole);
-          result = { type: 'stream', streamResponse: stream };
+          const { stream, products } = await executeVectorSearch(message, messages || [], userRole);
+          result = { type: 'stream', streamResponse: stream, products };
         }
       }
 

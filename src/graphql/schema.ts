@@ -1,7 +1,13 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { ProductService } from '../services/ProductService.ts';
 import { BrandService } from '../services/BrandService.ts';
+import { FlashSaleService } from '../services/FlashSaleService.ts';
 import { safeRedisGet, safeRedisSet } from '../config/redis.ts';
+import { verifyAccessToken } from '../utils/auth.ts';
+import { Favorite } from '../models/Favorite.ts';
+import Cart from '../models/Cart.ts';
+import CartItem from '../models/CartItem.ts';
+import mongoose from 'mongoose';
 
 const typeDefs = `#graphql
   type Product {
@@ -16,6 +22,11 @@ const typeDefs = `#graphql
     reviewsCount: Int
     soldCount: Int
     quantityInStock: Int
+    rating: Float
+    isFeatured: Boolean
+    isNewArrival: Boolean
+    isBestSeller: Boolean
+    defaultVariantSize: String
   }
 
   type Brand {
@@ -70,7 +81,15 @@ const typeDefs = `#graphql
     time: String
   }
 
+  type FlashSaleEventGql {
+    _id: ID!
+    name: String!
+    endDate: String
+    products: [Product!]
+  }
+
   type HomepageData {
+    flashSales: [FlashSaleEventGql!]
     sale: [Product!]
     new: [Product!]
     hot: [Product!]
@@ -84,13 +103,54 @@ const typeDefs = `#graphql
     brandNames: [String!]
   }
 
+  type CartItemGql {
+    productId: ID!
+    name: String!
+    image: String
+    brand: String
+    price: Float!
+    discount: Float
+    quantity: Int!
+    variantSize: String
+  }
+
+  type CartDataGql {
+    items: [CartItemGql!]!
+    totalAmount: Float!
+    totalItems: Int!
+  }
+
+  type CartAndFavorites {
+    cart: CartDataGql!
+    favoriteIds: [ID!]!
+  }
+
+  type ProductConnection {
+    items: [Product!]!
+    total: Int!
+    page: Int!
+    totalPages: Int!
+  }
+
   type Query {
     homepage: HomepageData!
     productDetail(id: ID!): ProductDetail
     trendingProducts(limit: Int = 8): [Product!]
     products(type: String!, limit: Int = 10): [Product!]
+    productsAll(
+      page: Int
+      limit: Int
+      search: String
+      brand: String
+      stock: String
+      tag: String
+      category: String
+      sortBy: String
+      status: String
+    ): ProductConnection!
     brands: [Brand!]
     navbar: NavbarData!
+    cartAndFavorites: CartAndFavorites!
   }
 `;
 
@@ -101,12 +161,19 @@ function mapProduct(p: any) {
     brand: p.brand || '',
     price: p.price ?? 0,
     originalPrice: p.originalPrice || p.original_price || null,
-    image: p.image || '',
+    image: p.image || (Array.isArray(p.images) ? p.images[0] : '') || '',
     tag: p.tag || '',
     discount: p.discount ?? p.discountPercentage ?? null,
     reviewsCount: p.reviewsCount ?? p.reviews_count ?? null,
     soldCount: p.soldCount ?? p.sold_count ?? null,
     quantityInStock: p.quantityInStock ?? 0,
+    rating: p.rating ?? p.avgRating ?? p.averageRating ?? null,
+    isFeatured: p.isFeatured ?? false,
+    isNewArrival: p.isNewArrival ?? false,
+    isBestSeller: p.isBestSeller ?? false,
+    stockLimit: p.stockLimit ?? null,
+    isFlashSale: p.isFlashSale ?? false,
+    defaultVariantSize: p.defaultVariantSize || '50ml',
   };
 }
 
@@ -155,42 +222,56 @@ function mapProductDetail(p: any) {
     })),
     size: p.size || '',
     quantityInStock: p.quantityInStock ?? 0,
-    longevity: p.longevity || '',
-    sillage: p.sillage || '',
-    durability: p.durability || '',
-    scentTrail: p.scentTrail || '',
-    style: p.style || '',
-    suitableFor: p.suitableFor || '',
-    occasion: p.occasion || '',
-    season: p.season || '',
-    time: p.time || '',
+    longevity: p.specifications?.longevity || p.longevity || '',
+    sillage: p.specifications?.sillage || p.sillage || '',
+    durability: p.specifications?.durability || p.durability || '',
+    scentTrail: p.specifications?.scentTrail || p.scentTrail || '',
+    style: p.specifications?.style || p.style || '',
+    suitableFor: p.specifications?.suitableFor || p.suitableFor || '',
+    occasion: p.specifications?.occasion || p.occasion || '',
+    season: p.specifications?.season || p.season || '',
+    time: p.specifications?.time || p.time || '',
   };
 }
+
+const EMPTY_CART_AND_FAVORITES = {
+  cart: { items: [], totalAmount: 0, totalItems: 0 },
+  favoriteIds: [],
+};
 
 const resolvers = {
   Query: {
     homepage: async () => {
-      const cacheKey = 'homepage:v3';
+      const cacheKey = 'homepage:v6';
       const cached = await safeRedisGet(cacheKey);
       if (cached) {
         console.log('[Cache HIT] Homepage');
         return JSON.parse(cached);
       }
       console.log('[Cache MISS] Homepage');
-      const [sale, newProducts, hot, limited, standardResult, brands] = await Promise.race([
+      const [activeFlashSaleEvents, sale, newProducts, hot, limited, standardResult, brands] = await Promise.race([
         Promise.all([
+          FlashSaleService.getActiveFlashSales(3),
           ProductService.getSaleProducts(),
           ProductService.getNewProducts(),
           ProductService.getTrendingProducts(),
           ProductService.getLimitedProducts(),
-          ProductService.getAllProducts({ limit: 20, sortBy: 'newest' }),
+          ProductService.getAllProducts({ limit: 20, sortBy: 'newest', status: 'active' }),
           BrandService.getAllBrands(),
         ]),
-        new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], { items: [] }, []]), 10_000)),
+        new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], [], { items: [] }, []]), 10_000)),
       ]);
       const standard = standardResult.items || [];
+      const formattedFlashSales = (activeFlashSaleEvents || []).map((ev: any) => ({
+        _id: ev._id,
+        name: ev.name,
+        endDate: ev.endDate ? new Date(ev.endDate).toISOString() : null,
+        products: (ev.items || []).slice(0, 20).map(mapProduct),
+      }));
+
       const result = {
-        sale: (sale || []).slice(0, 8).map(mapProduct),
+        flashSales: formattedFlashSales,
+        sale: (sale || []).slice(0, 20).map(mapProduct),
         new: (newProducts || []).slice(0, 8).map(mapProduct),
         hot: (hot || []).slice(0, 10).map(mapProduct),
         limited: (limited || []).slice(0, 10).map(mapProduct),
@@ -209,6 +290,41 @@ const resolvers = {
       } catch (err) {
         console.error('[GraphQL] productDetail error:', err);
         return null;
+      }
+    },
+
+    productsAll: async (_: any, args: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      brand?: string;
+      stock?: string;
+      tag?: string;
+      category?: string;
+      sortBy?: string;
+      status?: string;
+    }) => {
+      try {
+        const result = await ProductService.getAllProducts({
+          page: args.page || 1,
+          limit: args.limit || 20,
+          search: args.search,
+          brand: args.brand,
+          stock: args.stock,
+          tag: args.tag,
+          category: args.category,
+          sortBy: args.sortBy,
+          status: args.status || 'active',
+        });
+        return {
+          items: (result.items || []).map(mapProduct),
+          total: result.total ?? 0,
+          page: result.page ?? 1,
+          totalPages: result.totalPages ?? 1,
+        };
+      } catch (err) {
+        console.error('[GraphQL] productsAll error:', err);
+        return { items: [], total: 0, page: 1, totalPages: 1 };
       }
     },
 
@@ -232,7 +348,7 @@ const resolvers = {
         case 'hot': products = await ProductService.getTrendingProducts(); break;
         case 'limited': products = await ProductService.getLimitedProducts(); break;
         case 'standard': {
-          const result = await ProductService.getAllProducts({ limit: 20, sortBy: 'newest' });
+          const result = await ProductService.getAllProducts({ limit: 20, sortBy: 'newest', status: 'active' });
           products = result.items || [];
           break;
         }
@@ -254,6 +370,52 @@ const resolvers = {
       return {
         trending: (trending || []).slice(0, 8).map(mapProduct),
         brandNames: (brands || []).map((b: any) => b.name).filter(Boolean),
+      };
+    },
+
+    cartAndFavorites: async (_: any, __: any, context: { authorization?: string }) => {
+      // Verify JWT từ context — nếu không có token thì trả về empty (không throw)
+      const authHeader = context?.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return EMPTY_CART_AND_FAVORITES;
+
+      let userId: string;
+      try {
+        const decoded = verifyAccessToken(authHeader.substring(7));
+        userId = decoded.userId;
+      } catch {
+        return EMPTY_CART_AND_FAVORITES;
+      }
+
+      const userObjectId = new mongoose.Types.ObjectId(userId);
+
+      // Fetch cart + favoriteIds song song
+      const [cart, favorites] = await Promise.all([
+        Cart.findOne({ userId: userObjectId }).lean(),
+        Favorite.find({ userId: userObjectId }).select('productId').lean(),
+      ]);
+
+      let cartItems: any[] = [];
+      if (cart) {
+        const items = await CartItem.find({ cartId: cart._id }).lean();
+        cartItems = items.map((item: any) => ({
+          productId: item.productId?.toString() || '',
+          name: item.name || '',
+          image: item.image || null,
+          brand: item.brand || null,
+          price: item.price ?? 0,
+          discount: item.discount ?? null,
+          quantity: item.quantity ?? 1,
+          variantSize: item.variantSize || null,
+        }));
+      }
+
+      const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      const totalAmount = (cart as any)?.totalAmount ?? 0;
+      const favoriteIds = favorites.map((f: any) => f.productId?.toString() || '');
+
+      return {
+        cart: { items: cartItems, totalAmount, totalItems },
+        favoriteIds,
       };
     },
   },

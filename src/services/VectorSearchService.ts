@@ -34,6 +34,7 @@ export class VectorSearchService {
           limit,
         },
       },
+      { $match: { status: 'active' } },
       { $addFields: { vectorScore: { $meta: 'vectorSearchScore' } } },
       {
         $lookup: {

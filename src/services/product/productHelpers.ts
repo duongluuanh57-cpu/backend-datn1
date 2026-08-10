@@ -1,22 +1,19 @@
-/** Slugify cho product — remove diacritics và giữ ký tự ASCII */
+import { slugify as _slugify } from '../../utils/textNormalizer.ts';
+
+/** Slugify cho product — wrapper với fallback 'product' */
 export function slugify(text: string): string {
-  return text
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9\-]/g, '-')
-    .toLowerCase()
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'product';
+  return _slugify(text) || 'product';
 }
 
 // Helper sizes parsing
-export function parseSizes(sizeStr: string): { size: string; price: number }[] {
+export function parseSizes(sizeStr: string): { size: string; price: number; quantityInStock?: number }[] {
   if (!sizeStr) return [];
   return sizeStr.split(',').map(s => {
     const parts = s.trim().split(':');
     const sizeName = parts[0]?.trim();
-    const priceVal = parseInt(parts[1]?.trim() || '0', 10);
-    return { size: sizeName, price: priceVal };
+    const priceVal = Number(parts[1]?.trim()?.replace(/[^0-9.-]/g, '')) || 0;
+    const qtyVal = parts[2] !== undefined ? (Number(parts[2]?.trim()?.replace(/[^0-9.-]/g, '')) || 0) : undefined;
+    return { size: sizeName, price: priceVal, quantityInStock: qtyVal };
   }).filter(item => item.size);
 }
 

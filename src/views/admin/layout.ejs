@@ -6,29 +6,65 @@
   <title><%= pageTitle || 'Dashboard' %> — L'essence Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gold: {
+              50: '#fdf8f0',
+              100: '#f5e6c9',
+              200: '#edcfa3',
+              300: '#d4b87a',
+              400: '#c9a96e',
+              500: '#b8944f',
+              600: '#a17d3a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Flowbite CSS (CDN) -->
+  <link href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css" rel="stylesheet" />
+  <!-- Quill editor CSS (must be before admin.css to allow overrides) -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
+  <!-- Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="/admin/static/admin.css">
-  <style>body{margin:0;padding:0;background:#F7F6F3;color:#2F3437;font-family:"Outfit","Inter",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv05"}
-#toasts{position:fixed;top:80px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px;}
-.toast{padding:12px 20px;border-radius:8px;font-size:14px;font-weight:500;color:#fff;min-width:280px;box-shadow:0 4px 20px rgba(0,0,0,0.10);animation:slideIn .3s ease;display:flex;align-items:center;justify-content:space-between;gap:12px;}
-.toast.success{background:#22c55e;}.toast.error{background:#ef4444;}.toast.info{background:#C9A96E;}
-.toast .close{background:none;border:none;color:#fff;cursor:pointer;font-size:18px;opacity:.7;line-height:1;}
-@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
-#confirmOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:998;align-items:center;justify-content:center}
-#confirmOverlay.active{display:flex}
-.confirm-box{background:#FFFFFF;border:1px solid var(--color-border-light);border-radius:14px;padding:24px;max-width:400px;width:90%;text-align:center;box-shadow:0 8px 32px rgba(201,169,110,0.08);}
-.confirm-box h4{font-size:16px;margin-bottom:8px;color:var(--color-text-primary)}
-.confirm-box p{font-size:13px;color:var(--color-text-muted);margin-bottom:20px}
-.confirm-box .actions{display:flex;gap:10px;justify-content:center}
-.confirm-box .btn-cancel,.confirm-box .btn-confirm{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:500}
-.confirm-box .btn-cancel{background:var(--color-surface);color:var(--color-text-primary);border:1px solid var(--color-border-light)}
-.confirm-box .btn-cancel:hover{background:rgba(201,169,110,0.06)}
-.confirm-box .btn-confirm{background:var(--danger);color:#fff}
-.confirm-box .btn-confirm:hover{opacity:0.9}
-</style>
+  <style>
+    body{margin:0;padding:0;background:#F7F6F3;color:#1A1A1A;font-family:"Inter",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv05"}
+    #confirmOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:998;align-items:center;justify-content:center}
+    #confirmOverlay.active{display:flex}
+    .confirm-box{background:var(--color-background-surface);border:1px solid var(--color-border);border-radius:14px;padding:24px;max-width:400px;width:90%;text-align:center;box-shadow:var(--shadow-elevated);}
+    .confirm-box h4{font-size:16px;margin-bottom:8px;color:var(--color-text-primary)}
+    .confirm-box p{font-size:13px;color:var(--color-text-muted);margin-bottom:20px}
+    .confirm-box .actions{display:flex;gap:10px;justify-content:center}
+    .confirm-box .btn-cancel,.confirm-box .btn-confirm{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:500}
+    .confirm-box .btn-cancel{background:var(--color-background-body);color:var(--color-text-primary);border:1px solid var(--color-border)}
+    .confirm-box .btn-cancel:hover{background:rgba(201,169,110,0.06)}
+    .confirm-box .btn-confirm{background:var(--danger);color:#fff}
+    .confirm-box .btn-confirm:hover{opacity:0.9}
+    .btn-add-new{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:13px;font-weight:600;font-family:inherit;text-decoration:none;transition:all 0.2s ease;white-space:nowrap}
+    .btn-add-new:hover{background:rgba(201,169,110,0.08);border-color:var(--accent);color:var(--accent)}
+    /* Override Flowbite checkbox colors for all admin checkboxes */
+    .filter-multi-dropdown .filter-multi-option input[type="checkbox"],
+    .checkbox-col input[type="checkbox"],
+    .data-table input[type="checkbox"],
+    #brand-edit input[type="checkbox"],
+    #supplement-detail input[type="checkbox"] {
+      -webkit-appearance: auto !important;
+      -moz-appearance: auto !important;
+      appearance: auto !important;
+      accent-color: #c9a96e !important;
+    }
+  </style>
 </head>
 <body>
-  <%- include('admin/partials/sidebar', { currentPage: currentPage || 'dashboard' }) %>
+  <%- include('admin/partials/sidebar', { currentPage: currentPage || 'dashboard', apiToken, frontendUrl }) %>
 
   <header class="admin-header">
     <div class="header-left">
@@ -39,17 +75,27 @@
       <% if (typeof breadcrumb !== 'undefined' && breadcrumb) { %><span class="breadcrumb">/ <%= breadcrumb %></span><% } %>
     </div>
     <div class="header-right">
-      <button class="btn-icon" title="Thông báo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      </button>
-      <div class="user-menu">
-        <div class="avatar"><%= userInitials || 'A' %></div>
-        <div class="user-info">
-          <div class="user-name"><%= userName || 'Admin' %></div>
-          <div class="user-role"><%= userRole || 'Admin' %></div>
-        </div>
-      </div>
-      <button onclick="confirmAction('/admin/logout','POST','Bạn muốn đăng xuất?')" class="btn-logout">Đăng xuất</button>
+      <% if (typeof headerAction !== 'undefined' && headerAction !== null) { %>
+        <a href="<%= headerAction.href %>" class="btn-add-new">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><%= headerAction.icon || '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>' %></svg>
+          <span><%= headerAction.label %></span>
+        </a>
+      <% } else if (typeof headerAction === 'undefined') { %>
+        <% var addBtnMap = {
+          products: { label: '+ Thêm sản phẩm mới', href: '/admin/products/create', icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>' },
+          brands: { label: '+ Thêm thương hiệu mới', href: '/admin/brands/create', icon: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>' },
+          categories: { label: '+ Thêm danh mục mới', href: '/admin/categories/create', icon: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>' },
+          tags: { label: '+ Thêm tag mới', href: '/admin/tags/create', icon: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>' },
+          vouchers: { label: '+ Thêm mã giảm giá mới', href: '/admin/vouchers/create', icon: '<path d="M20 12H4"/><path d="M2 7h20"/><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 12v4"/><path d="M10 14h4"/>' },
+        }; %>
+        <% var addBtn = addBtnMap[currentPage]; %>
+        <% if (addBtn) { %>
+          <a href="<%= addBtn.href %>" class="btn-add-new">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><%= addBtn.icon %></svg>
+            <span><%= addBtn.label %></span>
+          </a>
+        <% } %>
+      <% } %>
     </div>
   </header>
 
@@ -57,15 +103,58 @@
     <%- body %>
   </main>
 
+  <!-- Flowbite JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js"></script>
+
   <script>
     window.API_TOKEN = '<%= apiToken || '' %>';
+    window.FRONTEND_URL = '<%= frontendUrl || '' %>';
+    function goHome() {
+      var url = window.FRONTEND_URL + '/auth/callback?accessToken=' + encodeURIComponent(window.API_TOKEN) + '&refreshToken=' + encodeURIComponent(window.API_TOKEN);
+      window.open(url, '_blank');
+    }
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('open');
       document.getElementById('sidebarOverlay').classList.toggle('active');
     }
+    function toggleNavSection(id) {
+      var toggle = document.querySelector('.nav-section-toggle[onclick*="' + id + '"]');
+      var collapse = document.getElementById('nav-' + id);
+      if (!collapse) return;
+      var isOpen = collapse.classList.contains('open');
+      document.querySelectorAll('.nav-collapse.open').forEach(function(c) {
+        if (c.id !== 'nav-' + id) {
+          c.classList.remove('open');
+          var t = document.querySelector('.nav-section-toggle[onclick*="' + c.id.replace('nav-', '') + '"]');
+          if (t) t.classList.remove('open');
+        }
+      });
+      if (isOpen) {
+        collapse.classList.remove('open');
+        if (toggle) toggle.classList.remove('open');
+      } else {
+        collapse.classList.add('open');
+        if (toggle) toggle.classList.add('open');
+      }
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      var activeItem = document.querySelector('.nav-item.active');
+      if (activeItem) {
+        document.querySelectorAll('.nav-collapse').forEach(function(c) {
+          c.classList.remove('open');
+          var t = document.querySelector('.nav-section-toggle[onclick*="' + c.id.replace('nav-', '') + '"]');
+          if (t) t.classList.remove('open');
+        });
+        var collapse = activeItem.closest('.nav-collapse');
+        if (collapse) {
+          collapse.classList.add('open');
+          var toggle = document.querySelector('.nav-section-toggle[onclick*="' + collapse.id.replace('nav-', '') + '"]');
+          if (toggle) toggle.classList.add('open');
+        }
+      }
+    });
   </script>
 
-  <div id="toasts"></div>
   <div id="confirmOverlay">
     <div class="confirm-box">
       <h4>Xác nhận</h4>
@@ -76,18 +165,149 @@
 
   <script>
     function gC(n){var m=document.cookie.match('(^|;)\\s*'+n+'=([^;]*)');return m?decodeURIComponent(m[2]):''}
-    function showToast(msg,type){type=type||'info';var c=document.getElementById('toasts');var e=document.createElement('div');e.className='toast '+type;e.innerHTML='<span>'+msg+'</span><button class=close onclick=this.parentElement.remove()>&times;</button>';c.appendChild(e);setTimeout(function(){if(e.parentElement)e.remove()},4000)}
     function confirmAction(url,method,message){document.getElementById('confirmMsg').textContent=message||'Bạn có chắc chắn?';document.getElementById('confirmOverlay').classList.add('active');document.getElementById('confirmBtn').onclick=function(){closeConfirm();var f=document.createElement('form');f.method=method||'POST';f.action=url;f.style.display='none';var csrf=document.createElement('input');csrf.name='_csrf';csrf.value=gC('csrf_token');f.appendChild(csrf);document.body.appendChild(f);f.submit()}}
+    function openConfirm(message,onConfirm){document.getElementById('confirmMsg').textContent=message||'Bạn có chắc chắn?';document.getElementById('confirmOverlay').classList.add('active');document.getElementById('confirmBtn').onclick=function(){closeConfirm();if(onConfirm)onConfirm()}}
     function closeConfirm(){document.getElementById('confirmOverlay').classList.remove('active')}
     document.addEventListener('DOMContentLoaded',function(){
       document.querySelectorAll('form[method=POST]').forEach(function(f){if(!f.querySelector('input[name=_csrf]')){var csrf=document.createElement('input');csrf.type='hidden';csrf.name='_csrf';csrf.value=gC('csrf_token');f.appendChild(csrf)}f.addEventListener('submit',function(){var b=f.querySelector('button[type=submit]');if(b){b.disabled=true;b.style.opacity='0.6'}})});
       document.querySelectorAll('[onsubmit*="confirm"]').forEach(function(f){f.onsubmit=function(e){e.preventDefault();var m=(f.getAttribute('onsubmit')||'').match(/confirm\(['\"](.+?)['\"]\)/);confirmAction(f.action,f.method,m?m[1]:'Xác nhận xóa?')}});
-      var p=new URLSearchParams(window.location.search);if(p.get('toast'))showToast(decodeURIComponent(p.get('toast')),p.get('type')||'success')
     });
   </script>
+
+  <%- include('admin/partials/help-popup') %>
+  <%- include('admin/partials/toast') %>
+
+  <script>
+    var IS = '<svg style="width:16px;height:16px;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+    var S = function(u){ return IS + u + '</svg>'; };
+    var ICONS = {
+      chart: S('<path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>'),
+      bulb: S('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>'),
+      data: S('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>'),
+      eye: S('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
+      cart: S('<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>'),
+      card: S('<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>'),
+      check: S('<polyline points="20 6 9 17 4 12"/>'),
+      clock: S('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+      target: S('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+    };
+
+    var helpContent = {
+      revenue: {
+        title: 'Doanh thu & Đơn hàng 7 ngày qua',
+        body: '<p><span class="help-tag help-tag-blue">BIỂU ĐỒ KẾT HỢP</span></p>' +
+          '<p>Biểu đồ này hiển thị <strong>doanh thu</strong> (đường gold, trục trái) và <strong>số đơn hàng</strong> (đường xanh, trục phải) trong 7 ngày gần nhất.</p>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Nguồn: bảng <code>DailySummaryReport</code> trên MongoDB</li>' +
+          '<li>Được tổng hợp và cache trên Redis (TTL 30 phút)</li>' +
+          '<li>Doanh thu chỉ tính các đơn không bị huỷ (cancelled)</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Tác dụng:</strong> Giúp bạn nhanh chóng nắm bắt xu hướng doanh thu và số lượng đơn hàng trong tuần, phát hiện các ngày tăng/giảm bất thường.</p>'
+      },
+      retention: {
+        title: 'Khách mới & Quay lại theo thương hiệu',
+        body: '<p><span class="help-tag help-tag-blue">BIỂU ĐỒ CỘT XẾP CHỒNG</span></p>' +
+          '<p>Biểu đồ phân tích doanh thu theo từng thương hiệu, chia làm 2 nhóm:</p>' +
+          '<ul>' +
+          '<li><strong>Khách mới (xanh):</strong> User mua lần đầu tiên ở thương hiệu này</li>' +
+          '<li><strong>Khách quay lại (gold):</strong> User đã từng mua thương hiệu này trước đây</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Nguồn: bảng <code>OrderItem</code> kết hợp <code>Order</code> (để lấy userId)</li>' +
+          '<li>Phạm vi: 90 ngày gần nhất</li>' +
+          '<li>Cache Redis 5 phút</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Tác dụng:</strong> Đánh giá mức độ trung thành của khách hàng với từng thương hiệu. Thương hiệu nào có tỉ lệ khách quay lại cao là dấu hiệu tốt về chất lượng sản phẩm và dịch vụ.</p>'
+      },
+      trend: {
+        title: 'Hiệu suất hiện tại so với kỳ trước',
+        body: '<p><span class="help-tag help-tag-amber">BIỂU ĐỒ ĐƯỜNG SO SÁNH</span></p>' +
+          '<p>So sánh số liệu của <strong>kỳ hiện tại</strong> (đường gold liền nét) với <strong>kỳ trước</strong> (đường xám đứt nét) cho cùng độ dài thời gian.</p>' +
+          '<hr>' +
+          '<p><strong>Chọn metric để so sánh:</strong></p>' +
+          '<ul>' +
+          '<li>' + ICONS.eye + ' <strong>Thêm giỏ hàng:</strong> Số lượt thêm sản phẩm vào giỏ</li>' +
+          '<li>' + ICONS.card + ' <strong>Thanh toán:</strong> Số lượt đến trang thanh toán</li>' +
+          '<li>' + ICONS.check + ' <strong>Mua hàng:</strong> Số đơn hàng hoàn tất</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Metric <code>add_to_cart</code> / <code>reach_checkout</code>: Redis funnel keys</li>' +
+          '<li>Metric <code>purchase</code>: MongoDB <code>OrderItem</code> aggregation</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Tác dụng:</strong> Giúp đánh giá hiệu suất đang tăng hay giảm so với kỳ trước, phát hiện sớm các vấn đề về chuyển đổi.</p>'
+      },
+      funnel: {
+        title: 'Phễu chuyển đổi',
+        body: '<p><span class="help-tag help-tag-blue">PHỄU CHUYỂN ĐỔI</span></p>' +
+          '<p>Trực quan hoá luồng hành vi của khách hàng qua 4 giai đoạn:</p>' +
+          '<ol>' +
+          '<li>' + ICONS.eye + ' <strong>Lượt xem</strong> — Số lần sản phẩm được xem</li>' +
+          '<li>' + ICONS.cart + ' <strong>Thêm giỏ hàng</strong> — Số lần thêm vào giỏ</li>' +
+          '<li>' + ICONS.card + ' <strong>Thanh toán</strong> — Số lần đến trang checkout</li>' +
+          '<li>' + ICONS.check + ' <strong>Mua hàng</strong> — Số đơn đã đặt</li>' +
+          '</ol>' +
+          '<p>Mỗi bước hiển thị số lượng và <strong>% chuyển đổi</strong> so với bước trước đó.</p>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Lượt xem: <code>Product.viewCount</code></li>' +
+          '<li>Giỏ hàng & Thanh toán: Redis funnel counters</li>' +
+          '<li>Mua hàng: <code>OrderItem</code> trên MongoDB</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Tác dụng:</strong> Xác định điểm nghẽn trong quy trình mua hàng — nếu tỉ lệ chuyển đổi giữa các bước quá thấp, cần cải thiện ở bước đó.</p>'
+      },
+      heatmap: {
+        title: 'Bản đồ nhiệt khung giờ vàng',
+        body: '<p><span class="help-tag help-tag-amber">MA TRẬN NHIỆT</span></p>' +
+          '<p>Hiển thị mức độ tập trung giao dịch theo <strong>khung giờ trong ngày</strong> (24h) và <strong>ngày trong tuần</strong> (T2-CN).</p>' +
+          '<ul>' +
+          '<li>Ô càng <strong>đậm</strong> = càng nhiều giao dịch</li>' +
+          '<li>Ô càng <strong>nhạt</strong> = càng ít giao dịch</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Metric <code>purchase</code>: <code>OrderItem</code> aggregation theo giờ và thứ</li>' +
+          '<li>Metric <code>add_to_cart</code> / <code>reach_checkout</code>: Redis hourly keys</li>' +
+          '<li>Phạm vi mặc định: 28 ngày gần nhất</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.target + ' Tác dụng:</strong> Xác định <strong>khung giờ vàng</strong> — thời điểm khách hàng mua sắm nhiều nhất để lên kế hoạch chạy quảng cáo, flash sale, đăng bài hiệu quả.</p>'
+      }
+    };
+    function openHelp(section) {
+      var content = helpContent[section];
+      if (!content) return;
+      document.getElementById('helpPopupTitle').textContent = content.title;
+      document.getElementById('helpPopupBody').innerHTML = content.body;
+      document.getElementById('helpPopupOverlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeHelp() {
+      document.getElementById('helpPopupOverlay').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      var overlay = document.getElementById('helpPopupOverlay');
+      if (overlay) {
+        overlay.addEventListener('click', function(e) {
+          if (e.target === overlay) closeHelp();
+        });
+      }
+    });
+  </script>
+
   <%- include('admin/partials/ai-chat') %>
-  <%# ai-interview-popup removed — now inline in chat panel %>
   <div class="bg-noise"></div>
 </body>
 </html>
-

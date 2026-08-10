@@ -22,18 +22,16 @@ export class ProductMutationService {
     if (data.description !== undefined) updateData.description = data.description;
     if (data.reviewsCount !== undefined) updateData.reviewsCount = data.reviewsCount;
     if (data.discountPercentage !== undefined) updateData.discountPercentage = data.discountPercentage;
-    if (data.discountStartDate !== undefined) updateData.discountStartDate = data.discountStartDate;
-    if (data.discountEndDate !== undefined) updateData.discountEndDate = data.discountEndDate;
-    if (data.keywords !== undefined) updateData.keywords = data.keywords;
-    if (data.longevity !== undefined) updateData.longevity = data.longevity;
-    if (data.sillage !== undefined) updateData.sillage = data.sillage;
-    if (data.durability !== undefined) updateData.durability = data.durability;
-    if (data.scentTrail !== undefined) updateData.scentTrail = data.scentTrail;
-    if (data.style !== undefined) updateData.style = data.style;
-    if (data.suitableFor !== undefined) updateData.suitableFor = data.suitableFor;
-    if (data.occasion !== undefined) updateData.occasion = data.occasion;
-    if (data.season !== undefined) updateData.season = data.season;
-    if (data.time !== undefined) updateData.time = data.time;
+    if (data.status !== undefined) updateData.status = data.status;
+
+    // Specifications sub-document update
+    const specFields = ['longevity', 'sillage', 'scentTrail', 'style', 'suitableFor', 'occasion', 'season', 'time'];
+    for (const key of specFields) {
+      const val = data[key] !== undefined ? data[key] : (data.specifications && data.specifications[key] !== undefined ? data.specifications[key] : undefined);
+      if (val !== undefined) {
+        updateData[`specifications.${key}`] = val;
+      }
+    }
 
     // Brand mapping - chỉ tìm, KHÔNG tạo mới (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
@@ -87,34 +85,48 @@ export class ProductMutationService {
     );
 
     if (updatedProduct) {
-      // --- Image sync: xóa ảnh cũ trên R2, cập nhật DB ---
-      const oldImages = await ProductImage.find({ productId: id }).lean();
-      const oldUrls = oldImages.map(i => i.url).filter(Boolean);
+      // --- Image sync: chỉ xử lý khi request có gửi image fields ---
+      if ('image' in data || 'images' in data) {
+        const oldImages = await ProductImage.find({ productId: id }).lean();
+        const oldUrls = oldImages.map(i => i.url).filter(Boolean);
 
-      const newImages: string[] = [];
-      if (data.image) newImages.push(data.image);
-      if (data.images && Array.isArray(data.images)) {
-        newImages.push(...data.images.filter((img: string) => img !== data.image));
-      }
+        const newImages: string[] = [];
+        if (data.image) newImages.push(data.image);
+        if (data.images && Array.isArray(data.images)) {
+          newImages.push(...data.images.filter((img: string) => img !== data.image));
+        }
 
-      // Xóa ảnh đã bị remove khỏi R2
-      const removed = oldUrls.filter(u => !newImages.includes(u));
-      if (removed.length > 0) {
-        await Promise.all(removed.map(u => ImageService.deleteFromR2(u).catch(() => {})));
-      }
+        // Xóa ảnh đã bị remove khỏi R2
+        const removed = oldUrls.filter(u => !newImages.includes(u));
+        if (removed.length > 0) {
+          await Promise.all(removed.map(u => ImageService.deleteFromR2(u).catch(() => {})));
+        }
 
-      // Đồng bộ DB — luôn xóa cũ rồi insert lại
-      await ProductImage.deleteMany({ productId: id });
-      if (newImages.length > 0) {
-        await ProductImage.insertMany(newImages.map((url: string) => ({
-          productId: id,
-          url
-        })));
+        // Đồng bộ DB — luôn xóa cũ rồi insert lại
+        await ProductImage.deleteMany({ productId: id });
+        if (newImages.length > 0) {
+          await ProductImage.insertMany(newImages.map((url: string) => ({
+            productId: id,
+            url
+          })));
+        }
       }
 
       // Sync Variants in ProductVariant collection
-      if (data.size !== undefined) {
-        // Delete all old variants for this product before re-inserting
+      if (Array.isArray(data.variants) && data.variants.length > 0) {
+        await ProductVariant.deleteMany({ productId: id });
+        const variantsToInsert = data.variants.map((v: any, index: number) => ({
+          productId: id,
+          size: v.size || '50ml',
+          price: Number(v.price) || 0,
+          quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+          isDefault: v.isDefault ?? (index === 0),
+          sortOrder: index,
+        }));
+        const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
+        const newVariantIds = insertedVariants.map(v => v._id);
+        await Product.findOneAndUpdate({ _id: id }, { $set: { variants: newVariantIds } });
+      } else if (data.size !== undefined) {
         await ProductVariant.deleteMany({ productId: id });
 
         const parsed = parseSizes(data.size);
@@ -123,7 +135,7 @@ export class ProductMutationService {
             productId: id,
             size: item.size,
             price: item.price,
-            quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
+            quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
             isDefault: index === 0,
             sortOrder: index
           }));
@@ -255,23 +267,21 @@ export class ProductMutationService {
   static async createProduct(data: any): Promise<any> {
     const productData: any = {};
     if (data.name !== undefined) productData.name = data.name;
-    if (data.price !== undefined) productData.price = data.price;
     if (data.description !== undefined) productData.description = data.description;
     if (data.reviewsCount !== undefined) productData.reviewsCount = data.reviewsCount;
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
-    if (data.discountStartDate !== undefined) productData.discountStartDate = data.discountStartDate;
-    if (data.discountEndDate !== undefined) productData.discountEndDate = data.discountEndDate;
     if (data.image !== undefined) productData.image = data.image;
-    if (data.keywords !== undefined) productData.keywords = data.keywords;
-    if (data.longevity !== undefined) productData.longevity = data.longevity;
-    if (data.sillage !== undefined) productData.sillage = data.sillage;
-    if (data.durability !== undefined) productData.durability = data.durability;
-    if (data.scentTrail !== undefined) productData.scentTrail = data.scentTrail;
-    if (data.style !== undefined) productData.style = data.style;
-    if (data.suitableFor !== undefined) productData.suitableFor = data.suitableFor;
-    if (data.occasion !== undefined) productData.occasion = data.occasion;
-    if (data.season !== undefined) productData.season = data.season;
-    if (data.time !== undefined) productData.time = data.time;
+
+    productData.specifications = {
+      longevity: data.longevity || data.specifications?.longevity || '',
+      sillage: data.sillage || data.specifications?.sillage || '',
+      scentTrail: data.scentTrail || data.specifications?.scentTrail || '',
+      style: data.style || data.specifications?.style || '',
+      suitableFor: data.suitableFor || data.specifications?.suitableFor || '',
+      occasion: data.occasion || data.specifications?.occasion || '',
+      season: data.season || data.specifications?.season || '',
+      time: data.time || data.specifications?.time || '',
+    };
 
     // Brand mapping - Ưu tiên brandId, fallback sang tên brand (case-insensitive, bỏ qua khoảng trắng thừa)
     if (data.brand) {
@@ -348,14 +358,26 @@ export class ProductMutationService {
     }
 
     // Size / Variants mapping
-    if (data.size) {
+    if (Array.isArray(data.variants) && data.variants.length > 0) {
+      const variantsToInsert = data.variants.map((v: any, index: number) => ({
+        productId: saved._id,
+        size: v.size || '50ml',
+        price: Number(v.price) || 0,
+        quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+        isDefault: v.isDefault ?? (index === 0),
+        sortOrder: index,
+      }));
+      const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
+      const variantIds = insertedVariants.map(v => v._id);
+      await Product.findOneAndUpdate({ _id: saved._id }, { $set: { variants: variantIds } });
+    } else if (data.size) {
       const parsed = parseSizes(data.size);
       if (parsed.length > 0) {
         const variantsToInsert = parsed.map((item, index) => ({
           productId: saved._id,
           size: item.size,
           price: item.price,
-          quantityInStock: index === 0 ? (data.quantityInStock || 0) : 0,
+          quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
           isDefault: index === 0,
           sortOrder: index
         }));

@@ -7,9 +7,13 @@ import { redis } from '../../config/redis.ts';
 
 export class AuthSessionService {
   static async login(data: LoginInput & { rememberMe?: boolean }, metadata: { ip: string, userAgent: string }) {
-    // 1. Tìm user theo email
-    const user = await UserRepository.findByEmail(data.email);
-    if (!user) throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
+    // 1. Tìm user theo email hoặc tên đăng nhập
+    const identifier = (data.email || '').trim();
+    const isEmail = identifier.includes('@');
+    const user = isEmail
+      ? await UserRepository.findByEmail(identifier)
+      : await UserRepository.findByUsername(identifier);
+    if (!user) throw new UnauthorizedError('Email, tên đăng nhập hoặc mật khẩu không chính xác');
 
     // Kiểm tra trạng thái tài khoản (Bảo mật 2026)
     if (user.status === 'suspended') {
@@ -29,7 +33,7 @@ export class AuthSessionService {
         metadata: { ...metadata },
         status: 'FAILURE'
       });
-      throw new UnauthorizedError('Email hoặc mật khẩu không chính xác');
+      throw new UnauthorizedError('Email, tên đăng nhập hoặc mật khẩu không chính xác');
     }
 
     // 3. Session Hardening: Lưu thông tin session vào Redis

@@ -1,0 +1,219 @@
+<script>
+var COLORS = { pending:'#f59e0b', processing:'#3b82f6', shipped:'#8b5cf6', delivered:'#22c55e', cancelled:'#ef4444' };
+var LABELS = { pending:'Chờ xử lý', processing:'Đang xử lý', shipped:'Đang giao', delivered:'Đã giao', cancelled:'Đã hủy' };
+var PAYMENT_LABELS = { cod:'Thanh toán khi nhận hàng (COD)', momo:'Ví MoMo' };
+var CURRENT_ORDER = null;
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]||m; });
+}
+
+function approveCancel() {
+  if (!CURRENT_ORDER) return;
+  openConfirm('Xác nhận hủy đơn hàng này?', function() {
+    fetch('/api/orders/admin/' + CURRENT_ORDER._id + '/approve-cancel', {
+      method: 'PATCH', headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__, 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      if (res.success) { window.location.href = '/admin/orders/' + CURRENT_ORDER._id + '?toast=Xác+nhận+hủy+đơn+thành+công&type=success'; }
+      else { showToast(res.message || 'Không thể hủy đơn', 'error'); }
+    }).catch(function() { showToast('Lỗi kết nối', 'error'); });
+  });
+}
+function rejectCancel() {
+  if (!CURRENT_ORDER) return;
+  openConfirm('Từ chối yêu cầu hủy đơn hàng này?', function() {
+    fetch('/api/orders/admin/' + CURRENT_ORDER._id + '/reject-cancel', {
+      method: 'PATCH', headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__, 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      if (res.success) { window.location.href = '/admin/orders/' + CURRENT_ORDER._id + '?toast=Từ+chối+hủy+đơn+thành+công&type=success'; }
+      else { showToast(res.message || 'Không thể từ chối', 'error'); }
+    }).catch(function() { showToast('Lỗi kết nối', 'error'); });
+  });
+}
+function cancelOrder() {
+  if (!CURRENT_ORDER) return;
+  openConfirm('Bạn có chắc muốn hủy đơn hàng này?', function() {
+    var cancelBtn = document.getElementById('od-btn-cancel');
+    cancelBtn.disabled = true; cancelBtn.style.opacity = '0.6';
+    fetch('/api/orders/admin/' + CURRENT_ORDER._id + '/status', {
+      method: 'PATCH', headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' })
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      if (res.success) {
+        showToast('Đã hủy đơn hàng thành công', 'success');
+        cancelBtn.style.display = 'none';
+        var badge = document.getElementById('od-status-badge');
+        badge.style.background = COLORS.cancelled; badge.textContent = LABELS.cancelled;
+      } else {
+        showToast(res.message || 'Không thể hủy đơn', 'error');
+        cancelBtn.disabled = false; cancelBtn.style.opacity = '1';
+      }
+    }).catch(function() { showToast('Lỗi kết nối', 'error'); cancelBtn.disabled = false; cancelBtn.style.opacity = '1'; });
+  });
+}
+
+fetch(window.__API_ENDPOINT__, { headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__ } })
+.then(function(r) { return r.json(); })
+.then(function(res) {
+  if (!res.success || !res.data) { document.getElementById('od-title').textContent = 'Không tìm thấy đơn hàng'; return; }
+  var o = res.data;
+  CURRENT_ORDER = o;
+  document.getElementById('od-code').textContent = '#' + o._id.slice(-8).toUpperCase();
+  document.title = 'Đơn hàng #' + o._id.slice(-8).toUpperCase() + ' — Admin';
+  var badge = document.getElementById('od-status-badge');
+  badge.style.background = COLORS[o.status] || '#334155'; badge.textContent = LABELS[o.status] || o.status;
+
+  var si = o.shippingInfo || {};
+  document.getElementById('od-customerName').innerHTML = '<b>' + (si.customerName || '—') + '</b>';
+  document.getElementById('od-customerPhone').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg> <span>' + (si.customerPhone || '—') + '</span>';
+  document.getElementById('od-customerEmail').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> <span>' + (si.customerEmail || '—') + '</span>';
+  document.getElementById('od-customerAddress').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;margin-top:2px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> <span>' + (si.customerAddress || '—') + '</span>';
+
+  var genderEl = document.getElementById('od-customerGender');
+  if (o.userId && o.userId.gender) {
+    var genderLabels = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
+    genderEl.style.display = 'flex';
+    genderEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> Giới tính: <b>' + (genderLabels[o.userId.gender] || o.userId.gender) + '</b>';
+  }
+
+  var fullAddrEl = document.getElementById('od-customerFullAddress');
+  if (o.userAddress && o.userAddress.address) {
+    fullAddrEl.style.display = 'flex';
+    var addrParts = [o.userAddress.address];
+    if (o.userAddress.ward) addrParts.push(o.userAddress.ward);
+    if (o.userAddress.district) addrParts.push(o.userAddress.district);
+    if (o.userAddress.province) addrParts.push(o.userAddress.province);
+    fullAddrEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Địa chỉ đầy đủ: <b>' + escapeHtml(addrParts.join(', ')) + '</b>';
+  }
+
+  var noteEl = document.getElementById('od-note');
+  if (o.note) { noteEl.style.display = 'flex'; noteEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Ghi chú: <b>' + escapeHtml(o.note) + '</b>'; }
+
+  var shipFeeEl = document.getElementById('od-shippingFee');
+  if (o.shippingFee !== undefined && o.shippingFee !== null) {
+    shipFeeEl.style.display = 'flex';
+    var shipFeeStr = o.shippingFee === 0 ? 'Miễn phí' : (o.shippingFee.toLocaleString('vi-VN') + 'đ');
+    shipFeeEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> <span>Phí vận chuyển: <b>' + shipFeeStr + '</b></span>';
+  }
+
+  var voucherEl = document.getElementById('od-voucherInfo');
+  if (o.voucher) {
+    voucherEl.style.display = 'flex';
+    var v = o.voucher;
+    var discountStr = v.type === 'percentage' ? '-' + v.value + '%' : '-' + (v.value || 0).toLocaleString('vi-VN') + 'đ';
+    if (v.maxDiscount) discountStr += ' (tối đa ' + v.maxDiscount.toLocaleString('vi-VN') + 'đ)';
+    voucherEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> <span>Voucher: <b style="color:#22c55e;">' + escapeHtml(v.code) + '</b> — Giảm ' + discountStr + '</span>';
+  }
+
+  var finalAmt = o.finalAmount || o.totalAmount || 0;
+  var orderTotalEl = document.getElementById('od-order-total');
+  orderTotalEl.style.display = 'block';
+  orderTotalEl.innerHTML = '<div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;padding-top:8px;"><span style="font-size:13px;color:var(--text-muted);">Tổng cộng</span><b style="color:#22c55e;font-size:20px;">' + finalAmt.toLocaleString('vi-VN') + 'đ</b></div>';
+
+  document.getElementById('od-totalAmount').innerHTML = '<span>Tạm tính: <b>' + ((o.totalAmount || 0).toLocaleString('vi-VN')) + 'đ</b></span>';
+  document.getElementById('od-paymentMethod').innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> <span>Phương thức: <b>' + (PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || '—') + '</b></span>';
+  var shipMethodLabel = (o.shippingMethodId && o.shippingMethodId.name) || o.shippingMethodName || o.shippingMethodCode || '—';
+  document.getElementById('od-shippingMethod').innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg> <span>Vận chuyển: <b>' + shipMethodLabel + '</b></span>';
+  document.getElementById('od-paymentStatus').innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> <span>Trạng thái TT: <b>' + (o.paymentStatus || '—') + '</b></span>';
+
+  var payInfoEl = document.getElementById('od-paymentInfo');
+  if (o.paymentInfo && o.paymentInfo.txnRef) {
+    payInfoEl.style.display = 'flex';
+    var pi = o.paymentInfo;
+    var payInfoParts = ['Mã GD: ' + escapeHtml(pi.txnRef)];
+    if (pi.transactionNo) payInfoParts.push('GD số: ' + escapeHtml(pi.transactionNo));
+    if (pi.bankCode) payInfoParts.push('Ngân hàng: ' + escapeHtml(pi.bankCode));
+    if (pi.payDate) payInfoParts.push('Ngày: ' + escapeHtml(pi.payDate));
+    payInfoEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> <span>TT Online: <b>' + payInfoParts.join(' · ') + '</b></span>';
+  }
+
+  document.getElementById('od-createdAt').textContent = 'Ngày tạo: ' + (o.createdAt ? new Date(o.createdAt).toLocaleString('vi-VN') : '—');
+  document.getElementById('od-updatedAt').textContent = 'Cập nhật: ' + (o.updatedAt ? new Date(o.updatedAt).toLocaleString('vi-VN') : '—');
+
+  // ── Timeline ──
+  var timelineEl = document.getElementById('od-timeline');
+  timelineEl.style.display = 'block';
+  var isCancelled = o.status === 'cancelled';
+  var steps = [
+    { label: 'Đã đặt hàng', done: true },
+    { label: 'Đã thanh toán', done: ['processing','shipped','delivered'].indexOf(o.status) !== -1, failed: o.status === 'cancelled' },
+    { label: 'Đã giao ĐVVC', done: ['shipped','delivered'].indexOf(o.status) !== -1 },
+    { label: 'Đã nhận hàng', done: o.status === 'delivered', failed: o.status === 'cancelled', waiting: o.status === 'shipped' },
+    { label: 'Hoàn thành', done: o.status === 'delivered' },
+  ];
+  var timelineHtml = '<div style="display:flex;align-items:center;gap:0;justify-content:space-between;">';
+  steps.forEach(function(s, idx) {
+    var done = isCancelled ? false : s.done;
+    var failed = isCancelled || s.failed;
+    var waiting = isCancelled ? false : s.waiting;
+    var bgColor = done ? '#22c55e' : (failed ? '#ef4444' : (waiting ? 'var(--accent)' : '#e5e5e5'));
+    var textColor = done || failed || waiting ? '#fff' : 'var(--text-muted)';
+    var iconHtml;
+    if (done) { iconHtml = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>'; }
+    else if (failed) { iconHtml = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'; }
+    else if (waiting) { iconHtml = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M6 22v-4a6 6 0 0 1 12 0v4"/><path d="M6 2v4a6 6 0 0 0 12 0V2"/><path d="M12 8v2"/></svg>'; }
+    else { iconHtml = (idx + 1); }
+    timelineHtml += '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;position:relative;">' +
+      '<div style="width:36px;height:36px;border-radius:50%;background:' + bgColor + ';display:flex;align-items:center;justify-content:center;color:' + textColor + ';font-size:14px;font-weight:700;z-index:1;">' + iconHtml + '</div>' +
+      '<span style="font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;white-space:nowrap;">' + s.label + '</span>' +
+      (idx < steps.length - 1 ? '<div style="position:absolute;top:18px;left:calc(50% + 18px);right:calc(-50% + 18px);height:2px;background:' + (done ? '#22c55e' : (failed ? '#ef4444' : '#e5e5e5')) + ';z-index:0;"></div>' : '') +
+    '</div>';
+  });
+  timelineHtml += '</div>';
+  timelineEl.innerHTML = '<h4 style="font-size:12px;font-weight:600;text-transform:uppercase;color:var(--text-muted);margin:0 0 12px;">Trạng thái đơn hàng</h4>' + timelineHtml;
+
+  // ── Cancel request banner ──
+  var cancelRequestHtml = '';
+  if (o.cancelRequested) {
+    var cancelLabels = { want_change_voucher: 'Muốn đổi voucher', want_change_product: 'Muốn đổi sản phẩm', complicated_payment: 'Thanh toán phức tạp', found_cheaper: 'Tìm được nơi rẻ hơn', changed_mind: 'Đổi ý' };
+    var reasonLabel = cancelLabels[o.cancelReason] || o.cancelReason || 'Không rõ lý do';
+    cancelRequestHtml = '<div style="margin-bottom:20px;padding:16px 20px;border-radius:12px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">' +
+      '<div><p style="font-size:14px;font-weight:600;color:var(--danger);margin:0 0 4px;">Yêu cầu hủy đơn từ khách hàng</p><p style="font-size:13px;color:var(--text-secondary);margin:0;">Lý do: <strong>' + reasonLabel + '</strong></p></div>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button onclick="approveCancel()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:none;border-radius:8px;background:var(--danger);color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Xác nhận hủy</button>' +
+        '<button onclick="rejectCancel()" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px;font-weight:600;">Từ chối</button>' +
+      '</div>' +
+    '</div>';
+  }
+  document.getElementById('od-cancel-request').innerHTML = cancelRequestHtml;
+
+  var cancelBtn = document.getElementById('od-btn-cancel');
+  if (o.status !== 'cancelled' && o.status !== 'delivered' && !o.cancelRequested) { cancelBtn.style.display = 'inline-flex'; }
+
+  // ── Render product items ──
+  var items = o.items || [];
+  document.getElementById('od-items-count').textContent = items.length;
+  var itemsContainer = document.getElementById('od-items-container');
+  if (items.length === 0) {
+    itemsContainer.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">Không có sản phẩm nào trong đơn hàng.</div>';
+  } else {
+    var tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="border-bottom:2px solid var(--border);">' +
+      '<th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">Sản phẩm</th>' +
+      '<th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">Thương hiệu</th>' +
+      '<th style="text-align:left;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">Biến thể</th>' +
+      '<th style="text-align:center;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">SL</th>' +
+      '<th style="text-align:right;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">Đơn giá</th>' +
+      '<th style="text-align:right;padding:8px 10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;font-size:11px;">Thành tiền</th>' +
+    '</tr></thead><tbody>';
+    items.forEach(function(item) {
+      var imgHtml = item.productImage
+        ? '<img src="' + escapeHtml(item.productImage) + '" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;" onerror="this.style.display=\'none\'" />'
+        : '<div style="width:44px;height:44px;border-radius:6px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>';
+      var brandHtml = item.brand ? '<span style="font-size:12px;color:var(--text-muted);">' + escapeHtml(item.brand) + '</span>' : '<span style="color:var(--text-muted);font-size:12px;">—</span>';
+      var variantHtml = item.variantSize ? '<span style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:12px;">Size: ' + escapeHtml(item.variantSize) + '</span>' : '<span style="color:var(--text-muted);font-size:12px;">—</span>';
+      var qty = item.quantity || 0; var price = item.price || 0; var subtotal = price * qty;
+      tableHtml += '<tr style="border-bottom:1px solid var(--border);">' +
+        '<td style="padding:10px;display:flex;align-items:center;gap:10px;">' + imgHtml + '<span style="font-weight:500;">' + escapeHtml(item.name || 'Sản phẩm') + '</span></td>' +
+        '<td style="padding:10px;">' + brandHtml + '</td>' +
+        '<td style="padding:10px;">' + variantHtml + '</td>' +
+        '<td style="padding:10px;text-align:center;">' + qty + '</td>' +
+        '<td style="padding:10px;text-align:right;white-space:nowrap;">' + price.toLocaleString('vi-VN') + 'đ</td>' +
+        '<td style="padding:10px;text-align:right;white-space:nowrap;font-weight:600;">' + subtotal.toLocaleString('vi-VN') + 'đ</td>' +
+      '</tr>';
+    });
+    tableHtml += '</tbody></table>';
+    itemsContainer.innerHTML = tableHtml;
+  }
+})
+.catch(function() { document.getElementById('od-title').textContent = 'Lỗi kết nối'; });
+</script>

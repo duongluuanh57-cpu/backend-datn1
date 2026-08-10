@@ -4,28 +4,66 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Đăng nhập - L'essence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* ══════════════════════════════════════════════════════
+       L'essence Auth Pages — Frontend Design System
+       Gold accent (#C9A96E) · Inter typography · Editorial
+       ══════════════════════════════════════════════════════ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --color-background: #FFFFFF;
+      --color-foreground: #1A1A1A;
+      --color-primary: #C9A96E;
+      --color-primary-dark: #B8944F;
+      --color-primary-light: #D4BC82;
+      --color-primary-muted: rgba(201,169,110,0.12);
+      --color-border: #E8E8E8;
+      --color-border-subtle: rgba(232,232,232,0.5);
+      --color-text-primary: #1A1A1A;
+      --color-text-secondary: #666666;
+      --color-text-muted: #999999;
+      --color-text-on-primary: #FFFFFF;
+      --color-success: #10B981;
+      --color-success-light: #D1FAE5;
+      --color-error: #DC2626;
+      --color-error-muted: rgba(239,68,68,0.08);
+      --color-rich-black: #0A0A0A;
+
+      --shadow-soft: 0 4px 20px rgba(0,0,0,0.04);
+      --shadow-card: 0 8px 32px rgba(0,0,0,0.06);
+      --shadow-elevated: 0 20px 60px rgba(0,0,0,0.08);
+
+      --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+
     body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #FFFFFF;
+      font-family: var(--font-sans);
+      background: var(--color-background);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 20px;
-      color: #1A1A1A;
+      color: var(--color-text-primary);
+      color-scheme: light;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       overflow-x: hidden;
     }
 
-    /* ===== WRAPPER với animation width/height ===== */
+    /* ===== WRAPPER ===== */
     .form-wrapper {
       position: relative;
       width: 100%;
       max-width: 420px;
-      transition: max-width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: max-width 0.35s var(--ease-premium);
     }
     .form-wrapper.register-mode {
       max-width: 640px;
@@ -40,20 +78,20 @@
       align-items: center;
       gap: 6px;
       padding: 8px 16px;
-      background: #FFFFFF;
-      border: 1px solid #E8E8E8;
+      background: var(--color-background);
+      border: 1px solid var(--color-border);
       border-radius: 20px;
-      color: #666666;
+      color: var(--color-text-secondary);
       text-decoration: none;
       font-size: 13px;
       font-weight: 500;
       transition: all 0.2s ease;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      box-shadow: var(--shadow-soft);
+      font-family: var(--font-sans);
     }
     .back-badge:hover {
-      background: #FFFFFF;
-      color: #1A1A1A;
-      border-color: #B8944F;
+      color: var(--color-text-primary);
+      border-color: var(--color-primary-dark);
     }
     @media (max-width: 680px) {
       .back-badge {
@@ -67,48 +105,39 @@
     }
 
     .container {
-      background: #FFFFFF;
-      border: 1px solid #E8E8E8;
+      background: var(--color-background);
+      border: 1px solid var(--color-border);
       border-radius: 16px;
       padding: 48px 40px;
       width: 100%;
-      box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+      min-height: 520px;
+      box-shadow: var(--shadow-card);
       position: relative;
       overflow: hidden;
-      min-height: 380px;
-      transition: min-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .container.register-active {
-      min-height: 520px;
     }
 
     /* ===== FORM PANELS ===== */
     .form-panel {
-      position: absolute;
-      top: 48px;
-      left: 40px;
-      right: 40px;
+      display: none;
       opacity: 0;
-      transform: translateY(12px);
-      transition: opacity 0.35s ease, transform 0.35s ease;
-      pointer-events: none;
     }
     .form-panel.active {
+      display: block;
       opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
-      position: relative;
-      top: 0;
-      left: 0;
-      right: 0;
+      animation: fade-up 0.4s var(--ease-premium) forwards;
     }
-    .form-panel.exit-left {
-      opacity: 0;
-      transform: translateX(-24px);
+    .form-panel.fade-out {
+      display: block;
+      animation: fade-down 0.25s var(--ease-premium) forwards;
     }
-    .form-panel.exit-right {
-      opacity: 0;
-      transform: translateX(24px);
+
+    @keyframes fade-up {
+      0% { opacity: 0; transform: translateY(16px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-down {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-12px); }
     }
 
     .logo {
@@ -117,7 +146,7 @@
     }
     .logo img { width: 48px; height: 48px; object-fit: contain; }
     .logo h1 {
-      color: #1A1A1A;
+      color: var(--color-text-primary);
       font-size: 24px;
       margin-top: 12px;
       font-weight: 700;
@@ -125,7 +154,7 @@
       transition: all 0.35s ease;
     }
     .logo .subtitle {
-      color: #999999;
+      color: var(--color-text-muted);
       font-size: 14px;
       margin-top: 4px;
       font-weight: 400;
@@ -148,33 +177,35 @@
     .form-group { margin-bottom: 18px; }
     label {
       display: block;
-      color: #666666;
+      color: var(--color-text-secondary);
       font-size: 13px;
       font-weight: 500;
       margin-bottom: 6px;
     }
+
+    /* ── Input field — matches Frontend .input-field ── */
     input {
       width: 100%;
       padding: 12px 16px;
-      background: #FFFFFF;
-      border: 1px solid #E8E8E8;
+      background: var(--color-background);
+      border: 1px solid var(--color-border);
       border-radius: 10px;
-      color: #1A1A1A;
+      color: var(--color-text-primary);
       font-size: 15px;
       outline: none;
       transition: all 0.2s ease;
-      font-family: inherit;
+      font-family: var(--font-sans);
     }
     input:focus {
-      border-color: #B8944F;
+      border-color: var(--color-primary-dark);
       box-shadow: 0 0 0 3px rgba(201,169,110,0.12);
     }
-    input::placeholder { color: #999999; }
+    input::placeholder { color: var(--color-text-muted); }
 
     .error-msg {
-      background: rgba(239,68,68,0.08);
+      background: var(--color-error-muted);
       border: 1px solid rgba(239,68,68,0.2);
-      color: #DC2626;
+      color: var(--color-error);
       padding: 10px 14px;
       border-radius: 10px;
       font-size: 13px;
@@ -183,9 +214,9 @@
     }
     .error-msg.show { display: block; }
     .success-msg {
-      background: rgba(34,197,94,0.08);
-      border: 1px solid rgba(34,197,94,0.2);
-      color: #16A34A;
+      background: var(--color-success-light);
+      border: 1px solid rgba(16,185,129,0.2);
+      color: var(--color-success);
       padding: 10px 14px;
       border-radius: 10px;
       font-size: 13px;
@@ -195,32 +226,33 @@
     .success-msg.show { display: block; }
 
     .field-error {
-      color: #DC2626;
+      color: var(--color-error);
       font-size: 12px;
       margin-top: 4px;
       display: none;
     }
     .field-error.show { display: block; }
 
+    /* ── Button — matches Frontend .btn-primary ── */
     .btn {
       width: 100%;
       padding: 13px;
-      background: #C9A96E;
-      color: #0A0A0A;
+      background: var(--color-primary);
+      color: var(--color-text-on-primary);
       border: none;
       border-radius: 10px;
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
-      font-family: inherit;
+      font-family: var(--font-sans);
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
     }
-    .btn:hover { background: #B8944F; transform: translateY(-1px); }
-    .btn:active { transform: translateY(0); }
+    .btn:hover { background: var(--color-primary-dark); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0) scale(0.98); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
     .spinner { display: none; }
@@ -231,25 +263,51 @@
       display: inline-block;
       width: 18px;
       height: 18px;
-      border: 2px solid rgba(10,10,10,0.15);
-      border-top-color: #0A0A0A;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-top-color: var(--color-text-on-primary);
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
+    }
+
+    .password-wrapper {
+      position: relative;
+    }
+    .password-wrapper input {
+      padding-right: 44px;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--color-text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      transition: color 0.2s ease;
+    }
+    .toggle-password:hover {
+      color: var(--color-text-secondary);
     }
 
     .turnstile-container { margin-bottom: 20px; display: flex; justify-content: center; }
 
     .footer { text-align: center; margin-top: 24px; }
     .footer a {
-      color: #666666;
+      color: var(--color-text-secondary);
       text-decoration: none;
       font-size: 14px;
       transition: color 0.2s ease;
       cursor: pointer;
+      font-family: var(--font-sans);
     }
-    .footer a:hover { color: #B8944F; }
+    .footer a:hover { color: var(--color-primary-dark); }
 
-    /* Common section hidden in panel, shown below */
+    /* OAuth section */
     .oauth-section { margin-top: 16px; }
     .oauth-divider {
       display: flex;
@@ -260,13 +318,15 @@
     .oauth-divider .line {
       flex: 1;
       height: 1px;
-      background: #E8E8E8;
+      background: var(--color-border);
     }
     .oauth-divider span {
-      color: #999999;
+      color: var(--color-text-muted);
       font-size: 13px;
       white-space: nowrap;
     }
+
+    /* ── Google button — matches Frontend .btn-ghost ── */
     .google-btn {
       display: flex;
       align-items: center;
@@ -274,20 +334,23 @@
       gap: 10px;
       width: 100%;
       padding: 12px;
-      background: #FFFFFF;
-      border: 1px solid #E8E8E8;
+      background: var(--color-background);
+      border: 1px solid var(--color-border);
       border-radius: 10px;
-      color: #1A1A1A;
+      color: var(--color-text-primary);
       text-decoration: none;
       font-size: 14px;
       font-weight: 500;
       transition: all 0.2s ease;
       cursor: pointer;
+      font-family: var(--font-sans);
     }
     .google-btn:hover {
-      background: #F5F5F5;
-      border-color: #D0D0D0;
+      background: var(--color-background);
+      border-color: var(--color-primary);
+      color: var(--color-primary);
     }
+    .google-btn:active { transform: scale(0.98); }
   </style>
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
@@ -312,12 +375,18 @@
       <div class="form-panel active" id="loginPanel">
         <form id="loginForm">
           <div class="form-group">
-            <label for="loginEmail">Email</label>
-            <input type="email" id="loginEmail" name="email" placeholder="your@email.com" required autocomplete="email">
+            <label for="loginEmail">Email hoặc tên đăng nhập</label>
+            <input type="text" id="loginEmail" name="email" placeholder="your@email.com hoặc username" required autocomplete="username">
           </div>
           <div class="form-group">
             <label for="loginPassword">Mật khẩu</label>
-            <input type="password" id="loginPassword" name="password" placeholder="••••••••" required autocomplete="current-password">
+            <div class="password-wrapper">
+              <input type="password" id="loginPassword" name="password" placeholder="••••••••" required autocomplete="current-password">
+              <button type="button" class="toggle-password" onclick="togglePassword('loginPassword', this)" tabindex="-1" aria-label="Hiện/ẩn mật khẩu">
+                <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-off-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
+            </div>
           </div>
           <div class="turnstile-container" id="loginTurnstile">
             <div class="cf-turnstile" data-sitekey="<%= turnstileSiteKey %>" data-theme="light"></div>
@@ -356,7 +425,13 @@
             </div>
             <div class="form-group">
               <label for="regPassword">Mật khẩu</label>
-              <input type="password" id="regPassword" name="password" placeholder="Ít nhất 6 ký tự" required autocomplete="new-password">
+              <div class="password-wrapper">
+                <input type="password" id="regPassword" name="password" placeholder="Ít nhất 6 ký tự" required autocomplete="new-password">
+                <button type="button" class="toggle-password" onclick="togglePassword('regPassword', this)" tabindex="-1" aria-label="Hiện/ẩn mật khẩu">
+                  <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-off-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                </button>
+              </div>
               <div class="field-error" id="passwordError">Mật khẩu phải có ít nhất 6 ký tự</div>
             </div>
             <div class="form-group">
@@ -387,7 +462,7 @@
           </div>
           <a href="/api/auth/google" class="google-btn">
             <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-            Đăng nhập bằng Google
+            Đăng ký bằng Google
           </a>
         </div>
 
@@ -445,41 +520,54 @@
       const fromPanel = currentMode === 'register' ? registerPanel : loginPanel;
       const toPanel = mode === 'register' ? registerPanel : loginPanel;
 
-      // 1. Animate wrapper width
+      // Update URL without reloading
+      var newPath = mode === 'login' ? '/login' : '/register';
+      history.pushState({ mode: mode }, '', newPath);
+
       if (mode === 'register') {
-        formWrapper.classList.add('register-mode');
-        container.classList.add('register-active');
         subtitle.textContent = 'Tạo tài khoản mới';
+        formWrapper.classList.add('register-mode');
       } else {
+        subtitle.textContent = 'Đăng nhập để tiếp tục';
         formWrapper.classList.remove('register-mode');
-        container.classList.remove('register-active');
-        subtitle.textContent = 'Đăng nhập đệtiếp tục';
       }
 
-      // 2. Slide out current panel
-      if (animate) {
-        const exitClass = mode === 'register' ? 'exit-left' : 'exit-right';
-        fromPanel.classList.add(exitClass);
+      if (!animate) {
         fromPanel.classList.remove('active');
-      } else {
-        fromPanel.classList.remove('active');
-      }
-
-      // 3. Slide in new panel
-      setTimeout(() => {
-        fromPanel.classList.remove('exit-left', 'exit-right');
         toPanel.classList.add('active');
         currentMode = mode;
-
-        // Render Turnstile nếu cần
         renderTurnstile(mode);
-
-        // Clear messages
         errorBox.classList.remove('show');
         successBox.classList.remove('show');
-
         isTransitioning = false;
-      }, animate ? 300 : 50);
+        return;
+      }
+
+      // Fade out current panel, then fade in new panel after width transition
+      fromPanel.classList.add('fade-out');
+      fromPanel.classList.remove('active');
+
+      setTimeout(() => {
+        fromPanel.classList.remove('fade-out');
+        toPanel.classList.add('active');
+        currentMode = mode;
+        renderTurnstile(mode);
+        errorBox.classList.remove('show');
+        successBox.classList.remove('show');
+        isTransitioning = false;
+      }, 400);
+    }
+
+    // ===== TOGGLE PASSWORD VISIBILITY =====
+    function togglePassword(inputId, btn) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      const eyeIcon = btn.querySelector('.eye-icon');
+      const eyeOffIcon = btn.querySelector('.eye-off-icon');
+      if (eyeIcon) eyeIcon.style.display = isPassword ? 'none' : '';
+      if (eyeOffIcon) eyeOffIcon.style.display = isPassword ? '' : 'none';
     }
 
     // ===== TURNSTILE (lazy render) =====
@@ -560,7 +648,8 @@
       const data = {
         email: document.getElementById('loginEmail').value,
         password: document.getElementById('loginPassword').value,
-        turnstileToken
+        turnstileToken,
+        frontendUrl: '<%= frontendUrl %>'
       };
 
       try {

@@ -29,8 +29,10 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
   // Các lỗi còn lại — giữ nguyên statusCode từ plugin (vd: 429 rate-limit)
   return reply.status(statusCode).send({
     success: false,
-    message: statusCode === 429
-      ? 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau'
-      : 'Hệ thống gặp sự cố (Internal Server Error)',
+    message: process.env.NODE_ENV === 'development'
+      ? error.message
+      : (statusCode === 429
+        ? 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau'
+        : 'Hệ thống gặp sự cố (Internal Server Error)'),
   });
 }

@@ -18,7 +18,11 @@ export class FavoriteController {
       const favorites = await Favorite.find({ userId: new mongoose.Types.ObjectId(userId) })
         .populate({
           path: 'productId',
-          select: 'name brand image discountPercentage discountStartDate discountEndDate variants',
+          select: 'name brandId image discountPercentage discountStartDate discountEndDate variants reviewsCount avgRating soldCount status',
+          populate: {
+            path: 'brandId',
+            select: 'name',
+          },
         })
         .sort({ createdAt: -1 })
         .lean();
@@ -30,9 +34,12 @@ export class FavoriteController {
       const enriched = await Promise.all(validFavorites.map(async (fav) => {
         const product = fav.productId as any;
         const productId = product._id.toString();
-        const variant50ml = await ProductVariant.findOne({ productId, size: '50ml' }).lean() as any;
-        const variant = variant50ml || await ProductVariant.findOne({ productId }).sort({ sortOrder: 1 }).lean() as any;
+        const productVariants = await ProductVariant.find({ productId }).lean() as any[];
+        const variant50ml = productVariants.find(v => v.size === '50ml');
+        const variant = variant50ml || [...productVariants].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))[0];
+        const quantityInStock = productVariants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0);
         let price = variant?.price || 0;
+        const originalPrice = price;
         if (price > 0 && product.discountPercentage > 0) {
           const now = new Date();
           const startOk = !product.discountStartDate || new Date(product.discountStartDate) <= now;
@@ -44,7 +51,10 @@ export class FavoriteController {
           productId: {
             ...product,
             price,
+            originalPrice,
+            quantityInStock,
             discount: product.discountPercentage || 0,
+            brand: product.brandId?.name || '',
           },
         };
       }));

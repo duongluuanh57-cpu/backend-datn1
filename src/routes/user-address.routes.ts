@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { UserAddressController } from '../controllers/UserAddressController.ts';
+import { UserAddressController } from '../controllers/userAddress/userAddressController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 
 export async function userAddressRoutes(app: FastifyInstance) {

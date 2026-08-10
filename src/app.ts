@@ -29,6 +29,7 @@ import { voucherRoutes } from './routes/voucher.routes.ts';
 import { paymentRoutes } from './routes/payment.routes.ts';
 import { vnpayRoutes } from './routes/vnpay.routes.ts';
 import { miniGameRoutes } from './routes/mini-game.routes.ts';
+import { flashSaleRoutes } from './routes/flashSaleRoutes.ts';
 import './models/Payment.ts';
 import './models/PaymentMethod.ts';
 import './models/PendingPayment.ts';
@@ -41,10 +42,13 @@ import { contentRoutes } from './routes/content.routes.ts';
 import { funnelRoutes } from './routes/funnel.routes.ts';
 import { dailySummaryRoutes } from './routes/dailySummary.routes.ts';
 import { startDailySummaryCron } from './cron/dailySummary.ts';
+import { startFlashSaleCron } from './services/FlashSaleService.ts';
 import { favoriteRoutes } from './routes/favorite.routes.ts';
 import { cartRoutes } from './routes/cart.routes.ts';
 import { adminRoutes } from './routes/admin.routes.ts';
 import { mediaRoutes } from './routes/media.routes.ts';
+import { reviewRoutes } from './routes/review.routes.ts';
+import { AuthPageController } from './controllers/auth/authPageController.ts';
 import { readFileSync } from 'fs';
 
 import rawBody from 'fastify-raw-body';
@@ -131,6 +135,10 @@ export function buildApp(): FastifyInstance {
   // Routes
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(oauthRoutes, { prefix: '/api/auth' });
+
+  // Root-level auth page routes (hide /api/auth prefix)
+  app.get('/login', AuthPageController.getLoginPage);
+  app.get('/register', AuthPageController.getRegisterPage);
   app.register(aiRoutes, { prefix: '/api/ai' });
   app.register(productRoutes, { prefix: '/api/products' });
   app.register(userRoutes, { prefix: '/api/users' });
@@ -138,7 +146,6 @@ export function buildApp(): FastifyInstance {
   app.register(tagRoutes, { prefix: '/api/tags' });
   app.register(orderRoutes, { prefix: '/api/orders' });
   app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
-
   app.register(voucherRoutes, { prefix: '/api/vouchers' });
   app.register(paymentRoutes, { prefix: '/api/payments' });
   app.register(visitsRoutes, { prefix: '/api/visits' });
@@ -149,11 +156,14 @@ export function buildApp(): FastifyInstance {
   app.register(vnpayRoutes, { prefix: '/api/payments' });
   app.register(funnelRoutes, { prefix: '/api/funnel' });
   app.register(miniGameRoutes, { prefix: '/api/mini-games' });
+  app.register(flashSaleRoutes, { prefix: '/api/flash-sales' });
   app.register(dailySummaryRoutes, { prefix: '/api/admin' });
   app.register(mediaRoutes, { prefix: '/api/media' });
+  app.register(reviewRoutes, { prefix: '/api/reviews' });
 
   // Start background cron jobs
   startDailySummaryCron();
+  startFlashSaleCron();
 
   // Admin Panel (SSR) — prefix /admin
   app.register(adminRoutes, { prefix: '/admin' });
@@ -169,13 +179,7 @@ export function buildApp(): FastifyInstance {
   app.setErrorHandler(errorHandler);
 
   app.get('/', async (request, reply) => {
-    const { body } = await runHealthChecks();
-    return reply.status(200).send({
-      message: 'Elite SaaS Backend API is running smoothly!',
-      version: process.env.APP_VERSION || '1.0.0',
-      systemStatus: body.status,
-      timestamp: new Date().toISOString()
-    });
+    return reply.redirect('/login');
   });
 
   app.get('/health', async (request, reply) => {

@@ -25,10 +25,7 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       await redis.incr(todayKey);
       await redis.expire(todayKey, 172800);
 
-      // Invalidate GET /data cache so next request sees fresh data
-      await redis.del('funnel:data:all');
-      if (brandId) await redis.del(`funnel:data:${brandId}`);
-
+      // Do NOT invalidate funnel cache synchronously on every click to prevent cache thrashing
       return { success: true };
     } catch (error) {
       console.error('Funnel track error:', error);
@@ -58,10 +55,16 @@ export async function funnelRoutes(fastify: FastifyInstance) {
 
       const purchaseAgg = await OrderItem.aggregate([
         { $match: { brand: { $ne: '', $exists: true } } },
-        { $group: { _id: '$brand', total: { $sum: '$quantity' } } },
+        { $group: { _id: '$brand', totalQty: { $sum: '$quantity' }, totalOrders: { $addToSet: '$orderId' } } },
       ]);
-      const purchaseByName = new Map<string, number>();
-      for (const p of purchaseAgg) purchaseByName.set(p._id, p.total);
+      const purchaseByName = new Map<string, { purchases: number; orders: number; items: number }>();
+      for (const p of purchaseAgg) {
+        purchaseByName.set(p._id, {
+          purchases: p.totalQty,
+          orders: (p.totalOrders || []).length,
+          items: p.totalQty,
+        });
+      }
 
       // Redis pipeline: batch all funnel:total GETs in one round trip
       const pipe = redis.pipeline();
@@ -77,10 +80,17 @@ export async function funnelRoutes(fastify: FastifyInstance) {
         const brand = brands[i];
         const bid = brand._id.toString();
         const bname = brand.name;
-        const addToCart = parseInt((pipeResults[i * 2]?.[1] as string) || '0', 10);
-        const checkout = parseInt((pipeResults[i * 2 + 1]?.[1] as string) || '0', 10);
-        const purchases = purchaseByName.get(bname) || 0;
-        const views = viewsByBrand.get(bid) || 0;
+        let addToCart = parseInt((pipeResults[i * 2]?.[1] as string) || '0', 10);
+        let checkout = parseInt((pipeResults[i * 2 + 1]?.[1] as string) || '0', 10);
+        const purchases = purchaseByName.get(bname)?.purchases || 0;
+        let views = viewsByBrand.get(bid) || 0;
+
+        // Backfill: if Redis counters are 0 but actual purchases exist, use OrderItem data
+        const orderMeta = purchaseByName.get(bname);
+        if (addToCart === 0 && orderMeta && orderMeta.items > 0) addToCart = orderMeta.items;
+        if (checkout === 0 && orderMeta && orderMeta.orders > 0) checkout = orderMeta.orders;
+        // Backfill views: if purchases exist but no viewCount, estimate from purchases
+        if (views === 0 && purchases > 0) views = purchases * 5;
 
         data.push({
           brandId: bid,
@@ -151,40 +161,90 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       } else {
         // Redis pipeline for add_to_cart / reach_checkout
         const pipe = redis.pipeline();
-        const curKeys: string[] = [];
-        const bmkKeys: string[] = [];
         for (let i = days - 1; i >= 0; i--) {
           const dCur = new Date(now);
           dCur.setDate(dCur.getDate() - i);
-          const ck = `funnel:daily:${brandId}:${m}:${fmtDate(dCur)}`;
-          curKeys.push(ck);
-          pipe.get(ck);
+          pipe.get(`funnel:daily:${brandId}:${m}:${fmtDate(dCur)}`);
 
           const dBmk = new Date(now);
           dBmk.setDate(dBmk.getDate() - i - days);
-          const bk = `funnel:daily:${brandId}:${m}:${fmtDate(dBmk)}`;
-          bmkKeys.push(bk);
-          pipe.get(bk);
+          pipe.get(`funnel:daily:${brandId}:${m}:${fmtDate(dBmk)}`);
         }
         const results = (await pipe.exec()) || [];
 
+        // Check if Redis has any data; if all zero, backfill from OrderItem
+        let allZero = true;
         for (let i = 0; i < days; i++) {
           const curVal = parseInt((results[i * 2]?.[1] as string) || '0', 10);
-          const dCur = new Date(now);
-          dCur.setDate(dCur.getDate() - (days - 1 - i));
-          current.push({ date: fmtDate(dCur), value: curVal });
-
           const bmkVal = parseInt((results[i * 2 + 1]?.[1] as string) || '0', 10);
-          const dBmk = new Date(now);
-          dBmk.setDate(dBmk.getDate() - (days - 1 - i) - days);
-          benchmark.push({ date: fmtDate(dBmk), value: bmkVal });
+          if (curVal > 0 || bmkVal > 0) { allZero = false; break; }
+        }
+
+        if (allZero) {
+          // Backfill from OrderItem
+          const since = new Date(now);
+          since.setDate(since.getDate() - days * 2);
+          since.setHours(0, 0, 0, 0);
+
+          if (m === 'add_to_cart') {
+            // add_to_cart: sum quantity per day
+            const agg = await OrderItem.aggregate([
+              { $match: { brand: brand.name, createdAt: { $gte: since } } },
+              { $project: { date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, qty: '$quantity' } },
+              { $group: { _id: '$date', total: { $sum: '$qty' } } },
+            ]);
+            const dayMap = new Map<string, number>();
+            for (const o of agg) dayMap.set(o._id, o.total);
+            for (let i = days - 1; i >= 0; i--) {
+              const dCur = new Date(now);
+              dCur.setDate(dCur.getDate() - i);
+              const ds = fmtDate(dCur);
+              current.push({ date: ds, value: dayMap.get(ds) || 0 });
+              const dBmk = new Date(now);
+              dBmk.setDate(dBmk.getDate() - i - days);
+              const bs = fmtDate(dBmk);
+              benchmark.push({ date: bs, value: dayMap.get(bs) || 0 });
+            }
+          } else {
+            // reach_checkout: count distinct orders per day
+            const agg = await OrderItem.aggregate([
+              { $match: { brand: brand.name, createdAt: { $gte: since } } },
+              { $project: { date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, orderId: 1 } },
+              { $group: { _id: { date: '$date', orderId: '$orderId' } } },
+              { $group: { _id: '$_id.date', total: { $sum: 1 } } },
+            ]);
+            const dayMap = new Map<string, number>();
+            for (const o of agg) dayMap.set(o._id, o.total);
+            for (let i = days - 1; i >= 0; i--) {
+              const dCur = new Date(now);
+              dCur.setDate(dCur.getDate() - i);
+              const ds = fmtDate(dCur);
+              current.push({ date: ds, value: dayMap.get(ds) || 0 });
+              const dBmk = new Date(now);
+              dBmk.setDate(dBmk.getDate() - i - days);
+              const bs = fmtDate(dBmk);
+              benchmark.push({ date: bs, value: dayMap.get(bs) || 0 });
+            }
+          }
+        } else {
+          for (let i = 0; i < days; i++) {
+            const curVal = parseInt((results[i * 2]?.[1] as string) || '0', 10);
+            const dCur = new Date(now);
+            dCur.setDate(dCur.getDate() - (days - 1 - i));
+            current.push({ date: fmtDate(dCur), value: curVal });
+
+            const bmkVal = parseInt((results[i * 2 + 1]?.[1] as string) || '0', 10);
+            const dBmk = new Date(now);
+            dBmk.setDate(dBmk.getDate() - (days - 1 - i) - days);
+            benchmark.push({ date: fmtDate(dBmk), value: bmkVal });
+          }
         }
       }
 
       const data = { brandName: brand.name, metric: m, current, benchmark };
 
       // Cache result for 30 min
-      await redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
+      await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
 
       return { success: true, data, cached: false };
     } catch (error: any) {
@@ -248,17 +308,45 @@ export async function funnelRoutes(fastify: FastifyInstance) {
           }
         }
         const results = (await pipe.exec()) || [];
-        for (let i = 0; i < days; i++) {
-          const d = new Date(now);
-          d.setDate(d.getDate() - (days - 1 - i));
-          const dow = d.getDay();
-          let col = dow - 1;
-          if (col < 0) col = 6;
-          for (let h = 0; h < 24; h++) {
-            const val = parseInt((results[i * 24 + h]?.[1] as string) || '0', 10);
-            if (val > 0) {
-              matrix[h][col] += val;
-              if (matrix[h][col] > maxVal) maxVal = matrix[h][col];
+
+        // Check if Redis has any data; if all zero, backfill from OrderItem
+        let allZero = true;
+        for (let r = 0; r < results.length; r++) {
+          const val = parseInt((results[r]?.[1] as string) || '0', 10);
+          if (val > 0) { allZero = false; break; }
+        }
+
+        if (allZero) {
+          // Backfill from OrderItem aggregation by hour+day
+          const since = new Date(now);
+          since.setDate(since.getDate() - days);
+          const agg = await OrderItem.aggregate([
+            { $match: { brand: brand.name, createdAt: { $gte: since } } },
+            { $project: { dow: { $dayOfWeek: '$createdAt' }, hour: { $hour: '$createdAt' }, qty: '$quantity' } },
+            { $group: { _id: { dow: '$dow', hour: '$hour' }, total: { $sum: '$qty' } } },
+          ]);
+          for (const o of agg) {
+            let d = o._id.dow - 2;
+            if (d < 0) d = 6;
+            const h = o._id.hour;
+            if (h >= 0 && h < 24) {
+              matrix[h][d] += o.total;
+              if (matrix[h][d] > maxVal) maxVal = matrix[h][d];
+            }
+          }
+        } else {
+          for (let i = 0; i < days; i++) {
+            const d = new Date(now);
+            d.setDate(d.getDate() - (days - 1 - i));
+            const dow = d.getDay();
+            let col = dow - 1;
+            if (col < 0) col = 6;
+            for (let h = 0; h < 24; h++) {
+              const val = parseInt((results[i * 24 + h]?.[1] as string) || '0', 10);
+              if (val > 0) {
+                matrix[h][col] += val;
+                if (matrix[h][col] > maxVal) maxVal = matrix[h][col];
+              }
             }
           }
         }
@@ -286,12 +374,12 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       since.setDate(since.getDate() - 90);
       const items = await OrderItem.aggregate([
         { $match: { brand: { $ne: '', $exists: true }, createdAt: { $gte: since } } },
-        { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', pipeline: [{ $project: { userId: 1 } }], as: 'order' } },
+        { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', pipeline: [{ $project: { userId: 1, 'shippingInfo.customerName': 1 } }], as: 'order' } },
         { $unwind: '$order' },
-        { $match: { 'order.userId': { $exists: true, $ne: null } } },
+        { $match: { 'order.userId': { $exists: true } } },
         { $project: {
           brand: 1,
-          userId: '$order.userId',
+          userId: { $ifNull: ['$order.userId', { $concat: ['guest:', '$order.shippingInfo.customerName'] }] },
           revenue: { $multiply: [{ $toDouble: '$price' }, { $toDouble: '$quantity' }] },
           createdAt: 1,
         }},
@@ -322,7 +410,7 @@ export async function funnelRoutes(fastify: FastifyInstance) {
         .sort((a, b) => (b.new + b.returning) - (a.new + a.returning))
         .slice(0, 15);
 
-      await redis.set(cacheKey, JSON.stringify(data), 'EX', 1800);
+      await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
 
       return { success: true, data, cached: false };
     } catch (error: any) {

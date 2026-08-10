@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { BrandService } from '../../services/BrandService.ts';
+import { Product } from '../../models/Product.ts';
 
 export class BrandListingController {
   /**
@@ -67,9 +68,12 @@ export class BrandListingController {
         });
       }
 
+      // ── Đếm số sản phẩm thuộc thương hiệu ──
+      const productCount = await Product.countDocuments({ brandId: id });
+
       return reply.status(200).send({
         success: true,
-        data: brand,
+        data: { ...brand.toObject(), productCount },
       });
     } catch (error: any) {
       return reply.status(500).send({

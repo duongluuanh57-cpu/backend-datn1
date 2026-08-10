@@ -1,16 +1,22 @@
 import type { FastifyInstance } from 'fastify';
-import { BrandController } from '../controllers/BrandController.ts';
+import { BrandListingController } from '../controllers/brand/brandListingController.ts';
+import { BrandMutationController } from '../controllers/brand/brandMutationController.ts';
+import { AdminCRUDController } from '../controllers/admin/AdminCRUDController.ts';
 import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 
 export async function brandRoutes(app: FastifyInstance) {
   // Đường dẫn công khai (Public)
-  app.get('/', BrandController.getAllBrands);
-  app.get('/origins', BrandController.getBrandOrigins);
-  app.get('/:id', BrandController.getBrandById);
+  app.get('/', BrandListingController.getAllBrands);
+  app.get('/origins', BrandListingController.getBrandOrigins);
+  
+  // Admin CRUD views — MUST be before /:id
+  app.get('/:id/edit', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, AdminCRUDController.brandEdit);
+  
+  app.get('/:id', BrandListingController.getBrandById);
 
   // Đường dẫn bảo mật (Chỉ dành cho Admin)
-  app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.createBrand);
-  app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.updateBrand);
-  app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.deleteBrand);
-  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandController.bulkDeleteBrands);
+  app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandMutationController.createBrand);
+  app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandMutationController.updateBrand);
+  app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandMutationController.deleteBrand);
+  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')] }, BrandMutationController.bulkDeleteBrands);
 }

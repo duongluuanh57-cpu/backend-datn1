@@ -113,6 +113,7 @@ export class ProductListingController {
         tag?: string;
         category?: string;
         sortBy?: string;
+        status?: string;
       };
 
       const result = await ProductService.getAllProducts({
@@ -124,6 +125,7 @@ export class ProductListingController {
         tag: query.tag,
         category: query.category,
         sortBy: query.sortBy,
+        status: query.status,
       });
 
       return reply.status(200).send({ success: true, data: result });
@@ -139,7 +141,7 @@ export class ProductListingController {
     try {
       const { q, limit } = req.query as { q?: string; limit?: string };
       const products = await ProductService.suggestProducts(
-        q.trim(),
+        (q ?? '').trim(),
         limit ? Math.min(parseInt(limit, 10), 20) : 8
       );
       return reply.status(200).send({ success: true, data: products });
@@ -175,6 +177,17 @@ export class ProductListingController {
     try {
       const { id } = req.params as { id: string };
       const product = await ProductService.getProductById(id);
+      if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
+      return reply.status(200).send({ success: true, data: product });
+    } catch (error: any) {
+      return reply.status(500).send({ success: false, message: error.message });
+    }
+  }
+
+  static async getProductByIdAdmin(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const product = await ProductService.getProductByIdAdmin(id);
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm' });
       return reply.status(200).send({ success: true, data: product });
     } catch (error: any) {
@@ -244,24 +257,46 @@ export class ProductListingController {
 
   /**
    * GET /api/products/needs-supplement
-   * Trả về danh sách sản phẩm cần bổ sung thông tin (isSupplemented: false, status: 'draft')
+   * Trả về danh sách sản phẩm cần bổ sung thông tin
    */
   static async getNeedsSupplement(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const products = await Product.find({ isSupplemented: false, status: 'draft' })
-        .select('name image brandId description categories variants status isSupplemented')
+      const scentKeys = ['longevity', 'sillage', 'durability', 'scentTrail', 'style', 'suitableFor', 'occasion', 'season', 'time'];
+
+      // Draft + active products missing essential info
+      const products = await Product.find({
+        $or: [
+          { status: 'draft' },
+          {
+            status: 'active',
+            $or: [
+              { $or: [{ description: { $exists: false } }, { description: '' }, { description: null }] },
+              { brandId: { $exists: false } },
+              { $expr: { $lt: [{ $size: { $ifNull: ['$categories', []] } }, 2] } },
+              { $expr: { $eq: [{ $size: { $ifNull: ['$variants', []] } }, 0] } },
+              ...scentKeys.map(key => ({ [key]: { $in: ['', null] } })),
+            ],
+          },
+        ],
+      })
+        .select('name image brandId description categories variants status ' + scentKeys.join(' '))
         .populate('brandId', 'name')
         .populate('categories', 'name')
         .sort({ createdAt: -1 })
         .lean();
 
+      const toDowngrade: string[] = [];
       const data = products.map((p: any) => {
         const missing: string[] = [];
         if (!p.description || p.description.length < 50) missing.push('description');
-        if (!p.image) missing.push('image');
         if (!p.variants || p.variants.length === 0) missing.push('variants');
         if (!p.brandId) missing.push('brand');
         if (!p.categories || p.categories.length < 2) missing.push('categories');
+        scentKeys.forEach(function(key) { if (!p[key]) missing.push(key); });
+
+        if (p.status === 'active' && missing.length > 0) {
+          toDowngrade.push(p._id);
+        }
 
         return {
           _id: p._id,
@@ -272,10 +307,14 @@ export class ProductListingController {
           categories: (p.categories || []).map((c: any) => c.name),
           missing,
           missingCount: missing.length,
-          isSupplemented: p.isSupplemented,
           status: p.status,
         };
       });
+
+      // Auto-downgrade active→draft nếu thiếu info
+      if (toDowngrade.length > 0) {
+        await Product.updateMany({ _id: { $in: toDowngrade } }, { status: 'draft' });
+      }
 
       return reply.status(200).send({ success: true, data, total: data.length });
     } catch (error: any) {

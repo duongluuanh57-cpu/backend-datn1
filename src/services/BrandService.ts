@@ -29,7 +29,7 @@ export class BrandService {
     }
 
     if (origin) {
-      query.origin = origin;
+      query.origin = { $regex: '^' + origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
 
     const total = await Brand.countDocuments(query);

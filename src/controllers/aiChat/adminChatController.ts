@@ -14,6 +14,8 @@ import { User } from '../../models/User.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { Order } from '../../models/Order.ts';
 import { Voucher } from '../../models/Voucher.ts';
+import { resolveBrandName } from '../../utils/synonymMap.ts';
+import { AIService } from '../../services/AIService.ts';
 
 /**
  * POST /api/ai/admin/chat
@@ -49,11 +51,21 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
       /^tạo\s+(?:\d+\s+)?(?:một\s+vài\s+|một\s+)?sản\s+phẩm\s*$/i.test(lowerMsg) ||
       /^tạo\s+(?:\d+\s+)?sp\s*$/i.test(lowerMsg) ||
       /^tạo\s+(?:\d+\s+)?product\s*$/i.test(lowerMsg) ||
-      /^tạo\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm/i.test(lowerMsg) ||
-      /tạo\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)/i.test(lowerMsg) ||
-      /^tạo\s+cho\s+\d+\s+sản\s+phẩm/i.test(lowerMsg);
+      /^tạo\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm\s*$/i.test(lowerMsg) ||
+      /tạo\s+(?:\d+\s+)?(?:một\s+)?sản\s+phẩm\s+cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin|quý\s+khách)\s*$/i.test(lowerMsg) ||
+      /^tạo\s+cho\s+\d+\s+sản\s+phẩm\s*$/i.test(lowerMsg);
     if (justCreateProduct) {
-      return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
+      const brands = await getRandomBrandsFromDB(5);
+      if (brands.length > 0) {
+        const brandItems = brands.map((b: any) => ({ name: b.name, action: 'tạo sản phẩm cho hãng ' + b.name }));
+        return reply.send({
+          type: 'brand_suggestions',
+          message: `Dạ hiện có ${brands.length} hãng trong hệ thống, sếp chọn hãng nào ạ:`,
+          brands: brandItems,
+          source: 'db',
+        });
+      }
+      return reply.send({ reply: 'Chưa có hãng nào trong hệ thống ạ. Sếp hãy tạo hãng mới trước nhé!' });
     }
 
     // ── Kiểm tra intent "tạo sản phẩm cho hãng X" ──
@@ -67,25 +79,117 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
     for (const pattern of createPatterns) {
       const match = lowerMsg.match(pattern);
       if (match) {
-        let brandName = match[1].trim();
-        brandName = brandName.charAt(0).toUpperCase() + brandName.slice(1);
+        // Extract brand name từ TOÀN BỘ tin nhắn (không chỉ capture group)
+        let brandName = '';
+        const brandFromFullMsg = lowerMsg.match(/(?:hãng|brand|thương\s+hiệu)\s+(\S+(?:\s+\S+){0,2})/i);
+        if (brandFromFullMsg) {
+          brandName = brandFromFullMsg[1].trim();
+        }
+        // Fallback: tin nhắn có "thuộc/của/tại" + brand keyword hoặc tên brand
+        if (!brandName) {
+          const brandFromContext = lowerMsg.match(/(?:thuộc|của|tại|ở|từ|trong)\s+(?:hãng|brand|thương\s+hiệu)?\s*(\S+(?:\s+\S+){0,2})/i);
+          if (brandFromContext) {
+            brandName = brandFromContext[1].trim();
+          }
+        }
+        // Fallback cuối: dùng capture group cũ
+        if (!brandName) {
+          brandName = match[1].trim();
+        }
 
-        // Blacklist: Nếu brandName là đại từ nhân xưng → redirect về create_choice
+        // Resolve synonyms/typos (CK → Calvin Klein, channel → Chanel, etc.)
+        const resolved = resolveBrandName(brandName);
+        if (resolved) {
+          brandName = resolved;
+        } else {
+          brandName = brandName.charAt(0).toUpperCase() + brandName.slice(1);
+        }
+
+        // Blacklist: Nếu brandName là đại từ nhân xưng → redirect về brand_suggestions
         const pronouns = ['t','tôi','mình','tao','tau','bạn','cậu','anh','chị','em','sếp','admin','mày','quý khách','khách'];
         if (pronouns.includes(brandName.toLowerCase()) || /^(t|tôi|mình|tao|tau)\s+\d/i.test(brandName)) {
-          return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
+          const brands = await getRandomBrandsFromDB(5);
+          if (brands.length > 0) {
+            const brandItems = brands.map((b: any) => ({ name: b.name, action: 'tạo sản phẩm cho hãng ' + b.name }));
+            return reply.send({
+              type: 'brand_suggestions',
+              message: 'Dạ sếp chọn hãng muốn tạo sản phẩm ạ:',
+              brands: brandItems,
+              source: 'db',
+            });
+          }
+          return reply.send({ reply: 'Chưa có hãng nào ạ. Sếp hãy tạo hãng mới trước nhé!' });
         }
-        // Blacklist: Nếu brandName có dạng "1 sản phẩm", "2 sản phẩm" → redirect về create_choice
+        // Blacklist: Nếu brandName có dạng "1 sản phẩm", "2 sản phẩm" → redirect về brand_suggestions
         if (/^\d+\s+sản\s+phẩm/i.test(brandName)) {
-          return reply.send({ type: 'create_choice', message: 'Dạ sếp muốn tạo sản phẩm theo brand có sẵn hay tạo brand mới luôn ạ?' });
+          const brands = await getRandomBrandsFromDB(5);
+          if (brands.length > 0) {
+            const brandItems = brands.map((b: any) => ({ name: b.name, action: 'tạo sản phẩm cho hãng ' + b.name }));
+            return reply.send({
+              type: 'brand_suggestions',
+              message: 'Dạ sếp chọn hãng muốn tạo sản phẩm ạ:',
+              brands: brandItems,
+              source: 'db',
+            });
+          }
+          return reply.send({ reply: 'Chưa có hãng nào ạ. Sếp hãy tạo hãng mới trước nhé!' });
+        }
+        // Blacklist: Nếu brandName là "mới" hoặc chứa "mới" → redirect về gợi ý AI (tạo hãng mới)
+        if (/mới/i.test(brandName)) {
+          const brandNames = await generateBrandNamesWithAI(5);
+          if (brandNames.length > 0) {
+            const brandItems = brandNames.map((n: string) => ({ name: n, action: 'tạo thương hiệu ' + n }));
+            return reply.send({
+              type: 'brand_suggestions',
+              message: 'Dạ em gợi ý 5 tên hãng sau ạ, sếp chọn cái nào ưng nha:',
+              brands: brandItems,
+              source: 'ai',
+            });
+          }
+          return reply.send({ reply: 'Xin lỗi, tôi chưa gợi ý được tên hãng. Sếp thử lại sau nhé!' });
         }
 
-        // Trả về special response để frontend mở interview inline
-        return reply.send({
-          type: 'interview_trigger',
-          brandName,
-          message: `Tôi sẽ giúp bạn tạo sản phẩm cho hãng ${brandName}. Hãy làm theo các bước sau:`,
-        });
+        // Kiểm tra brand có tồn tại trong DB không
+        const existingBrand = await Brand.findOne({ name: { $regex: `^${brandName}$`, $options: 'i' } }).lean();
+
+        if (existingBrand) {
+          // Brand tồn tại → trigger interview trực tiếp, bỏ qua bước hỏi
+          return reply.send({
+            type: 'interview_trigger',
+            brandName: existingBrand.name,
+            message: `Tôi sẽ giúp bạn tạo sản phẩm cho hãng ${existingBrand.name}. Hãy làm theo các bước sau:`,
+          });
+        } else if (!/sản\s+phẩm/i.test(message)) {
+          // Message không chứa "sản phẩm" → ý định là tạo brand mới
+          try {
+            const genReq = { body: { name: brandName } } as FastifyRequest;
+            const genReply = { status: () => ({ send: (d: any) => d }) } as any;
+            const genResult = await generateBrand(genReq, genReply as FastifyReply);
+            const bodyOut = (genResult as any).body ? JSON.parse((genResult as any).body) : genResult;
+            const data = bodyOut.data || bodyOut;
+            return reply.send({
+              type: 'entity_preview',
+              entity: 'brand',
+              data: { name: brandName, ...data },
+              message: `Tôi đã tạo sẵn thương hiệu:\n• Tên: ${brandName}\n• Xuất xứ: ${data.origin || '—'}\n\nBạn muốn tạo luôn không?`,
+            });
+          } catch (e: any) {
+            return reply.send({ type: 'error', message: 'Không thể tạo thương hiệu: ' + e.message });
+          }
+        } else {
+          // Message chứa "sản phẩm" + brand không tồn tại → gợi ý brand có sẵn trong DB
+          const brands = await getRandomBrandsFromDB(5);
+          if (brands.length > 0) {
+            const brandItems = brands.map((b: any) => ({ name: b.name, action: 'tạo sản phẩm cho hãng ' + b.name }));
+            return reply.send({
+              type: 'brand_suggestions',
+              message: `Không tìm thấy hãng "${brandName}" trong hệ thống. Sếp chọn hãng có sẵn ạ:`,
+              brands: brandItems,
+              source: 'db',
+            });
+          }
+          return reply.send({ reply: `Không tìm thấy hãng "${brandName}" và chưa có hãng nào trong hệ thống ạ.` });
+        }
       }
     }
 
@@ -108,11 +212,95 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
       }
     }
 
+    // ── Kiểm tra intent "Đề xuất 5 hãng" (từ nút refresh gợi ý) ──
+    // "Đề xuất 5 tên hãng mới" → AI generate
+    const suggestBrandAI = /đề\s+xuất\s+5\s+tên\s+hãng/i.test(lowerMsg);
+    if (suggestBrandAI) {
+      try {
+        const brandNames = await generateBrandNamesWithAI(5);
+        if (brandNames.length > 0) {
+          const brandItems = brandNames.map((n: string) => ({ name: n, action: 'tạo thương hiệu ' + n }));
+          return reply.send({
+            type: 'brand_suggestions',
+            message: 'Dạ em gợi ý 5 tên hãng mới sau ạ, sếp chọn cái nào ưng nha:',
+            brands: brandItems,
+            source: 'ai',
+          });
+        }
+        return reply.send({ reply: 'Xin lỗi, tôi chưa gợi ý được tên hãng. Sếp thử lại sau nhé!' });
+      } catch (e: any) {
+        return reply.send({ type: 'error', message: 'Không thể gợi ý tên hãng: ' + e.message });
+      }
+    }
+
+    // "Đề xuất 5 hãng sản phẩm khác" → random từ DB
+    const suggestBrandDB = /đề\s+xuất\s+5\s+hãng/i.test(lowerMsg);
+    if (suggestBrandDB) {
+      try {
+        const dbBrands = await getRandomBrandsFromDB(5);
+        if (dbBrands.length > 0) {
+          const brandItems = dbBrands.map((b: any) => ({ name: b.name, action: 'tạo sản phẩm cho hãng ' + b.name }));
+          return reply.send({
+            type: 'brand_suggestions',
+            message: 'Dạ em gợi ý 5 hãng sau ạ, sếp chọn hãng nào để tạo sản phẩm:',
+            brands: brandItems,
+            source: 'db',
+          });
+        }
+        return reply.send({ reply: 'Chưa có hãng nào trong hệ thống. Sếp tạo hãng trước nha!' });
+      } catch (e: any) {
+        return reply.send({ type: 'error', message: 'Không thể tải danh sách hãng: ' + e.message });
+      }
+    }
+
     // ── Kiểm tra intent "tạo thương hiệu / brand" ──
+    // Case 1: "tạo hãng mới" (không tên cụ thể) → Gemini sinh 5 tên
+    const createNewBrandNoName =
+      /^tạo\s+(?:cho\s+(?:tôi|t|mình|tao|tau|bạn|anh|chị|em|sếp|admin)?\s+)?(?:một\s+)?(?:hãng|thương\s+hiệu|brand)\s+(?:mới|sản\s+phẩm\s+mới)\s*$/i.test(lowerMsg) ||
+      /^tạo\s+(?:một\s+)?(?:hãng|thương\s+hiệu|brand)\s*$/i.test(lowerMsg) ||
+      /^gợi\s+ý\s+(?:\d+\s+)?(?:tên\s+)?(?:hãng|thương\s+hiệu|brand)\s*$/i.test(lowerMsg);
+    if (createNewBrandNoName) {
+      try {
+        const brandNames = await generateBrandNamesWithAI(5);
+        if (brandNames.length > 0) {
+          const brandItems = brandNames.map((n: string) => ({ name: n, action: 'tạo thương hiệu ' + n }));
+          return reply.send({
+            type: 'brand_suggestions',
+            message: 'Dạ em gợi ý 5 tên hãng sau ạ, sếp chọn cái nào ưng nha:',
+            brands: brandItems,
+            source: 'ai',
+          });
+        }
+        return reply.send({ reply: 'Xin lỗi, tôi chưa gợi ý được tên hãng. Sếp thử lại sau nhé!' });
+      } catch (e: any) {
+        return reply.send({ type: 'error', message: 'Không thể gợi ý tên hãng: ' + e.message });
+      }
+    }
+
+    // Case 2: "tạo hãng Adidas" (có tên cụ thể) → check trùng + generate
     const brandIntent = /tạo\s+(?:thương\s+hiệu|brand|hãng)/i.exec(lowerMsg);
     if (brandIntent) {
       const nameMatch = /(?:thương\s+hiệu|brand|hãng)\s+(.+)/i.exec(message);
-      const brandName = nameMatch ? nameMatch[1].trim() : 'Thương hiệu mới';
+      const brandName = nameMatch ? nameMatch[1].trim() : '';
+      if (!brandName) {
+        // Không có tên → redirect về gợi ý AI
+        const brandNames = await generateBrandNamesWithAI(5);
+        if (brandNames.length > 0) {
+          const brandItems = brandNames.map((n: string) => ({ name: n, action: 'tạo thương hiệu ' + n }));
+          return reply.send({
+            type: 'brand_suggestions',
+            message: 'Dạ em gợi ý 5 tên hãng sau ạ, sếp chọn cái nào ưng nha:',
+            brands: brandItems,
+            source: 'ai',
+          });
+        }
+        return reply.send({ reply: 'Xin lỗi, tôi chưa gợi ý được tên hãng. Sếp thử lại sau nhé!' });
+      }
+      // Check trùng brand trong DB
+      const existingBrand = await Brand.findOne({ name: { $regex: `^${brandName}$`, $options: 'i' } }).lean();
+      if (existingBrand) {
+        return reply.send({ type: 'error', message: `Hãng "${brandName}" đã tồn tại trong hệ thống rồi ạ! Sếp chọn hãng khác hoặc tạo sản phẩm cho hãng này nhé.` });
+      }
       try {
         const genReq = { body: { name: brandName } } as FastifyRequest;
         const genReply = { status: () => ({ send: (d: any) => d }) } as any;
@@ -123,7 +311,7 @@ export async function adminChat(req: FastifyRequest, reply: FastifyReply) {
           type: 'entity_preview',
           entity: 'brand',
           data: { name: brandName, ...data },
-          message: `Tôi đã tạo sẵn thương hiệu:\n• Tên: ${brandName}\n• Xuất xứ: ${data.origin || '—'}\n• Mô tả: ${(data.description || '').slice(0, 100)}...\n\nBạn muốn tạo luôn không?`,
+          message: `Tôi đã tạo sẵn thương hiệu:\n• Tên: ${brandName}\n• Xuất xứ: ${data.origin || '—'}\n\nBạn muốn tạo luôn không?`,
         });
       } catch (e: any) {
         return reply.send({ type: 'error', message: 'Không thể tạo thương hiệu: ' + e.message });
@@ -266,12 +454,18 @@ async function handleConfirmCreate(req: FastifyRequest, reply: FastifyReply, bod
         });
       }
       case 'brand': {
-        // Create brand directly since there's no createBrandFromAI endpoint
+        // Check trùng brand trước khi tạo
+        const existingBrand = await Brand.findOne({ name: { $regex: `^${data.name}$`, $options: 'i' } }).lean();
+        if (existingBrand) {
+          return reply.send({
+            type: 'error',
+            message: `Hãng "${data.name}" đã tồn tại trong hệ thống rồi ạ!`,
+          });
+        }
         const newBrand = await Brand.create({
           name: data.name,
           slug: data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
           origin: data.origin || '',
-          description: data.description || '',
           status: 'active',
         });
         return reply.send({
@@ -325,6 +519,79 @@ function parseResult(result: any): any {
     try { return JSON.parse(result.body).data || JSON.parse(result.body); } catch { return result; }
   }
   return result || {};
+}
+
+/**
+ * Lấy ngẫu nhiên N brand từ DB
+ */
+async function getRandomBrandsFromDB(count: number): Promise<any[]> {
+  const total = await Brand.countDocuments();
+  if (total === 0) return [];
+  const limit = Math.min(count, total);
+  const skip = Math.max(0, Math.floor(Math.random() * (total - limit)));
+  return Brand.find().select('name origin').skip(skip).limit(limit).lean();
+}
+
+/**
+ * Gọi Gemini AI gợi ý N tên hãng sáng tạo, check trùng DB
+ */
+async function generateBrandNamesWithAI(count: number): Promise<string[]> {
+  const themes = ['tối giản sang trọng', 'đường phố trẻ trung', 'nữ tính dịu dàng', 'cá tính mạnh mẽ', 'thể thao năng động', 'bohemian tự do', 'cổ điển thanh lịch', 'hiện đại minimal', 'eco sustainable', 'luxury cao cấp', 'street style', 'vintage retro'];
+  const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+  const randomSeed = Date.now().toString(36).slice(-4);
+  const prompt = `Bạn là chuyên gia branding. Gợi ý ${count} tên thương hiệu thời trang/phụ kiện ${randomTheme}, sáng tạo, ngắn gọn, dễ nhớ, phù hợp thị trường Việt Nam.
+[YEUCAU_${randomSeed}]
+YÊU CẦU:
+- Mỗi tên 1-3 từ, viết hoa chữ cái đầu (ví dụ: LuxVie, UrbanGlow, VietChic)
+- KHÔNG trùng tên các thương hiệu nổi tiếng (Nike, Adidas, Gucci, LV, Chanel, Zara, H&M, Uniqlo, etc.)
+- Phù hợp: thời trang, phụ kiện, mỹ phẩm, lifestyle
+- Tên PHẢI MỚI HOÀN TOÀN, không được trùng với bất kỳ gợi ý trước đó
+- Output CHỈ JSON array, không markdown, không giải thích
+Ví dụ: ["LuxVie","UrbanGlow","StyleNest","VelvetCo","VietChic"]`;
+
+  const response = await AIService.generateResponse(prompt, undefined, 'gemini-3.1-flash-lite');
+  let jsonString = response.trim();
+
+  // Parse JSON array from response
+  if (jsonString.startsWith('```')) {
+    jsonString = jsonString.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\`\`\`$/, '');
+  }
+
+  try {
+    const parsed = JSON.parse(jsonString);
+    const names = Array.isArray(parsed) ? parsed : [];
+    if (names.length === 0) return [];
+
+    // Check trùng DB — lọc bỏ tên đã tồn tại
+    const regexPatterns = names.map((n: string) => new RegExp(`^${n}$`, 'i'));
+    const existingBrands = await Brand.find({ name: { $in: regexPatterns } }).select('name').lean();
+    const existingSet = new Set(existingBrands.map((b: any) => b.name.toLowerCase()));
+    const filtered = names.filter((n: string) => !existingSet.has(n.toLowerCase()));
+
+    // Nếu bị lọc hết hoặc ít hơn 2 tên → gọi lại với yêu cầu bổ sung
+    if (filtered.length < 2) {
+      const extraPrompt = `Gợi ý ${count} tên thương hiệu khác (KHÔNG được trùng tên: ${names.join(', ')}). Chỉ JSON array, không markdown.
+
+Ví dụ: ["TenMoi1","TenMoi2","TenMoi3","TenMoi4","TenMoi5"]`;
+      const extraResponse = await AIService.generateResponse(extraPrompt, undefined, 'gemini-3.1-flash-lite');
+      let extraStr = extraResponse.trim();
+      if (extraStr.startsWith('```')) {
+        extraStr = extraStr.replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\`\`\`$/, '');
+      }
+      const extraParsed = JSON.parse(extraStr);
+      const extraNames = Array.isArray(extraParsed) ? extraParsed : [];
+      const extraRegex = extraNames.map((n: string) => new RegExp(`^${n}$`, 'i'));
+      const extraExisting = await Brand.find({ name: { $in: extraRegex } }).select('name').lean();
+      const extraExistingSet = new Set(extraExisting.map((b: any) => b.name.toLowerCase()));
+      const extraFiltered = extraNames.filter((n: string) => !extraExistingSet.has(n.toLowerCase()));
+      return [...filtered, ...extraFiltered].slice(0, count);
+    }
+
+    return filtered.slice(0, count);
+  } catch {
+    // Fallback: nếu JSON parse fail, trả về empty
+    return [];
+  }
 }
 
 /**

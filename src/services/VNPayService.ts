@@ -63,19 +63,19 @@ function buildVnpayQueryString(params: Record<string, string>): string {
     sorted[key] = params[key];
   }
   return Object.entries(sorted)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value).replace(/%20/g, '+')}`)
     .join('&');
 }
 
 /**
- * Tạo chữ ký HMAC-SHA256 theo chuẩn VNPAY
+ * Tạo chữ ký HMAC-SHA512 theo chuẩn VNPAY
  *
- * Cách tính: sort params alphabetically → build query string với values URL-encoded → HMAC-SHA256
+ * Cách tính: sort params alphabetically → build query string với values URL-encoded → HMAC-SHA512
  */
 function createSecureHash(params: Record<string, string>, secretKey: string): string {
   const encodedQuery = buildVnpayQueryString(params);
   return crypto
-    .createHmac('sha256', secretKey)
+    .createHmac('sha512', secretKey)
     .update(encodedQuery)
     .digest('hex');
 }

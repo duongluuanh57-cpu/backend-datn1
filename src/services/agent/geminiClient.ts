@@ -13,7 +13,7 @@
  *   GEMINI_API_KEY_6=key6
  */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import type { LanguageModelV1 } from 'ai';
+import type { LanguageModel } from 'ai';
 
 // ── Config ──────────────────────────────────────────────────────────────
 const API_KEY_NAMES = [
@@ -82,7 +82,7 @@ function blacklistKey(apiKey: string): void {
 // ── Public API ───────────────────────────────────────────────────────────
 
 export interface GeminiClient {
-  model: LanguageModelV1;
+  model: LanguageModel;
   provider: ReturnType<typeof createGoogleGenerativeAI>;
 }
 

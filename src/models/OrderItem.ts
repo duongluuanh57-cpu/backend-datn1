@@ -1,6 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 export interface IOrderItem extends Document {
   orderId: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
@@ -8,6 +6,7 @@ export interface IOrderItem extends Document {
   brand?: string;
   quantity: number;
   price: number;
+  discount?: number;
   image?: string;
   variantSize?: string;
   createdAt: Date;
@@ -22,6 +21,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
     brand: { type: String },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
     image: { type: String },
     variantSize: { type: String },
   },
@@ -31,7 +31,6 @@ const OrderItemSchema = new Schema<IOrderItem>(
   }
 );
 
-OrderItemSchema.plugin(multiTenancyPlugin);
 OrderItemSchema.index({ brand: 1, createdAt: -1 });
 
 export const OrderItem =

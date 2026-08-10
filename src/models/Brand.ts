@@ -1,10 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 export interface IBrand extends Document {
   name: string;
+  slug?: string;
   logo?: string;
-  description?: string;
   origin?: string;
   status: 'active' | 'inactive';
   featured: boolean;
@@ -15,8 +13,8 @@ export interface IBrand extends Document {
 const BrandSchema = new Schema<IBrand>(
   {
     name: { type: String, required: true, index: true },
+    slug: { type: String, index: true, sparse: true },
     logo: { type: String },
-    description: { type: String },
     origin: { type: String },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
     featured: { type: Boolean, default: false }
@@ -27,8 +25,7 @@ const BrandSchema = new Schema<IBrand>(
   }
 );
 
-BrandSchema.index({ name: 'text', description: 'text' });
-
-BrandSchema.plugin(multiTenancyPlugin);
+BrandSchema.index({ name: 'text' });
+BrandSchema.index({ slug: 1 });
 
 export const Brand = mongoose.models.Brand || mongoose.model<IBrand>('Brand', BrandSchema);

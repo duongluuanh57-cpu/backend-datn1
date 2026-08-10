@@ -144,7 +144,7 @@ HÀNH ĐỘNG:
           parameters: z.object({
             id: z.string().optional().describe('ID của sản phẩm cần cập nhật (nếu biết)'),
             name: z.string().optional().describe('Tên sản phẩm cần cập nhật (nếu không có ID)'),
-            fields: z.record(z.any()).describe('Các trường cần cập nhật (VD: { price: 5000000, discountPercentage: 20 })'),
+            fields: z.record(z.string(), z.any()).describe('Các trường cần cập nhật (VD: { price: 5000000, discountPercentage: 20 })'),
           }),
           execute: async ({ id, name, fields }: { id?: string; name?: string; fields: Record<string, any> }) => {
             console.log(`🔧 [AdminAgent] Tool: update_product(id=${id || '?'}, name=${name || '?'}, fields=${JSON.stringify(fields)})`);

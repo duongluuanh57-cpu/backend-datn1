@@ -1,6 +1,4 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { multiTenancyPlugin } from '../utils/multiTenancyPlugin.ts';
-
 export interface IProductVariant extends Document {
   productId: mongoose.Types.ObjectId; // Reference to Product
   size: string; // '30ml', '50ml', '100ml', etc.
@@ -19,7 +17,7 @@ const ProductVariantSchema = new Schema<IProductVariant>(
     size: { type: String, required: true },
     price: { type: Number, required: true },
     quantityInStock: { type: Number, default: 0 },
-    sku: { type: String },
+    sku: { type: String, default: '', trim: true },
     isDefault: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
   },
@@ -28,8 +26,6 @@ const ProductVariantSchema = new Schema<IProductVariant>(
     collection: 'product_variants',
   }
 );
-
-ProductVariantSchema.plugin(multiTenancyPlugin);
 
 export const ProductVariant =
   mongoose.models.ProductVariant ||

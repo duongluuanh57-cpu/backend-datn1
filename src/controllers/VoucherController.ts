@@ -1,17 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { VoucherService } from '../services/VoucherService.ts';
-
-function requireAdmin(req: FastifyRequest, reply: FastifyReply): boolean {
-  const user = (req as any).user;
-  if (!user || (user.role !== 'ADMIN' && user.role !== 'SUBADMIN')) {
-    reply.status(403).send({
-      success: false,
-      message: 'Bạn không có quyền thực hiện hành động này',
-    });
-    return false;
-  }
-  return true;
-}
+import { requireAdmin } from '../utils/adminAuth.ts';
 
 export class VoucherController {
   /** GET /api/vouchers — Lấy tất cả voucher (admin: all, user: active) */
@@ -20,12 +9,44 @@ export class VoucherController {
       const user = (req as any).user;
 
       if (user && (user.role === 'ADMIN' || user.role === 'SUBADMIN')) {
-        const list = await VoucherService.getAll();
-        return reply.send({ success: true, data: list });
+        let list = await VoucherService.getAll();
+        const { applicableTo } = req.query as { applicableTo?: string };
+        if (applicableTo) {
+          list = list.filter((v: any) => v.applicableTo === applicableTo);
+        }
+        const enriched = list.map((v: any) => ({
+          ...v,
+          remaining: v.applicableTo === 'minigame' ? 'Không giới hạn' : Math.max(0, (v.maxUsage ?? 0) - (v.usedCount || 0)),
+        }));
+        return reply.send({ success: true, data: enriched });
       }
 
-      const list = await VoucherService.getActive();
-      return reply.send({ success: true, data: list });
+      const userTier = user?.memberTier || null;
+      const userId = user?.userId || null;
+      const { orderAmount, includeAll } = req.query as { orderAmount?: string; includeAll?: string };
+      const totalAmount = orderAmount ? Number(orderAmount) : 0;
+      const hasOrderAmount = orderAmount !== undefined && orderAmount !== '';
+
+      let list: any[];
+      if (includeAll === 'true') {
+        // Trả về tất cả voucher (kể cả hết hạn, hết lượt) — dùng cho trang profile
+        list = await VoucherService.getAll();
+      } else {
+        list = await VoucherService.getActive(userTier, userId);
+      }
+
+      // Add remaining field + eligible flag (chỉ khi có orderAmount)
+      const enriched = list.map((v: any) => {
+        const item: any = {
+          ...v,
+          remaining: v.applicableTo === 'minigame' ? 'Không giới hạn' : Math.max(0, (v.maxUsage ?? 0) - (v.usedCount || 0)),
+        };
+        if (hasOrderAmount) {
+          item.eligible = totalAmount >= (v.minOrderAmount || 0);
+        }
+        return item;
+      });
+      return reply.send({ success: true, data: enriched });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
     }
@@ -54,7 +75,11 @@ export class VoucherController {
         return reply.status(400).send({ success: false, message: 'Số tiền đơn hàng không hợp lệ' });
       }
 
-      const result = await VoucherService.validate(code, orderAmount);
+      const user = (req as any).user;
+      const userTier = user?.memberTier || null;
+      const userId = user?.userId || null;
+
+      const result = await VoucherService.validate(code, orderAmount, userTier, userId);
       return reply.send({ success: result.valid, ...result });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });

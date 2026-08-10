@@ -38,7 +38,6 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       suitableFor,
       occasion,
       availableBrands,
-      availableGenders,
       availableCategories,
       availableSizes,
       availableTags
@@ -63,13 +62,12 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       suitableFor?: string;
       occasion?: string;
       availableBrands?: string[];
-      availableGenders?: string[];
       availableCategories?: string[];
       availableSizes?: string[];
       availableTags?: string[];
     };
 
-    if (!name) return reply.status(400).send({ error: 'Name is required' });
+    if (!name) return reply.status(400).send({ success: false, message: 'Name is required' });
 
     // Build pre-filled context
     const preFilled: Record<string, any> = {};
@@ -123,7 +121,7 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
     const singleStagePrompt = buildProductPrompt({
       name,
       availableBrands: availableBrands || [],
-      availableCategories: availableGenders || availableCategories || [],
+      availableCategories: availableCategories || [],
       availableTags: finalTagsForPrompt,
       sizesJson,
       preFilled,
@@ -148,7 +146,8 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
     } catch (parseError: any) {
       console.error(`❌ [AI JSON Parse Failed] ${parseError.message}`);
       return reply.status(500).send({
-        error: 'AI trả về JSON không hợp lệ',
+        success: false,
+        message: 'AI trả về JSON không hợp lệ',
         details: parseError.message,
         rawResponse: jsonString.substring(0, 500)
       });

@@ -13,6 +13,17 @@
     <span style="color:var(--text-muted);">/</span>
     <span id="sd-breadcrumb" style="color:var(--text-primary);font-weight:600;font-size:14px;">Đang tải...</span>
     <span id="sd-status-badge" style="display:none;font-size:11px;padding:3px 12px;border-radius:12px;font-weight:600;"></span>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <span id="sd-save-status" style="font-size:12px;"></span>
+      <button type="button" id="sd-btn-activate" onclick="saveProduct(true)" style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border:none;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;box-shadow:0 2px 8px rgba(201,169,110,0.25);white-space:nowrap;" onmouseover="this.style.filter='brightness(1.1)';this.style.boxShadow='0 4px 16px rgba(201,169,110,0.35)'" onmouseout="this.style.filter='';this.style.boxShadow='0 2px 8px rgba(201,169,110,0.25)'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Lưu & Kích hoạt
+      </button>
+      <button type="button" id="sd-btn-fill" onclick="fillMissing()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid #8b5cf6;border-radius:8px;background:rgba(139,92,246,0.06);color:#8b5cf6;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.background='rgba(139,92,246,0.12)'" onmouseout="this.style.background='rgba(139,92,246,0.06)'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        AI điền lại
+      </button>
+    </div>
   </div>
 
   <!-- ── Loading ── -->
@@ -29,7 +40,7 @@
     <form id="supplement-form" onsubmit="event.preventDefault();">
       
       <!-- ── 2-Column Layout ── -->
-      <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start;">
+      <div class="sd-form-grid">
         
         <!-- ── LEFT: Ảnh ── -->
         <div class="dt-card" style="position:sticky;top:80px;">
@@ -97,8 +108,8 @@
                   <!-- selected category chips injected by JS -->
                 </div>
                 <div style="margin-top:4px;">
-                  <button type="button" onclick="openCategoryModal()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  <button type="button" onclick="openCategoryModal()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     Chọn danh mục
                   </button>
                 </div>
@@ -111,8 +122,8 @@
                   <!-- selected tag chips injected by JS -->
                 </div>
                 <div style="margin-top:4px;">
-                  <button type="button" onclick="openTagModal()" style="padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>
+                  <button type="button" onclick="openTagModal()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>
                     Chọn tags
                   </button>
                 </div>
@@ -121,7 +132,7 @@
               <!-- Mô tả -->
               <div class="supp-form-group">
                 <label>Mô tả</label>
-                <div id="sd-description-editor" style="min-height:180px;border:1px solid var(--border);border-radius:8px;background:var(--surface);"></div>
+                <div id="sd-description-editor"></div>
               </div>
             </div>
           </div>
@@ -170,18 +181,6 @@
             </div>
           </div>
 
-          <!-- ── Actions ── -->
-          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-            <button type="button" id="sd-btn-draft" onclick="saveProduct(false)" style="display:flex;align-items:center;gap:6px;padding:10px 24px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-              Lưu tạm
-            </button>
-            <button type="button" id="sd-btn-activate" onclick="saveProduct(true)" style="display:flex;align-items:center;gap:6px;padding:10px 24px;border:none;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s;box-shadow:0 2px 8px rgba(201,169,110,0.25);" onmouseover="this.style.filter='brightness(1.1)';this.style.boxShadow='0 4px 16px rgba(201,169,110,0.35)'" onmouseout="this.style.filter='';this.style.boxShadow='0 2px 8px rgba(201,169,110,0.25)'">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              Lưu & Kích hoạt
-            </button>
-            <span id="sd-save-status" style="font-size:12px;"></span>
-          </div>
         </div>
       </div>
     </form>
@@ -240,96 +239,12 @@
   </div>
 </div>
 
-<style>
-  @import url('https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css');
-  :root { --surface: var(--color-surface, #F7F6F3); --bg: var(--color-background, #FFFFFF); }
-  #sd-image-preview img { width:100%; height:100%; object-fit:cover; }
-  .supp-form-group { display:flex; flex-direction:column; gap:4px; }
-  .supp-form-group label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); }
-  .supp-form-group input,
-  .supp-form-group textarea,
-  .supp-form-group select {
-    padding:8px 12px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; color:var(--text-primary); background:var(--bg); resize:vertical;
-  }
-  .supp-form-group input:focus,
-  .supp-form-group textarea:focus,
-  .supp-form-group select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px rgba(201,169,110,0.1); }
-  
-  .variant-row {
-    display:flex; gap:8px; align-items:center; padding:8px; background:var(--bg); border-radius:8px; border:1px solid var(--border);
-  }
-  .variant-row input { padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; color:var(--text-primary); background:var(--surface); }
-  .variant-row input:focus { outline:none; border-color:var(--accent); }
-  .variant-row .v-size { width:80px; }
-  .variant-row .v-price { width:100px; }
-  .variant-row .v-stock { width:70px; }
-  .variant-row .v-default { width:20px; height:20px; accent-color:var(--accent); cursor:pointer; }
-  
-  .scent-meta-item {
-    display:flex; align-items:center; gap:8px; padding:8px 12px; background:var(--bg); border-radius:8px; border:1px solid var(--border);
-  }
-  .scent-meta-icon { width:16px; height:16px; color:var(--accent); flex-shrink:0; }
-  .scent-meta-icon svg { width:100%; height:100%; }
-  .scent-meta-label { font-size:10px; color:var(--text-muted); min-width:80px; text-transform:uppercase; letter-spacing:0.5px; }
-  .scent-meta-value { font-size:12px; font-weight:500; color:var(--text-primary); }
-  .scent-meta-item input,
-  .scent-meta-item select {
-    padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:inherit; color:var(--text-primary); background:var(--surface); flex:1; min-width:100px;
-  }
-  .scent-meta-item input:focus,
-  .scent-meta-item select:focus { outline:none; border-color:var(--accent); }
-  
-  .sub-image-row {
-    display:flex; align-items:center; gap:8px; padding:8px; background:var(--bg); border-radius:8px; border:1px solid var(--border);
-  }
-  .sub-image-row .sub-img-preview { width:48px; height:48px; border-radius:6px; overflow:hidden; border:1px solid var(--border); background:var(--surface); flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-  .sub-image-row .sub-img-preview img { width:100%; height:100%; object-fit:cover; }
-  
-  /* ── Modal ── */
-  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:999; align-items:center; justify-content:center; }
-  .modal-overlay.active { display:flex; }
-  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:14px; max-width:480px; width:90%; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.1); }
-  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); }
-  .modal-header h4 { margin:0; font-size:15px; font-weight:600; color:var(--text-primary); }
-  .modal-header button { background:none; border:none; font-size:22px; cursor:pointer; color:var(--text-muted); padding:0 4px; line-height:1; }
-  .modal-header button:hover { color:var(--text-primary); }
-  .modal-body { padding:16px 20px; overflow-y:auto; flex:1; }
-  .modal-footer { display:flex; gap:8px; justify-content:flex-end; padding:12px 20px; border-top:1px solid var(--border); }
-  .modal-btn-cancel { padding:8px 18px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--text-muted); cursor:pointer; font-size:12px; font-weight:500; }
-  .modal-btn-cancel:hover { color:var(--text-primary); border-color:var(--text-muted); }
-  .modal-btn-save { padding:8px 18px; border:none; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; font-size:12px; font-weight:600; }
-  .modal-btn-save:hover { filter:brightness(1.1); }
-
-  /* ── Checkbox items ── */
-  .modal-check-item { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; color:var(--text-primary); transition:background 0.15s; }
-  .modal-check-item:hover { background:rgba(201,169,110,0.06); }
-  .modal-check-item input[type="checkbox"] { accent-color:var(--accent); cursor:pointer; width:16px; height:16px; }
-
-  /* ── Chips ── */
-  .chip { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:500; background:rgba(201,169,110,0.10); color:var(--accent); border:1px solid rgba(201,169,110,0.2); }
-  .chip-remove { cursor:pointer; font-size:14px; line-height:1; opacity:0.6; }
-  .chip-remove:hover { opacity:1; }
-
-  /* ── Quill overrides ── */
-  #sd-description-editor .ql-editor { min-height:120px; font-size:13px; font-family:inherit; }
-  #sd-description-editor .ql-toolbar { border:0; border-bottom:1px solid var(--border); border-radius:8px 8px 0 0; background:var(--bg); }
-  #sd-description-editor .ql-container { border:0; font-family:inherit; }
-  #sd-description-editor .ql-editor.ql-blank::before { color:var(--text-muted); font-style:normal; }
-
-  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-  
-  @media (max-width:768px) {
-    #supplement-detail > div > div:first-child { grid-template-columns:1fr; }
-    .variant-row { flex-wrap:wrap; }
-  }
-</style>
-
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"></script>
 <script>
 var PRODUCT_ID = '<%= productId %>';
 var TOKEN = '<%= apiToken %>';
-// TENANT removed — single-tenant mode
 var MODE = '<%= mode || 'supplement' %>';
+var IS_NEW = '<%= (typeof isNew !== 'undefined' && isNew) ? true : false %>' === 'true';
 var H = { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
 var currentProduct = null;
 var allBrands = [];
@@ -348,74 +263,100 @@ var uploadedSubImages = [];     // [{ index, url }] — newly uploaded subs
 var uploadedMainImageUrl = null; // newly uploaded main image URL
 
 function $(id) { return document.getElementById(id); }
-function fmt(n) { return (n || 0).toLocaleString('vi-VN'); }
-function fmtCurrency(n) { return fmt(n) + 'đ'; }
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[m]||m; });
-}
+<%- include('admin/partials/utils') %>
 
 // ═══════════════════════════════════════════════════════════════
 // LOAD DATA
 // ═══════════════════════════════════════════════════════════════
-Promise.all([
-  fetch('/api/products/' + PRODUCT_ID, { headers: H }).then(function(r) { return r.json(); }),
-  fetch('/api/brands', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
-  fetch('/api/categories', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
-  fetch('/api/tags', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
-]).then(function(results) {
-  var productRes = results[0];
-  var brandsRes = results[1];
-  var categoriesRes = results[2];
-  var tagsRes = results[3];
+function loadData() {
+  // If this is a new product, skip product fetch, just load brands/categories/tags
+  var requests = [
+    fetch('/api/brands', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
+    fetch('/api/categories', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
+    fetch('/api/tags', { headers: H }).then(function(r) { return r.json(); }).catch(function(){ return { success:false, data:[] }; }),
+  ];
 
-  if (!productRes.success || !productRes.data) {
+  if (!IS_NEW && PRODUCT_ID) {
+    requests.unshift(
+      fetch('/api/products/' + PRODUCT_ID + '/admin', { headers: H }).then(function(r) { return r.json(); })
+    );
+  } else {
+    requests.unshift(Promise.resolve({ success: true, data: null }));
+  }
+
+  Promise.all(requests).then(function(results) {
+    var productRes = results[0];
+    var brandsRes = results[1];
+    var categoriesRes = results[2];
+    var tagsRes = results[3];
+
+    if (IS_NEW || !PRODUCT_ID) {
+      // New product — render empty form
+      currentProduct = { name: '', brand: '', categories: [], tag: '', image: '', images: [], variants: [], description: '', discountPercentage: 0, discountStartDate: null, discountEndDate: null, status: 'draft' };
+    } else {
+      if (!productRes || !productRes.success || !productRes.data) {
+        $('sd-loading').style.display = 'none';
+        $('sd-error').style.display = 'block';
+        $('sd-error').innerHTML = '<p style="font-size:16px;font-weight:600;color:var(--danger);">Không tìm thấy sản phẩm</p><p style="margin-top:8px;font-size:13px;color:var(--text-muted);">Sản phẩm có thể đã bị xóa.</p>';
+        return;
+      }
+      currentProduct = productRes.data;
+    }
+
+    allBrands = brandsRes.success ? (brandsRes.data || []) : [];
+    // Handle cả 2 format: array hoặc { items: [...] }
+    var catData = categoriesRes.success ? (categoriesRes.data || []) : [];
+    allCategories = Array.isArray(catData) ? catData : (catData.items || []);
+
+    // Handle tags response: { success, data: [...] }
+    if (tagsRes.success && Array.isArray(tagsRes.data)) {
+      allTags = tagsRes.data;
+    } else if (tagsRes.success && tagsRes.data && Array.isArray(tagsRes.data.items)) {
+      allTags = tagsRes.data.items;
+    }
+
+    // Extract existing images
+    var prodImages = Array.isArray(currentProduct.images) ? currentProduct.images : [];
+    existingImages = prodImages.length > 0 ? prodImages : (currentProduct.image ? [currentProduct.image] : []);
+
+    renderForm();
+
+    // Init Quill after form is rendered
+    quill = new Quill('#sd-description-editor', {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ header: [1, 2, 3, false] }],
+          ['bold', 'italic', 'underline', 'strike'],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          ['clean']
+        ]
+      }
+    });
+    quill.root.innerHTML = currentProduct.description || '';
+
+    $('sd-loading').style.display = 'none';
+    $('sd-form').style.display = 'block';
+
+    // ── Auto-fill on name input ──
+    var autoFillTimer = null;
+    $('sd-name').addEventListener('input', function() {
+      clearTimeout(autoFillTimer);
+      var name = this.value.trim();
+      if (name.length < 3) return;
+      autoFillTimer = setTimeout(function() { autoFillProduct(name); }, 800);
+    });
+  }).catch(function() {
     $('sd-loading').style.display = 'none';
     $('sd-error').style.display = 'block';
-    $('sd-error').innerHTML = '<p style="font-size:16px;font-weight:600;color:var(--danger);">Không tìm thấy sản phẩm</p><p style="margin-top:8px;font-size:13px;color:var(--text-muted);">Sản phẩm có thể đã bị xóa.</p>';
-    return;
-  }
-
-  currentProduct = productRes.data;
-  allBrands = brandsRes.success ? (brandsRes.data || []) : [];
-  // Handle cả 2 format: array hoặc { items: [...] }
-  var catData = categoriesRes.success ? (categoriesRes.data || []) : [];
-  allCategories = Array.isArray(catData) ? catData : (catData.items || []);
-
-  // Handle tags response: { success, data: [...] }
-  if (tagsRes.success && Array.isArray(tagsRes.data)) {
-    allTags = tagsRes.data;
-  } else if (tagsRes.success && tagsRes.data && Array.isArray(tagsRes.data.items)) {
-    allTags = tagsRes.data.items;
-  }
-
-  // Extract existing images
-  var prodImages = Array.isArray(currentProduct.images) ? currentProduct.images : [];
-  existingImages = prodImages.length > 0 ? prodImages : (currentProduct.image ? [currentProduct.image] : []);
-
-  renderForm();
-
-  // Init Quill after form is rendered
-  quill = new Quill('#sd-description-editor', {
-    theme: 'snow',
-    modules: {
-      toolbar: [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        ['clean']
-      ]
-    }
+    $('sd-error').innerHTML = '<p style="font-size:16px;font-weight:600;color:var(--danger);">Lỗi kết nối</p>';
   });
-  quill.root.innerHTML = currentProduct.description || '';
+}
 
-  $('sd-loading').style.display = 'none';
-  $('sd-form').style.display = 'block';
-}).catch(function() {
-  $('sd-loading').style.display = 'none';
-  $('sd-error').style.display = 'block';
-  $('sd-error').innerHTML = '<p style="font-size:16px;font-weight:600;color:var(--danger);">Lỗi kết nối</p>';
-});
+// ═══════════════════════════════════════════════════════════════
+// INIT — Start loading data on page load
+// ═══════════════════════════════════════════════════════════════
+loadData();
 
 // ═══════════════════════════════════════════════════════════════
 // RENDER FORM
@@ -508,7 +449,7 @@ function renderForm() {
   var scentHtml = '';
   var isEditable = MODE === 'edit';
   scentFields.forEach(function(f) {
-    var val = p[f.key] || '';
+    var val = (p.specifications && p.specifications[f.key]) || p[f.key] || '';
     if (isEditable) {
       scentHtml += '<div class="scent-meta-item">' +
         '<span class="scent-meta-icon">' + f.icon + '</span>' +
@@ -815,7 +756,7 @@ function renderVariants() {
       '<input type="text" class="v-size" value="' + escapeHtml(v.size) + '" placeholder="Size" onchange="updateVariant(' + i + ', \'size\', this.value)" />' +
       '<input type="number" class="v-price" value="' + v.price + '" placeholder="Giá" min="0" onchange="updateVariant(' + i + ', \'price\', Number(this.value))" />' +
       '<input type="number" class="v-stock" value="' + v.quantityInStock + '" placeholder="Tồn kho" min="0" onchange="updateVariant(' + i + ', \'quantityInStock\', Number(this.value))" />' +
-      '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);cursor:pointer;white-space:nowrap;">' +
+      '<label class="v-default-label">' +
         '<input type="radio" name="v-default" class="v-default"' + (v.isDefault ? ' checked' : '') + ' onchange="setDefaultVariant(' + i + ')" /> Mặc định' +
       '</label>' +
       '<button type="button" onclick="removeVariant(' + i + ')" style="padding:4px 8px;border:none;background:transparent;color:var(--danger);cursor:pointer;font-size:16px;line-height:1;" title="Xóa biến thể">&times;</button>' +
@@ -972,23 +913,29 @@ function saveProduct(activate) {
   statusEl.textContent = 'Đang lưu...';
   statusEl.style.color = 'var(--accent)';
 
-  var btnDraft = $('sd-btn-draft');
   var btnActivate = $('sd-btn-activate');
-  btnDraft.disabled = true;
   btnActivate.disabled = true;
-  btnDraft.style.opacity = '0.6';
   btnActivate.style.opacity = '0.6';
 
   // Gather categories — service cần comma-separated names
   // (uses global selectedCatNames from modal)
 
-  // Gather variants string
-  var variantStr = currentVariants.map(function(v) {
-    return v.size + ':' + v.price;
+  // Gather variants
+  var formattedVariants = currentVariants.map(function(v, i) {
+    return {
+      size: v.size || '50ml',
+      price: Number(v.price) || 0,
+      quantityInStock: Number(v.quantityInStock || 0),
+      isDefault: v.isDefault || i === 0,
+    };
+  });
+
+  var variantStr = formattedVariants.map(function(v) {
+    return v.size + ':' + v.price + ':' + v.quantityInStock;
   }).join(',');
 
   // Default variant stock
-  var defaultVar = currentVariants.find(function(v) { return v.isDefault; }) || currentVariants[0];
+  var defaultVar = formattedVariants.find(function(v) { return v.isDefault; }) || formattedVariants[0];
   var quantityInStock = defaultVar ? defaultVar.quantityInStock : 0;
 
   // Build body
@@ -1001,8 +948,8 @@ function saveProduct(activate) {
     categories: selectedCatNames.join(','),
     tag: selectedTagSlugs.join(', '),
     size: variantStr,
+    variants: formattedVariants,
     quantityInStock: quantityInStock,
-    isSupplemented: activate,
     status: activate ? 'active' : 'draft',
   };
 
@@ -1054,15 +1001,29 @@ function saveProduct(activate) {
   // Set images on body (except main image which is already tracked separately)
   body.images = finalImages.filter(function(url) { return url !== body.image; });
 
-  // PATCH
-  fetch('/api/products/' + PRODUCT_ID, {
-    method: 'PATCH',
-    headers: H,
-    body: JSON.stringify(body),
-  })
+  // Validation
+  var _errors = [];
+  if (!body.name) _errors.push('Tên sản phẩm');
+  if (!body.brand) _errors.push('Thương hiệu');
+  if (selectedCatNames.length < 2) _errors.push('Danh mục (tối thiểu 2)');
+  var hasPrice = currentVariants.some(function(v) { return v.price > 0; });
+  if (!hasPrice) _errors.push('Biến thể (cần ít nhất 1 có giá > 0)');
+  if (_errors.length) {
+    statusEl.textContent = 'Thiếu: ' + _errors.join(', ');
+    statusEl.style.color = 'var(--danger)';
+    btnActivate.disabled = false;
+    btnActivate.style.opacity = '1';
+    return;
+  }
+
+  var isNew = !PRODUCT_ID;
+  var url = isNew ? '/api/products' : '/api/products/' + PRODUCT_ID;
+  var method = isNew ? 'POST' : 'PATCH';
+  fetch(url, { method: method, headers: H, body: JSON.stringify(body) })
     .then(function(r) { return r.json(); })
     .then(function(res) {
       if (res.success) {
+        if (isNew && res.data && res.data._id) PRODUCT_ID = res.data._id;
         if (res.autoActivated || activate) {
           statusEl.textContent = '✅ Sản phẩm đã được kích hoạt! Đang chuyển trang...';
           statusEl.style.color = '#16a34a';
@@ -1081,18 +1042,16 @@ function saveProduct(activate) {
         statusEl.textContent = 'Lỗi: ' + (res.message || 'Không thể lưu');
         statusEl.style.color = 'var(--danger)';
       }
-      btnDraft.disabled = false;
       btnActivate.disabled = false;
-      btnDraft.style.opacity = '1';
       btnActivate.style.opacity = '1';
     })
     .catch(function() {
       statusEl.textContent = 'Lỗi kết nối';
       statusEl.style.color = 'var(--danger)';
-      btnDraft.disabled = false;
       btnActivate.disabled = false;
-      btnDraft.style.opacity = '1';
       btnActivate.style.opacity = '1';
     });
 }
+
+<%- include('admin/partials/product-auto-fill') %>
 </script>
