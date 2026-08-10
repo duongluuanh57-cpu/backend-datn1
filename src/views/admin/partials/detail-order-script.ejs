@@ -115,6 +115,18 @@ fetch(window.__API_ENDPOINT__, { headers: { 'Authorization': 'Bearer ' + window.
   var noteEl = document.getElementById('od-note');
   if (o.note) { noteEl.style.display = 'flex'; noteEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Ghi chú: <b>' + escapeHtml(o.note) + '</b>'; }
 
+  // ── Load map if coordinates are available ──
+  var lat = (si && si.latitude) || (o.userAddress && o.userAddress.latitude);
+  var lng = (si && si.longitude) || (o.userAddress && o.userAddress.longitude);
+  var mapContainer = document.getElementById('od-map-container');
+  var mapIframe = document.getElementById('od-map-iframe');
+  if (lat && lng) {
+    mapContainer.style.display = 'block';
+    mapIframe.src = 'https://maps.google.com/maps?q=' + lat + ',' + lng + '&t=&z=15&ie=UTF8&iwloc=&output=embed';
+  } else {
+    mapContainer.style.display = 'none';
+  }
+
   var shipFeeEl = document.getElementById('od-shippingFee');
   if (o.shippingFee !== undefined && o.shippingFee !== null) {
     shipFeeEl.style.display = 'flex';
@@ -162,7 +174,12 @@ fetch(window.__API_ENDPOINT__, { headers: { 'Authorization': 'Bearer ' + window.
   var isCancelled = o.status === 'cancelled';
   var steps = [
     { label: 'Đã đặt hàng', done: true },
-    { label: 'Đã thanh toán', done: ['processing','shipped','delivered'].indexOf(o.status) !== -1, failed: o.status === 'cancelled' },
+    {
+      label: 'Đã thanh toán',
+      done: o.paymentStatus === 'paid' || ['processing','shipped','delivered'].indexOf(o.status) !== -1,
+      failed: o.status === 'cancelled' && o.paymentStatus !== 'paid',
+      waiting: o.status === 'pending' && (o.paymentMethod === 'vnpay' || o.paymentMethod === 'VNPAY') && o.paymentStatus === 'unpaid'
+    },
     { label: 'Đã giao ĐVVC', done: ['shipped','delivered'].indexOf(o.status) !== -1 },
     { label: 'Đã nhận hàng', done: o.status === 'delivered', failed: o.status === 'cancelled', waiting: o.status === 'shipped' },
     { label: 'Hoàn thành', done: o.status === 'delivered' },
