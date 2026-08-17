@@ -37,8 +37,11 @@ export async function adminRoutes(app: FastifyInstance) {
   // ── SSE: Real-time order notifications (GET only, exempt from CSRF) ──
   app.get('/order-events', { preHandler: adminAuthMiddleware }, async (request, reply) => {
     const clientId = crypto.randomUUID();
+    const origin = (request.headers.origin as string) || '*';
+    reply.raw.setHeader('Access-Control-Allow-Origin', origin);
+    reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
     reply.raw.setHeader('Content-Type', 'text/event-stream');
-    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
     reply.raw.setHeader('Connection', 'keep-alive');
     reply.raw.setHeader('X-Accel-Buffering', 'no');
     reply.raw.flushHeaders();
