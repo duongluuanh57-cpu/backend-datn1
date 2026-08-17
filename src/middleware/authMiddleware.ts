@@ -47,7 +47,7 @@ export function requireRole(...roles: string[]) {
   return async function (req: FastifyRequest, reply: FastifyReply) {
     if (!req.user) throw new UnauthorizedError('Chưa xác thực');
     if (!roles.includes(req.user.role)) {
-      reply.status(403).send({
+      return reply.status(403).send({
         success: false,
         message: `Bạn không có quyền thực hiện thao tác này. Yêu cầu role: ${roles.join(', ')}`,
       });

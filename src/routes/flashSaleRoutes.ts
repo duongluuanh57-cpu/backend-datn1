@@ -6,7 +6,7 @@ export async function flashSaleRoutes(app: FastifyInstance) {
   // Public Client API
   app.get('/active', FlashSaleController.getActiveFlashSale);
 
-  const adminOnly = [authMiddleware, requireRole('ADMIN', 'SUBADMIN')];
+  const adminOnly = [authMiddleware, requireRole('ADMIN')];
 
   // Admin APIs
   app.get('/admin', { preHandler: adminOnly }, FlashSaleController.getAdminFlashSales);

@@ -73,7 +73,7 @@ export class AuthSessionController {
     }
     try {
       const decoded = verifyAccessToken(token);
-      if (decoded.role !== 'ADMIN' && decoded.role !== 'SUBADMIN') {
+      if (decoded.role !== 'ADMIN') {
         return reply.redirect('/login');
       }
       reply.header('Set-Cookie', `admin_token=${encodeURIComponent(token)}; Path=/; SameSite=Lax; HttpOnly`);

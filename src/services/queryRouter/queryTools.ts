@@ -43,20 +43,34 @@ export const queryToolsMap = {
   searchProducts: tool({
     description: `Tìm kiếm sản phẩm nước hoa theo:
 - Mùi hương, cảm xúc, mô tả (vd: "nước hoa mùi ngọt ngào", "thơm như hoa hồng", "mùi gỗ ấm áp")
-- Tên sản phẩm, tên hãng (vd: "Chanel No5", "nước hoa Dior", "có Gucci không")
+- Tên sản phẩm, tên hãng, xuất xứ quốc gia (vd: "Chanel No5", "nước hoa Dior", "hãng nước hoa Việt Nam", "nước hoa Pháp")
 - Khoảng giá (vd: "dưới 1 triệu", "từ 2-5 triệu")
 - Loại (vd: "nước hoa nam", "nước hoa nữ", "unisex")
-Dùng cho HẦU HẾT câu hỏi về sản phẩm.`,
+Dùng cho HẦU HẾT câu hỏi về sản phẩm và thương hiệu của shop.`,
     parameters: z.object({
-      query: z.string().describe('Câu hỏi gốc của người dùng về sản phẩm họ muốn tìm'),
+      query: z.string().describe('Câu hỏi gốc của người dùng về sản phẩm hoặc thương hiệu họ muốn tìm'),
     }),
     execute: (async ({ query }: { query: string }) => {
       const { userRole } = currentContext;
-      const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+      const isAdmin = userRole === 'ADMIN';
       const search = await SearchService.hybridSearch(query, 4);
-      const products = search.products;
-      if (!products.length) return 'Không tìm thấy sản phẩm phù hợp. Hãy xin lỗi lịch sự và hỏi khách muốn tìm gì khác không.';
-      let result = `DANH SÁCH SẢN PHẨM KHỚP:\n${toCardMarkdown(products)}`;
+      const products = search.products || [];
+      const brands = (search as any).brands || [];
+
+      if (!products.length && !brands.length) {
+        return 'Không tìm thấy sản phẩm hay thương hiệu phù hợp trong hệ thống shop. Hãy thông báo lịch sự cho khách.';
+      }
+
+      let result = '';
+      if (brands.length > 0) {
+        result += `THƯƠNG HIỆU PHÙ HỢP:\n${brands.map((b: any) => `- **${b.name}** (Xuất xứ: ${b.origin || 'Chưa cập nhật'})`).join('\n')}\n\n`;
+      }
+      if (products.length > 0) {
+        result += `DANH SÁCH SẢN PHẨM KHỚP:\n${toCardMarkdown(products)}`;
+      } else if (brands.length > 0) {
+        result += `(Lưu ý: Shop có các thương hiệu trên trong hệ thống)`;
+      }
+
       if (isAdmin) result += '\n\n(Lưu ý: User là ADMIN)';
       return result;
     }) as any,
@@ -107,7 +121,7 @@ KHÔNG bịa đặt thông tin hay số liệu cụ thể.`;
 
   getAdminStats: tool({
     description: `[CHỈ ADMIN] Thống kê và truy vấn dữ liệu quản trị: doanh thu, đơn hàng, người dùng, sản phẩm, brand.
-CHỈ dùng tool này khi user là ADMIN hoặc SUBADMIN.`,
+CHỈ dùng tool này khi user là ADMIN.`,
     parameters: z.object({
       query: z.string().describe('Câu hỏi quản trị của admin'),
     }),

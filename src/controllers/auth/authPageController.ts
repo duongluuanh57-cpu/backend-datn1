@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AuthService } from '../../services/AuthService.ts';
+import { AuthRegisterService } from '../../services/auth/authRegisterService.ts';
 import { detectFrontendUrl } from '../../utils/viewHelpers.ts';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -27,12 +28,12 @@ async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
 export class AuthPageController {
   static async getLoginPage(request: FastifyRequest, reply: FastifyReply) {
     const frontendUrl = detectFrontendUrl(request);
-    return reply.view('auth.ejs', { mode: 'login', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '', frontendUrl });
+    return reply.redirect(`${frontendUrl.replace(/\/+$/, '')}/auth/login`);
   }
 
   static async getRegisterPage(request: FastifyRequest, reply: FastifyReply) {
     const frontendUrl = detectFrontendUrl(request);
-    return reply.view('auth.ejs', { mode: 'register', turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '', frontendUrl });
+    return reply.redirect(`${frontendUrl.replace(/\/+$/, '')}/auth/register`);
   }
 
   static async loginPageAction(request: FastifyRequest, reply: FastifyReply) {
@@ -42,7 +43,7 @@ export class AuthPageController {
     try {
       const result = await AuthService.login(data, { ip: request.ip, userAgent: request.headers['user-agent'] || 'unknown' });
       const role = result.user.role;
-      if (role === "ADMIN" || role === "SUBADMIN") {
+      if (role === "ADMIN") {
         const adminUrl = "/admin";
         reply.header("Set-Cookie", `admin_token=${encodeURIComponent(result.tokens.accessToken)}; Path=/; SameSite=Lax; HttpOnly`);
         return reply.send({ success: true, message: "Đăng nhập quản trị thành công", redirectUrl: adminUrl });
@@ -60,10 +61,10 @@ export class AuthPageController {
     const turnstileValid = await verifyTurnstile(data.turnstileToken, request.ip);
     if (!turnstileValid) return reply.send({ success: false, message: 'Xác minh bảo mật thất bại.' });
     try {
-      await AuthService.register(data);
-      return reply.send({ success: true, message: 'Đăng ký thành công' });
+      const result = await AuthRegisterService.register(data);
+      return reply.send({ success: true, message: 'Đăng ký tài khoản thành công', data: result });
     } catch (error: any) {
-      return reply.send({ success: false, message: error.message || 'Đăng ký thất bại.' });
+      return reply.send({ success: false, message: error.message || 'Đăng ký thất bại' });
     }
   }
 }

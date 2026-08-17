@@ -59,14 +59,18 @@ describe('getClientIp', () => {
 });
 
 describe('calculateShippingFee', () => {
-  it('returns 0 when amount >= threshold', () => {
-    expect(calculateShippingFee(FREE_SHIP_THRESHOLD)).toBe(0);
-    expect(calculateShippingFee(1_000_000)).toBe(0);
+  it('returns 0 when amount >= threshold', async () => {
+    const res1 = await calculateShippingFee(FREE_SHIP_THRESHOLD);
+    expect(res1.fee).toBe(0);
+    const res2 = await calculateShippingFee(1_000_000);
+    expect(res2.fee).toBe(0);
   });
 
-  it('returns SHIPPING_FEE when amount < threshold', () => {
-    expect(calculateShippingFee(0)).toBe(SHIPPING_FEE);
-    expect(calculateShippingFee(FREE_SHIP_THRESHOLD - 1)).toBe(SHIPPING_FEE);
+  it('returns SHIPPING_FEE when amount < threshold', async () => {
+    const res1 = await calculateShippingFee(0);
+    expect(res1.fee).toBe(SHIPPING_FEE);
+    const res2 = await calculateShippingFee(FREE_SHIP_THRESHOLD - 1);
+    expect(res2.fee).toBe(SHIPPING_FEE);
   });
 
   it('exports correct constants', () => {

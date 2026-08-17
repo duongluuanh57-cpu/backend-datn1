@@ -4,7 +4,7 @@ import { Order } from '../../models/Order.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { UserAddress } from '../../models/UserAddress.ts';
 import { Voucher } from '../../models/Voucher.ts';
-import { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, buildDateFilter, autoCancelExpiredVNPayOrders } from './orderHelpers.ts';
+import { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, populateOrderTotals, buildDateFilter, autoCancelExpiredVNPayOrders, markSoldCounted, unmarkSoldCounted } from './orderHelpers.ts';
 
 /**
  * GET /api/orders/admin/all
@@ -87,7 +87,7 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
       { $limit: limit },
       {
         $lookup: {
-          from: 'orderitems',
+          from: 'order_items',
           localField: '_id',
           foreignField: 'orderId',
           as: 'items',
@@ -153,6 +153,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
     })
       .populate('userId', 'username email phoneNumber fullName gender avatar')
       .populate('voucherId')
+      .populate('shippingMethodId')
       .lean();
 
     if (!order) {
@@ -161,7 +162,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
 
     const items = await OrderItem.find({ orderId: order._id }).lean();
     await enhanceItemsWithProductData(items);
-    order.totalAmount = recalculateTotalAmount(items);
+    populateOrderTotals(order, items);
     order.items = items;
 
     // ── Lấy địa chỉ đầy đủ từ UserAddress ──
@@ -233,11 +234,23 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
       });
     }
 
+    // Khi giao hàng thành công (delivered): tự động đánh dấu đã thanh toán
+    const updateData: any = { status };
+    if (status === 'delivered') {
+      updateData.paymentStatus = 'paid';
+      updateData.deliveredAt = new Date();
+    }
+
     const order = await Order.findByIdAndUpdate(
       orderId,
-      { status },
+      updateData,
       { new: true }
     ).lean();
+
+    // Khi admin xác nhận đơn (pending → processing): cộng lượt bán
+    if (status === 'processing') {
+      await markSoldCounted(orderId);
+    }
 
     return reply.status(200).send({
       success: true,
@@ -276,6 +289,9 @@ export async function approveCancelRequest(req: FastifyRequest, reply: FastifyRe
       { new: true }
     ).lean();
 
+    // Trả lại lượt bán nếu đơn đã được cộng soldCount trước đó
+    await unmarkSoldCounted(orderId);
+
     return reply.status(200).send({
       success: true,
       data: order,
@@ -309,6 +325,11 @@ export async function updatePaymentStatus(req: FastifyRequest, reply: FastifyRep
 
     if (!order) {
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
+    }
+
+    // Thanh toán thành công → cộng lượt bán
+    if (paymentStatus === 'paid') {
+      await markSoldCounted(order._id);
     }
 
     return reply.status(200).send({
@@ -351,6 +372,9 @@ export async function rejectCancelRequest(req: FastifyRequest, reply: FastifyRep
     if (!order) {
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
     }
+
+    // Từ chối hủy → đơn được xác nhận: cộng lượt bán
+    await markSoldCounted(orderId);
 
     return reply.status(200).send({
       success: true,

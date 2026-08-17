@@ -28,6 +28,9 @@ export interface IReview extends Document {
   isAnonymous: boolean;
   status: 'visible' | 'hidden' | 'pending' | 'rejected';
   rejectionReason?: string;
+  aiRejected?: boolean;
+  moderatedBy?: string;
+  moderatedByType?: 'admin' | 'ai' | '';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +56,9 @@ const ReviewSchema = new Schema<IReview>(
     isAnonymous: { type: Boolean, default: false },
     status: { type: String, enum: ['visible', 'hidden', 'pending', 'rejected'], default: 'pending', index: true },
     rejectionReason: { type: String, default: '' },
+    aiRejected: { type: Boolean, default: false },
+    moderatedBy: { type: String, default: '' },
+    moderatedByType: { type: String, enum: ['admin', 'ai', ''], default: '' },
   },
   {
     timestamps: true,

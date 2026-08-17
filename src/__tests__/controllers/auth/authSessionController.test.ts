@@ -130,17 +130,17 @@ describe('AuthSessionController', () => {
       const reply = { redirect: (u: string) => { redirectUrl = u; return reply; }, header: () => reply } as any;
 
       await AuthSessionController.setAdminSession(req, reply);
-      expect(redirectUrl).toBe('/api/auth/login');
+      expect(redirectUrl).toBe('/login');
     });
 
-    it('redirects to login when role is not ADMIN/SUBADMIN', async () => {
+    it('redirects to login when role is not ADMIN', async () => {
       vi.mocked(verifyAccessToken).mockReturnValue({ userId: '123', role: 'USER' } as any);
       const req = { query: { token: 'user-token' } } as any;
       let redirectUrl = '';
       const reply = { redirect: (u: string) => { redirectUrl = u; return reply; }, header: () => reply } as any;
 
       await AuthSessionController.setAdminSession(req, reply);
-      expect(redirectUrl).toBe('/api/auth/login');
+      expect(redirectUrl).toBe('/login');
     });
 
     it('redirects to login on invalid token', async () => {
@@ -150,7 +150,7 @@ describe('AuthSessionController', () => {
       const reply = { redirect: (u: string) => { redirectUrl = u; return reply; }, header: () => reply } as any;
 
       await AuthSessionController.setAdminSession(req, reply);
-      expect(redirectUrl).toBe('/api/auth/login');
+      expect(redirectUrl).toBe('/login');
     });
   });
 

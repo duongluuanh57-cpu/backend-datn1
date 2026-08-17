@@ -24,7 +24,7 @@ export const comparePassword = async (password: string, hash: string): Promise<b
  * - Whitelist algorithm: HS256
  */
 export const generateTokens = (userId: string, role: string, rememberMe: boolean = false) => {
-  const isAdmin = role === 'ADMIN' || role === 'SUBADMIN';
+  const isAdmin = role === 'ADMIN';
   const accessExpiresIn = isAdmin ? '365d' : (rememberMe ? '7d' : '15m');
   const refreshExpiresIn = isAdmin ? '365d' : '7d';
 

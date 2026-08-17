@@ -43,8 +43,8 @@ describe("LoginSchema", () => {
     expect(result.password).toBe("mypassword");
   });
 
-  it("should reject invalid email", () => {
-    expect(() => LoginSchema.parse({ email: "bad", password: "password" })).toThrow();
+  it("should reject empty email", () => {
+    expect(() => LoginSchema.parse({ email: "", password: "password" })).toThrow();
   });
 
   it("should reject empty password", () => {

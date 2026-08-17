@@ -1,0 +1,29 @@
+<!-- ─── Hàng 1: Thẻ KPI ─── -->
+<%- include('./kpi/kpi-grid') %>
+
+<!-- ─── Hàng 2: Khách mới & Quay lại + Luồng hành vi khách hàng (50% - 50%) ─── -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+  <%- include('./charts/chart-retention') %>
+  <%- include('./charts/chart-funnel') %>
+</div>
+
+<!-- ─── Hàng 3: Doanh thu & đơn hàng (Full-width) ─── -->
+<div class="mb-6">
+  <%- include('./charts/chart-revenue') %>
+</div>
+
+<!-- ─── Hàng 4: Hiệu suất hiện tại so với kỳ trước (Full-width) ─── -->
+<div class="mb-6">
+  <%- include('./charts/chart-trend') %>
+</div>
+
+<!-- ─── Hàng 5: Bản đồ nhiệt khung giờ vàng ─── -->
+<%- include('./charts/chart-heatmap') %>
+
+<!-- ─── Hàng 6: Đơn hàng gần đây ─── -->
+<%- include('./sections/section-recent-orders') %>
+
+<!-- ─── Hàng 7: Truy cập nhanh ─── -->
+<%- include('./sections/section-quick-access') %>
+
+<%- include('./dashboard-script') %>

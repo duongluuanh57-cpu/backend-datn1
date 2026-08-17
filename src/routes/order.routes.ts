@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { getAllOrdersForAdmin, getOrderByIdForAdmin, updateOrderStatus, updatePaymentStatus, approveCancelRequest, rejectCancelRequest, deleteOrder } from '../controllers/order/orderAdminController.ts';
-import { getMyOrders, getOrderById, getOrderByTxnRef, cancelOrder } from '../controllers/order/orderUserController.ts';
+import { getMyOrders, getOrderById, getOrderByTxnRef, cancelOrder } from '../controllers/order/orderController.ts';
 import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 
 async function adminOrderRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
-  app.addHook('preHandler', requireRole('ADMIN', 'SUBADMIN'));
+  app.addHook('preHandler', requireRole('ADMIN'));
 
   app.get('/orders', getAllOrdersForAdmin);
   app.get('/:id', getOrderByIdForAdmin);

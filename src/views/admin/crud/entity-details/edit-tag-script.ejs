@@ -1,0 +1,96 @@
+<style>
+  #tag-edit .dt-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+  #tag-edit .supp-form-group{display:flex;flex-direction:column;gap:6px;}
+  #tag-edit .supp-form-group label{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;}
+  #tag-edit .supp-form-group input[type="text"],
+  #tag-edit .supp-form-group select{
+    padding:10px 14px;border:1px solid var(--border);border-radius:8px;font-size:14px;color:var(--text-primary);
+    background:var(--bg);outline:none;transition:border-color 0.2s;font-family:inherit;
+  }
+  #tag-edit .supp-form-group input:focus,
+  #tag-edit .supp-form-group select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(201,169,110,0.1);}
+</style>
+
+<script>
+<%- include('../../common/shared-js-utils') %>
+var IS_NEW = <%= typeof IS_NEW !== 'undefined' && IS_NEW ? 'true' : 'false' %>;
+var TAG_ID = '<%= tagId %>';
+var TOKEN = '<%= apiToken %>';
+var H = { 'Authorization': 'Bearer ' + TOKEN };
+
+function wireSlug() {
+  $('te-name').addEventListener('input', function() {
+    if (!$('te-slug').dataset.edited) { $('te-slug').value = slugify(this.value); }
+  });
+  $('te-slug').addEventListener('input', function() { this.dataset.edited = 'true'; });
+}
+
+function initForm() {
+  $('te-form').style.display = 'block';
+  if (IS_NEW) {
+    $('te-breadcrumb').textContent = 'Thêm tag mới';
+    document.title = 'Thêm tag mới — Admin';
+    $('te-btn-label').textContent = 'Tạo tag';
+    $('te-status').value = 'active';
+    wireSlug();
+  } else {
+    $('te-loading').style.display = 'block';
+    fetch('/api/tags/' + TAG_ID, { headers: H })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (!res.success || !res.data) {
+          $('te-loading').style.display = 'none';
+          $('te-error').style.display = 'block';
+          $('te-error').innerHTML = '<p style="font-size:16px;font-weight:600;">Không tìm thấy tag</p>';
+          return;
+        }
+        var t = res.data;
+        $('te-breadcrumb').textContent = 'Chỉnh sửa · ' + (t.name || '');
+        document.title = 'Chỉnh sửa ' + (t.name || 'Tag') + ' — Admin';
+        $('te-name').value = t.name || '';
+        $('te-slug').value = t.slug || '';
+        $('te-status').value = t.status || 'active';
+        wireSlug();
+        $('te-loading').style.display = 'none';
+      })
+      .catch(function() { $('te-loading').style.display = 'none'; $('te-error').style.display = 'block'; });
+  }
+}
+
+function saveTag() {
+  var name = $('te-name').value.trim();
+  if (!name) { showToast('Vui lòng nhập tên tag', 'error'); $('te-name').focus(); return; }
+  var data = { name: name, slug: $('te-slug').value.trim(), status: $('te-status').value };
+  var btn = $('te-btn-save');
+  btn.disabled = true; btn.style.opacity = '0.6';
+  $('te-save-status').textContent = 'Đang lưu...'; $('te-save-status').style.color = 'var(--text-muted)';
+  var url = IS_NEW ? '/api/tags' : '/api/tags/' + TAG_ID;
+  var method = IS_NEW ? 'POST' : 'PATCH';
+  fetch(url, { method: method, headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      btn.disabled = false; btn.style.opacity = '1';
+      if (res.success) {
+        if (IS_NEW) {
+          var newId = res.data && res.data._id;
+          if (newId) { showToast('Đã tạo tag thành công!', 'success'); window.location.href = '/admin/tags/' + newId; }
+          else { window.location.href = '/admin/tags?toast=Đã+tạo+tag+thành+công&type=success'; }
+        } else {
+          $('te-save-status').textContent = '✅ Đã lưu!'; $('te-save-status').style.color = '#22c55e';
+          $('te-breadcrumb').textContent = 'Chỉnh sửa · ' + escapeHtml(name);
+          document.title = 'Chỉnh sửa ' + name + ' — Admin';
+          showToast('Đã cập nhật tag thành công!', 'success');
+        }
+      } else {
+        $('te-save-status').textContent = '❌ ' + (res.message || 'Lỗi'); $('te-save-status').style.color = '#ef4444';
+        showToast(res.message || 'Không thể lưu tag', 'error');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false; btn.style.opacity = '1';
+      showToast('Lỗi kết nối đến server', 'error');
+    });
+}
+
+initForm();
+</script>

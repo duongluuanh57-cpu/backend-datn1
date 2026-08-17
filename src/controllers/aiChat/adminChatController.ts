@@ -23,7 +23,7 @@ import { AIService } from '../../services/AIService.ts';
  * 
  * Query Router tự động:
  * - Phân loại câu hỏi (thống kê, sản phẩm, user, ...)
- * - Check role (ADMIN/SUBADMIN)
+ * - Check role (ADMIN)
  * - Execute route phù hợp
  * - Admin query có function calling để lấy dữ liệu thật
  * 

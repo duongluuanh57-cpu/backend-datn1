@@ -16,9 +16,20 @@ export class FlashSaleService {
         'homepage:v4',
       ];
       await redis.del(keys);
-      // products:public:* (có hash theo filter) cũng chứa dữ liệu Flash Sale
-      const publicKeys = await redis.keys('products:public:*');
-      if (publicKeys.length > 0) await redis.del(publicKeys);
+      // products:public:* (có hash theo filter) cũng chứa dữ liệu Flash Sale — dùng scanStream thay cho keys() để không block Redis
+      if (typeof (redis as any).scanStream === 'function') {
+        const stream = redis.scanStream({ match: 'products:public:*', count: 100 });
+        const publicKeys: string[] = [];
+        for await (const resultKeys of stream) {
+          if (resultKeys.length > 0) {
+            publicKeys.push(...resultKeys);
+          }
+        }
+        if (publicKeys.length > 0) await redis.del(publicKeys);
+      } else if (typeof (redis as any).keys === 'function') {
+        const publicKeys = await redis.keys('products:public:*');
+        if (publicKeys.length > 0) await redis.del(publicKeys);
+      }
     } catch (e) {}
   }
 

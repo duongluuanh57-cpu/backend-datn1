@@ -2,12 +2,17 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { renderEjs, renderAdminPage } from '../../utils/viewHelpers.ts';
 
+function getDocFromReq(req: FastifyRequest) {
+  const u = (req as any).user;
+  return u ? { _id: u.userId, name: u.name || 'Admin', email: u.email || '', role: u.role } : null;
+}
+
 export class AdminPageController {
   /**
    * GET /admin — Dashboard tổng quan (client-side fetch từ /api/stats/dashboard)
    */
   static async dashboard(req: FastifyRequest, reply: FastifyReply) {
-    const userDoc = await UserRepository.findById((req as any).user?.userId);
+    const userDoc = getDocFromReq(req);
     const apiToken = (req as any).token || '';
     const bodyHtml = renderEjs('admin/dashboard.ejs', { apiToken });
     return renderAdminPage(reply, userDoc, 'Dashboard', 'dashboard', bodyHtml, apiToken, 'Tổng quan');
@@ -15,7 +20,7 @@ export class AdminPageController {
 
   // ── Settings ──
   static async settingsPage(req: FastifyRequest, reply: FastifyReply) {
-    const u = await getDoc((req as any).user?.userId);
+    const u = getDocFromReq(req);
     const body = renderEjs('admin/settings.ejs', {
       env: process.env.NODE_ENV||'development',
       nodeVersion: process.version,
@@ -35,7 +40,7 @@ export class AdminPageController {
 
   // ── Activity Log ──
   static async activityLog(req: FastifyRequest, reply: FastifyReply) {
-    const u = await getDoc((req as any).user?.userId);
+    const u = getDocFromReq(req);
     const apiToken = (req as any).token || '';
     const bodyHtml = renderEjs('admin/activity-log.ejs', { apiToken });
     return renderAdminPage(reply, u, 'Nhật ký hoạt động', 'activity-log', bodyHtml, apiToken, 'Tổng quan');
@@ -43,13 +48,8 @@ export class AdminPageController {
 
   // ── Architecture Diagram ──
   static async architecture(req: FastifyRequest, reply: FastifyReply) {
-    const u = await getDoc((req as any).user?.userId);
+    const u = getDocFromReq(req);
     const body = renderEjs('admin/architecture.ejs', {});
     return renderAdminPage(reply, u, 'Kiến trúc Hệ thống', 'architecture', body, (req as any).token || '', 'Hệ thống');
   }
-}
-
-async function getDoc(userId: string) {
-  if (!userId) return null;
-  return UserRepository.findById(userId);
 }

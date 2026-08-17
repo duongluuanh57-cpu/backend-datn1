@@ -72,7 +72,6 @@ const typeDefs = `#graphql
     quantityInStock: Int
     longevity: String
     sillage: String
-    durability: String
     scentTrail: String
     style: String
     suitableFor: String
@@ -224,7 +223,6 @@ function mapProductDetail(p: any) {
     quantityInStock: p.quantityInStock ?? 0,
     longevity: p.specifications?.longevity || p.longevity || '',
     sillage: p.specifications?.sillage || p.sillage || '',
-    durability: p.specifications?.durability || p.durability || '',
     scentTrail: p.specifications?.scentTrail || p.scentTrail || '',
     style: p.specifications?.style || p.style || '',
     suitableFor: p.specifications?.suitableFor || p.suitableFor || '',

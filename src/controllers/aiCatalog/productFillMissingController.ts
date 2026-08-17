@@ -16,7 +16,7 @@ import { extractAndFixJson } from './sanitizeJson.ts';
  */
 export async function productFillMissing(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const { productId } = req.body as { productId: string };
+    const { productId, currentSizes } = req.body as { productId: string; currentSizes?: string[] };
     if (!productId) {
       return reply.status(400).send({ success: false, message: 'productId is required' });
     }
@@ -50,10 +50,10 @@ export async function productFillMissing(req: FastifyRequest, reply: FastifyRepl
     if (!(product.description?.trim()?.length >= 50)) missing.push('description');
     if (!catNames.length) missing.push('categories');
     if (!tagNames.length) missing.push('tags');
-    if (!variants.length) missing.push('variants');
+    const hasIncompleteVariant = variants.length === 0 || variants.some((v: any) => !v.price || v.price <= 0);
+    if (hasIncompleteVariant) missing.push('variants');
     if (!product.longevity) missing.push('longevity');
     if (!product.sillage) missing.push('sillage');
-    if (!product.durability) missing.push('durability');
     if (!product.scentTrail) missing.push('scentTrail');
     if (!product.style) missing.push('style');
     if (!product.suitableFor) missing.push('suitableFor');
@@ -87,11 +87,11 @@ THÔNG TIN HIỆN TẠI:
 - Danh mục: ${catNames.join(', ') || '(trống)'}
 - Tags: ${tagNames.join(', ') || '(trống)'}
 - Mô tả hiện tại: ${(product.description || '').substring(0, 200)}
-- Biến thể: ${existingVariantsStr}
+- Biến thể hiện có: ${existingVariantsStr}
+${currentSizes && currentSizes.length ? `- CÁC DUNG TÍCH (SIZES) YÊU CẦU ĐỊNH GIÁ & ĐIỀN TỒN KHO: ${currentSizes.join(', ')}` : ''}
 - Giảm giá: ${product.discountPercentage || 0}%
 - Độ lưu hương: ${product.longevity || '(trống)'}
 - Độ tỏa hương: ${product.sillage || '(trống)'}
-- Độ bền: ${product.durability || '(trống)'}
 - Hương đặc trưng: ${product.scentTrail || '(trống)'}
 - Phong cách: ${product.style || '(trống)'}
 - Phù hợp: ${product.suitableFor || '(trống)'}
@@ -121,18 +121,27 @@ YÊU CẦU:
 - Với brand: dùng TÊN CHÍNH XÁC từ danh sách có sẵn
 - Với categories: dùng TÊN CHÍNH XÁC từ danh sách có sẵn, cách nhau bằng dấu phẩy
 - Với variants: object array dạng [{size: "50ml", price: 0, quantityInStock: 0}]
-- Với description: viết 3-5 câu bằng tiếng Việt, mô tả chi tiết mùi hương, phong cách
-- longevity, sillage, durability: ví dụ "6-8 tiếng", "Toả hương mạnh", "Cao"
+- Với description: Viết tiếng Việt gồm ĐÚNG 3 đoạn văn in đậm (**...**). Mỗi đoạn cách nhau 1 dòng trống (\n\n). 
+  Đoạn 1 (**...**): Giới thiệu sản phẩm, cảm hứng sáng tạo và di sản nam tính/nữ tính.
+  Đoạn 2 (**...**): Mô tả chi tiết hành trình mùi hương từ tầng hương đầu, hương giữa đến tầng hương cuối.
+  Đoạn 3 (**...**): Mô tả thiết kế chai, phong cách sống và khẳng định đây là món phụ kiện không thể thiếu.
+  VÍ DỤ MÔ TẢ ĐÚNG CHUẨN (PHẢI THEO CẤU TRÚC NÀY):
+  **Dolce & Gabbana Devotion Pour Homme EDP là chương mới đầy cảm xúc trong hành trình chinh phục những giá trị nam tính đích thực. Mang trong mình tinh thần Ý phóng khoáng và sang trọng, đây là biểu tượng của sự tận tụy và đam mê, được chế tác tỉ mỉ để tôn vinh vẻ đẹp mạnh mẽ nhưng cũng đầy chiều sâu của phái mạnh trong thế giới hiện đại.**
+
+  **Mùi hương mở đầu với sự bùng nổ của cam quýt tươi mát, ngay lập tức đánh thức mọi giác quan bằng năng lượng tích cực và rạng rỡ. Khi hương giữa lắng đọng, sự kết hợp giữa các nốt hương gia vị ấm áp và gỗ đàn hương tạo nên một bản giao hưởng hoàn hảo, vừa bí ẩn vừa cuốn hút, để lại dấu ấn khó quên trên làn da suốt cả ngày dài.**
+
+  **Với thiết kế chai ấn tượng mang đậm dấu ấn nghệ thuật của nhà Dolce & Gabbana, sản phẩm này không chỉ là một mùi hương, mà còn là một tuyên ngôn về phong cách sống tự do và đẳng cấp. Đây chắc chắn là mảnh ghép không thể thiếu cho những quý ông đang tìm kiếm một người bạn đồng hành tinh tế, sẵn sàng tỏa sáng trong mọi hoàn cảnh từ công sở cho đến những buổi dạ tiệc tối.**
+
+- longevity, sillage: ví dụ "6-8 tiếng", "Toả hương mạnh"
 - scentTrail: mô tả hương đặc trưng
 - style, suitableFor, occasion, season, time: chuỗi ngắn gọn
 
-VÍ DỤ JSON OUTPUT (chỉ là ví dụ, hãy điền theo thực tế sản phẩm):
+VÍ DỤ JSON OUTPUT:
 ${JSON.stringify({
-  description: 'Mùi hương...',
+  description: '**Đoạn 1...**\n\n**Đoạn 2...**\n\n**Đoạn 3...**',
   longevity: '6-8 tiếng',
-  sillage: 'Toả hương mạnh',
-  durability: 'Cao',
-  scentTrail: 'Hương gỗ, xạ hương',
+  sillage: 'Toả hương 1 cánh tay',
+  scentTrail: 'Hương gỗ, Cam quýt',
 }, null, 2)}`;
 
     let jsonString = '';

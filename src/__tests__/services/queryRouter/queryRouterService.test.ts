@@ -66,19 +66,19 @@ describe('QueryRouterService — Role Check', () => {
 
   it('should allow ADMIN to access admin_query', () => {
     const userRole = 'ADMIN';
-    const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+    const isAdmin = userRole === "ADMIN";
     expect(isAdmin).toBe(true);
   });
 
-  it('should allow SUBADMIN to access admin_query', () => {
+  it('should allow ADMIN to access admin_query', () => {
     const userRole: string = 'SUBADMIN';
-    const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+    const isAdmin = userRole === "ADMIN";
     expect(isAdmin).toBe(true);
   });
 
   it('should deny USER from admin_query', () => {
     const userRole: string = 'USER';
-    const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+    const isAdmin = userRole === "ADMIN";
     expect(isAdmin).toBe(false);
   });
 });

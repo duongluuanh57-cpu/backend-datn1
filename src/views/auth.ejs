@@ -355,7 +355,7 @@
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
-  <div class="form-wrapper" id="formWrapper">
+  <div class="form-wrapper <%= mode === 'register' ? 'register-mode' : '' %>" id="formWrapper">
     <a href="<%= frontendUrl %>" class="back-badge">
       <span>↩</span> Quay lại cửa hàng
     </a>
@@ -364,7 +364,7 @@
       <div class="logo">
         <img src="https://l-essence.vercel.app/logo.png" alt="L'essence" onerror="this.style.display='none'">
         <h1>L'essence</h1>
-        <p class="subtitle" id="subtitle">Đăng nhập để tiếp tục</p>
+        <p class="subtitle" id="subtitle"><%= mode === 'register' ? 'Tạo tài khoản mới' : 'Đăng nhập để tiếp tục' %></p>
       </div>
 
       <!-- ========== ERROR / SUCCESS ========== -->
@@ -372,7 +372,7 @@
       <div id="successBox" class="success-msg"></div>
 
       <!-- ========== LOGIN PANEL ========== -->
-      <div class="form-panel active" id="loginPanel">
+      <div class="form-panel <%= mode === 'login' ? 'active' : '' %>" id="loginPanel">
         <form id="loginForm">
           <div class="form-group">
             <label for="loginEmail">Email hoặc tên đăng nhập</label>
@@ -415,7 +415,7 @@
       </div>
 
       <!-- ========== REGISTER PANEL ========== -->
-      <div class="form-panel" id="registerPanel">
+      <div class="form-panel <%= mode === 'register' ? 'active' : '' %>" id="registerPanel">
         <form id="registerForm" novalidate>
           <div class="form-grid grid-2-cols">
             <div class="form-group">

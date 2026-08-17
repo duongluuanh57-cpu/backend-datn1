@@ -1,0 +1,48 @@
+<%# Shared JS utility functions — include inside <script> blocks %>
+function $(id) { return document.getElementById(id); }
+function fmt(n) { return (n || 0).toLocaleString('vi-VN'); }
+function fmtCurrency(n) { return fmt(n) + 'đ'; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('vi-VN') : '—'; }
+function fmtDateTime(d) { return d ? new Date(d).toLocaleString('vi-VN') : '—'; }
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]||m; });
+}
+function slugify(text) {
+  if (!text) return '';
+  return String(text).toLowerCase()
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g, 'a')
+    .replace(/[èéẹẻẽêềếệểễ]/g, 'e')
+    .replace(/[ìíịỉĩ]/g, 'i')
+    .replace(/[òóọỏõôồốộổỗơờớợởỡ]/g, 'o')
+    .replace(/[ùúụủũưừứựửữ]/g, 'u')
+    .replace(/[ỳýỵỷỹ]/g, 'y')
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/--+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+var BRAND_ORIGIN_MAP = {
+  'chanel': 'Pháp', 'dior': 'Pháp', 'christian dior': 'Pháp', 'gucci': 'Ý',
+  'yves saint laurent': 'Pháp', 'ysl': 'Pháp', 'tom ford': 'Mỹ', 'creed': 'Anh',
+  'giorgio armani': 'Ý', 'armani': 'Ý', 'jo malone': 'Anh', 'jo malone london': 'Anh',
+  'le labo': 'Mỹ', 'parfums de marly': 'Pháp', 'maison francis kurkdjian': 'Pháp',
+  'mfk': 'Pháp', 'versace': 'Ý', 'burberry': 'Anh', 'calvin klein': 'Mỹ', 'ck': 'Mỹ',
+  'hermes': 'Pháp', 'hermès': 'Pháp', 'lancome': 'Pháp', 'lancôme': 'Pháp',
+  'prada': 'Ý', 'bvlgari': 'Ý', 'bulgari': 'Ý', 'narciso rodriguez': 'Mỹ', 'narciso': 'Mỹ',
+  'kilian': 'Pháp', 'by kilian': 'Pháp', 'diptyque': 'Pháp', 'byredo': 'Thụy Điển',
+  'givenchy': 'Pháp', 'dolce & gabbana': 'Ý', 'd&g': 'Ý', 'hugo boss': 'Đức',
+  'boss': 'Đức', 'montblanc': 'Đức', 'roja': 'Anh', 'roja parfums': 'Anh',
+  'viktor&rolf': 'Hà Lan', 'viktor & rolf': 'Hà Lan', 'acqua di parma': 'Ý',
+  'penhaligons': 'Anh', 'penhaligon\'s': 'Anh', 'amouage': 'Oman', 'xerjoff': 'Ý',
+  'paco rabanne': 'Pháp', 'rabanne': 'Pháp', 'jean paul gaultier': 'Pháp', 'jpg': 'Pháp',
+  'boucheron': 'Pháp', 'guerlain': 'Pháp', 'ralph lauren': 'Mỹ', 'mac': 'Mỹ',
+  'estee lauder': 'Mỹ', 'estée lauder': 'Mỹ', 'kiehls': 'Mỹ', 'kiehl\'s': 'Mỹ',
+  'shiseido': 'Nhật Bản', 'sk-ii': 'Nhật Bản', 'innisfree': 'Hàn Quốc',
+  'sulwhasoo': 'Hàn Quốc', 'laneige': 'Hàn Quốc', 'loreal': 'Pháp', 'l\'oreal': 'Pháp',
+  'chloe': 'Pháp', 'chloé': 'Pháp', 'coach': 'Mỹ', 'victoria\'s secret': 'Mỹ',
+  'bath & body works': 'Mỹ', 'mugler': 'Pháp', 'valentino': 'Ý', 'moschino': 'Ý',
+  'balenciaga': 'Tây Ban Nha', 'loewe': 'Tây Ban Nha'
+};
+var PLACEHOLDER_SVG = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiNlZWUiLz48cGF0aCBkPSJNNjAgOTAgTDEwMCAxMzAgTDE0MCA3MCIgc3Ryb2tlPSIjY2NjIiBzdHJva2Utb3BhY2l0eT0iMC41IiBzdHJva2Utd2lkdGg9IjIiLz48dGV4dCB4PSIxMDAiIHk9IjE3NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5Ij5ObyBJbWFnZTwvdGV4dD48L3N2Zz4=';

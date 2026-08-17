@@ -10,11 +10,11 @@ import { Order } from '../../models/Order.ts';
 import { ImageService } from '../../services/ImageService.ts';
 import mongoose from 'mongoose';
 
-function computeMemberTier(totalSpent: number): 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong' {
-  if (totalSpent >= 30_000_000) return 'KimCuong';
-  if (totalSpent >= 20_000_000) return 'Vang';
-  if (totalSpent >= 10_000_000) return 'Bac';
-  return 'MEMBER';
+import { computeMemberTier as computeMemberTierFromUtil, type MemberTier } from '../../utils/memberTier.ts';
+
+// Re-export để giữ tương thích với các nơi import cũ
+export function computeMemberTier(totalSpent: number): MemberTier {
+  return computeMemberTierFromUtil(totalSpent);
 }
 
 export class AuthProfileController {

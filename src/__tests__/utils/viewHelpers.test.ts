@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getCommonData } from '../../utils/viewHelpers.ts';
 
 describe('getCommonData', () => {
+  beforeEach(() => {
+    vi.stubEnv('FRONTEND_URL', 'https://frontend-datn-tau.vercel.app');
+  });
+
   const userDoc = {
     fullName: 'Nguyen Van A',
     username: 'nguyena',
@@ -39,7 +43,7 @@ describe('getCommonData', () => {
   });
 
   it('returns Nhân viên for non-ADMIN role', () => {
-    const result = getCommonData({ ...userDoc, role: 'SUBADMIN' }, 'Page', 'p');
+    const result = getCommonData({ ...userDoc, role: 'ADMIN' }, 'Page', 'p');
     expect(result.userRole).toBe('Nhân viên');
   });
 

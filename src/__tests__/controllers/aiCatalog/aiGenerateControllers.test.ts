@@ -33,7 +33,7 @@ describe("AI Generate User Controller - Logic", () => {
     expect(parsed).toHaveProperty("email");
     expect(parsed).toHaveProperty("password");
     expect(parsed).toHaveProperty("role");
-    expect(["USER", "ADMIN", "SUBADMIN"]).toContain(parsed.role);
+    expect(["USER", "ADMIN"]).toContain(parsed.role);
     expect(parsed.status).toBe("active");
   });
 

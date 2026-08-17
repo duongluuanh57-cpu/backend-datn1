@@ -15,6 +15,7 @@ import { VoucherService } from '../services/VoucherService.ts';
 import { redis } from '../config/redis.ts';
 import { createPaymentUrl, verifyIpnResponse, verifyReturnParams } from '../services/VNPayService.ts';
 import { calculateShippingFee } from '../utils/helpers.ts';
+import { markSoldCounted } from './order/orderHelpers.ts';
 
 function getUserId(req: FastifyRequest): string | null {
   return (req as any).user?.userId || null;
@@ -74,7 +75,7 @@ export class VNPayController {
 
       if (items && items.length > 0) {
         // Mua ngay hoặc mua chọn lọc từ giỏ hàng
-        const resolved = await (await import('./CartController.ts')).CartController.resolveBuyNowItems(items);
+        const resolved = await (await import('../services/cart/CheckoutService.ts')).CheckoutService.resolveBuyNowItems(items);
         cartItems = resolved.resolvedItems;
         totalAmount = resolved.totalAmount;
         clearsCart = !!isCartCheckout;
@@ -83,10 +84,16 @@ export class VNPayController {
         if (!cart) {
           return reply.status(400).send({ success: false, message: 'Giỏ hàng trống' });
         }
-        cartItems = await CartItem.find({ cartId: cart._id }).lean();
-        if (cartItems.length === 0) {
+        const rawCartItems = await CartItem.find({ cartId: cart._id })
+          .populate({ path: 'productId', select: 'brandId', populate: { path: 'brandId', select: 'name' } })
+          .lean();
+        if (rawCartItems.length === 0) {
           return reply.status(400).send({ success: false, message: 'Giỏ hàng trống' });
         }
+        cartItems = rawCartItems.map((ci: any) => ({
+          ...ci,
+          brand: ci.brand || (ci.productId as any)?.brandId?.name || '',
+        }));
         totalAmount = cart.totalAmount;
         voucherDiscount = cart.voucherDiscount || 0;
       }
@@ -356,19 +363,43 @@ export class VNPayController {
 
       // === Tìm và cập nhật Order & Payment ===
       const paymentRecord = await Payment.findOne({ txnRef });
-      const order = paymentRecord ? await Order.findById(paymentRecord.orderId) : await Order.findOne({ _id: pendingPayment._id });
+      let order = paymentRecord ? await Order.findById(paymentRecord.orderId) : null;
       if (!order) {
-        return reply.send({
-          RspCode: '01',
-          Message: 'Order not found',
-        });
+        order = await Order.findOne({ note: { $regex: txnRef } });
       }
 
-      order.paymentStatus = 'paid';
-      await order.save();
+      if (!order) {
+        // Tự động tạo Order từ pendingPayment nếu chưa tồn tại Order record
+        order = await Order.create({
+          userId: pendingPayment.userId,
+          shippingInfo: {
+            customerName: pendingPayment.customerInfo.fullName,
+            customerPhone: pendingPayment.customerInfo.phone,
+            customerAddress: pendingPayment.customerInfo.address,
+            customerEmail: pendingPayment.customerInfo.email || '',
+            note: `VNPay TXN: ${txnRef}`,
+          },
+          totalAmount: pendingPayment.finalAmount,
+          shippingFee: pendingPayment.shippingFee || 0,
+          paymentMethod: 'vnpay',
+          paymentStatus: 'paid',
+          status: 'processing',
+        });
+      } else {
+        order.paymentStatus = 'paid';
+        await order.save();
+      }
+
+      // Thanh toán thành công → cộng lượt bán (idempotent, chỉ 1 lần/đơn)
+      await markSoldCounted(order._id);
 
       // Resolve paymentMethodId for 'vnpay'
-      const vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay' }).lean();
+      let vnpayMethod: any = null;
+      if (mongoose.connection && mongoose.connection.readyState === 1) {
+        try {
+          vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay' }).lean();
+        } catch (_) {}
+      }
 
       // Tạo Payment record
       await Payment.create({
@@ -381,6 +412,19 @@ export class VNPayController {
         paidAt: new Date(),
       });
 
+      // Clear giỏ hàng nếu pendingPayment được đánh dấu clearsCart (default true)
+      if (pendingPayment.clearsCart !== false) {
+        const cart = await Cart.findOne({ userId: pendingPayment.userId });
+        if (cart) {
+          await CartItem.deleteMany({ cartId: cart._id });
+          cart.totalAmount = 0;
+          cart.voucherCode = null as any;
+          cart.voucherDiscount = 0;
+          cart.freeshipVoucherCode = null as any;
+          await cart.save();
+        }
+      }
+
       // Đánh dấu PendingPayment hoàn thành
       pendingPayment.status = 'completed';
       await pendingPayment.save();
@@ -390,6 +434,7 @@ export class VNPayController {
         Message: 'Confirm Success',
       });
     } catch (err: any) {
+      console.error('[VNPay handleIpn Error]:', err);
       return reply.send({
         RspCode: '99',
         Message: err.message,
@@ -439,6 +484,9 @@ export class VNPayController {
           if (order.paymentStatus !== 'paid') {
             order.paymentStatus = 'paid';
             await order.save();
+
+            // Thanh toán thành công → cộng lượt bán
+            await markSoldCounted(order._id);
 
             const vnpayMethod = await PaymentMethod.findOne({ code: 'vnpay' }).lean();
             await Payment.findOneAndUpdate(

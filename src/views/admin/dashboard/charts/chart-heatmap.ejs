@@ -1,0 +1,96 @@
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6" id="heatmapSection">
+  <!-- Main Chart Card (3/4 width) -->
+  <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col justify-between">
+    <div>
+      <!-- Title Row -->
+      <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+        <h4 class="text-base font-semibold text-gray-900 flex items-center gap-2">
+          Khung giờ vàng
+          <button class="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 text-xs font-bold flex items-center justify-center" onclick="openHelp('heatmap')" title="Tìm hiểu thêm">?</button>
+        </h4>
+      </div>
+
+      <!-- Filter Row -->
+      <div class="flex flex-wrap items-center gap-3 mb-6">
+        <!-- Date Picker Filter -->
+        <div class="relative" id="heatmapDatePickerWrapper">
+          <button id="btnOpenHeatmapCalendar" class="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 hover:border-gray-300 rounded-lg text-xs font-medium text-gray-700 shadow-sm transition-all cursor-pointer">
+            <svg style="width:14px;height:14px;color:#9ca3af;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span id="lblHeatmapDateRange">Chọn khoảng ngày</span>
+            <svg style="width:12px;height:12px;color:#6b7280;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          
+          <!-- Custom Calendar Dropdown Popup -->
+          <div id="heatmapCalendarPopup" class="absolute left-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50 hidden" style="width: 290px;">
+            <!-- Calendar Header -->
+            <div class="flex items-center justify-between mb-3">
+              <button id="btnHeatmapPrevMonth" type="button" class="p-1 hover:bg-gray-100 rounded text-gray-600 cursor-pointer">
+                <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <span id="lblHeatmapMonthYear" class="text-xs font-bold text-gray-800"></span>
+              <button id="btnHeatmapNextMonth" type="button" class="p-1 hover:bg-gray-100 rounded text-gray-600 cursor-pointer">
+                <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
+            
+            <!-- Weekdays Header -->
+            <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-gray-400 mb-2">
+              <div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div><div class="text-red-500">CN</div>
+            </div>
+            
+            <!-- Calendar Days Grid -->
+            <div id="gridHeatmapCalendarDays" class="grid grid-cols-7 gap-1 text-center text-xs"></div>
+            
+            <!-- Calendar Footer -->
+            <div class="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-100">
+              <button id="btnHeatmapCancelCalendar" type="button" class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded cursor-pointer">Hủy</button>
+              <button id="btnHeatmapApplyCalendar" type="button" class="px-2.5 py-1 bg-gold-400 hover:bg-gold-500 text-white text-[10px] font-bold rounded cursor-pointer">Áp dụng</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- View Switcher -->
+        <div class="metric-switcher" id="heatmapViewSwitcher" style="margin-bottom: 0;">
+          <button class="metric-btn active" data-view="hour">Theo giờ</button>
+          <button class="metric-btn" data-view="day">Theo thứ</button>
+        </div>
+
+        <!-- Metric Switcher -->
+        <div class="metric-switcher" id="heatmapMetricSwitcher" style="margin-bottom: 0;">
+          <button class="metric-btn" data-metric="add_to_cart">Thêm giỏ hàng</button>
+          <button class="metric-btn" data-metric="reach_checkout">Thanh toán</button>
+          <button class="metric-btn active" data-metric="purchase">Mua hàng</button>
+        </div>
+
+        <!-- Clear Filter Button -->
+        <a id="heatmap-clear-filter" href="#" class="filter-clear" onclick="resetHeatmapFilters(event)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Xoá lọc
+        </a>
+      </div>
+
+      <div id="heatmapContainer" style="min-height:260px; position:relative;">
+        <p class="text-gray-400 text-center py-10">Đang tải...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Separate Detail Card (1/4 width) -->
+  <div class="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col justify-between" id="heatmapSidePanel">
+    <div>
+      <div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
+        <h4 class="text-sm font-bold text-gray-900 uppercase tracking-wider">Thương hiệu</h4>
+        <button id="btnHeatmapResetSelection" onclick="resetHeatmapSelection()" class="text-[11px] text-amber-600 hover:text-amber-700 font-semibold cursor-pointer hidden">Xem tất cả</button>
+      </div>
+      <div id="lblHeatmapSideSubtitle" class="text-xs text-gray-500 font-medium mb-3 pb-2 border-b border-gray-100 hidden"></div>
+      <div id="heatmapBrandList" class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+        <p class="text-xs text-gray-400 italic py-4 text-center">Đang tải...</p>
+      </div>
+    </div>
+  </div>
+</div>

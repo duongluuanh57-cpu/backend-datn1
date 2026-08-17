@@ -101,7 +101,7 @@ export async function createProductFromName(
         availableTags: allTags.map((t: any) => t.name),
         availableCategories: allCategories.map((c: any) => c.name),
         availableGenders: ['male', 'female', 'unisex'],
-        availableSizes: ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml'],
+        availableSizes: ['5ml', '10ml', '20ml', '50ml', '100ml', '150ml', '200ml'],
         ...overrides,
       },
       user: {},

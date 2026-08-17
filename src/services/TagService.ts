@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Tag } from '../models/Tag.ts';
 import type { ITag } from '../models/Tag.ts';
 import { ProductTag } from '../models/ProductTag.ts';
@@ -34,12 +35,24 @@ export class TagService {
       Tag.find(query).sort({ name: 1 }).skip(skip).limit(limit).lean(),
       Tag.countDocuments(query),
     ]);
-    const itemsWithCounts = await Promise.all(
-      items.map(async (tag: any) => {
-        const productCount = await ProductTag.countDocuments({ tagId: tag._id });
-        return { ...tag, productCount };
-      })
-    );
+
+    const tagIds = items.map((t: any) => t._id);
+    let countMap: Record<string, number> = {};
+    if (tagIds.length > 0 && mongoose.connection && mongoose.connection.readyState === 1) {
+      try {
+        const counts = await ProductTag.aggregate([
+          { $match: { tagId: { $in: tagIds } } },
+          { $group: { _id: '$tagId', count: { $sum: 1 } } },
+        ]);
+        counts.forEach((c: any) => { countMap[String(c._id)] = c.count; });
+      } catch (_) {}
+    }
+
+    const itemsWithCounts = items.map((tag: any) => ({
+      ...tag,
+      productCount: countMap[String(tag._id)] || 0,
+    }));
+
     return { items: itemsWithCounts, total, page, totalPages: Math.ceil(total / limit) };
   }
 
@@ -90,7 +103,9 @@ export class TagService {
    */
   static async deleteTag(id: string): Promise<boolean> {
     const result = await Tag.deleteOne({ _id: id });
-    await ProductTag.deleteMany({ tagId: id });
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      await ProductTag.deleteMany({ tagId: new mongoose.Types.ObjectId(id) });
+    }
     await FlashSaleService.clearCache();
     return result.deletedCount > 0;
   }
@@ -98,7 +113,10 @@ export class TagService {
   static async bulkDeleteTags(ids: string[]): Promise<number> {
     if (!ids || ids.length === 0) return 0;
     const result = await Tag.deleteMany({ _id: { $in: ids } });
-    await ProductTag.deleteMany({ tagId: { $in: ids } });
+    const validObjectIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+    if (validObjectIds.length > 0) {
+      await ProductTag.deleteMany({ tagId: { $in: validObjectIds } });
+    }
     await FlashSaleService.clearCache();
     return result.deletedCount;
   }
@@ -110,22 +128,18 @@ export class TagService {
     const [productCount, recentProductTags] = await Promise.all([
       ProductTag.countDocuments({ tagId: id }),
       ProductTag.find({ tagId: id })
-        .populate('productId', 'name slug price images status')
+        .populate('productId')
         .sort({ createdAt: -1 })
         .limit(20)
         .lean(),
     ]);
 
-    const products = recentProductTags
+    const rawProducts = recentProductTags
       .filter((pt: any) => pt.productId)
-      .map((pt: any) => ({
-        _id: pt.productId._id,
-        name: pt.productId.name,
-        slug: pt.productId.slug,
-        price: pt.productId.price,
-        image: pt.productId.images?.[0] || '',
-        status: pt.productId.status,
-      }));
+      .map((pt: any) => pt.productId);
+
+    const { formatMultipleProducts } = await import('./product/productFormatterService.ts');
+    const products = await formatMultipleProducts(rawProducts);
 
     return {
       ...tag,
@@ -146,23 +160,19 @@ export class TagService {
     const [total, productTags] = await Promise.all([
       ProductTag.countDocuments({ tagId: id }),
       ProductTag.find({ tagId: id })
-        .populate('productId', 'name slug price images status')
+        .populate('productId')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
     ]);
 
-    const items = productTags
+    const rawProducts = productTags
       .filter((pt: any) => pt.productId)
-      .map((pt: any) => ({
-        _id: pt.productId._id,
-        name: pt.productId.name,
-        slug: pt.productId.slug,
-        price: pt.productId.price,
-        image: pt.productId.images?.[0] || '',
-        status: pt.productId.status,
-      }));
+      .map((pt: any) => pt.productId);
+
+    const { formatMultipleProducts } = await import('./product/productFormatterService.ts');
+    const items = await formatMultipleProducts(rawProducts);
 
     return {
       items,

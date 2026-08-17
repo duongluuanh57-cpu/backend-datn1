@@ -128,13 +128,14 @@ describe('Funnel Routes — /api/funnel/data', () => {
 });
 
 describe('Funnel Routes — /api/funnel/brand-timeseries', () => {
-  it('should return 400 for missing brandId', async () => {
+  it('should return system-wide data when brandId is omitted', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/funnel/brand-timeseries',
     });
     const body = JSON.parse(res.body);
-    expect(body.success).toBe(false);
+    expect(body.success).toBe(true);
+    expect(body.data.brandName).toBe('Tất cả thương hiệu');
   });
 
   it('should return time series for a valid brand', async () => {
@@ -151,14 +152,15 @@ describe('Funnel Routes — /api/funnel/brand-timeseries', () => {
 });
 
 describe('Funnel Routes — /api/funnel/brand-heatmap', () => {
-  it('should return 400 for missing brandId', async () => {
+  it('should return system-wide data when brandId is omitted', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/funnel/brand-heatmap',
     });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
-    expect(body.success).toBe(false);
+    expect(body.success).toBe(true);
+    expect(body.data.brandName).toBe('Tất cả thương hiệu');
   });
 
   it('should return heatmap matrix for purchase metric', async () => {

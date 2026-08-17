@@ -1,0 +1,54 @@
+<!-- ── Card: Thông tin cơ bản Component ── -->
+<div class="dt-card">
+  <h3 style="font-size:14px;font-weight:600;margin:0 0 16px;color:var(--text-primary);">Thông tin cơ bản</h3>
+  
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <!-- Tên sản phẩm -->
+    <div class="supp-form-group">
+      <label>Tên sản phẩm</label>
+      <input type="text" id="sd-name" placeholder="Nhập tên sản phẩm" />
+    </div>
+
+    <!-- Thương hiệu -->
+    <div class="supp-form-group">
+      <label>Thương hiệu</label>
+      <select id="sd-brand">
+        <option value="">-- Chọn thương hiệu --</option>
+      </select>
+    </div>
+
+    <!-- Danh mục -->
+    <div class="supp-form-group">
+      <label>Danh mục</label>
+      <div id="sd-selected-cats" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;padding:4px 0;">
+        <!-- selected category chips injected by JS -->
+      </div>
+      <div style="margin-top:4px;">
+        <button type="button" onclick="openCategoryModal()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Chọn danh mục
+        </button>
+      </div>
+    </div>
+
+    <!-- Tags -->
+    <div class="supp-form-group">
+      <label>Tags (chọn tối thiểu 2)</label>
+      <div id="sd-selected-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;padding:4px 0;">
+        <!-- selected tag chips injected by JS -->
+      </div>
+      <div style="margin-top:4px;">
+        <button type="button" onclick="openTagModal()" style="display:inline-flex;align-items:center;gap:4px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text-primary);cursor:pointer;font-size:12px;font-weight:500;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-primary)'">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg>
+          Chọn tags
+        </button>
+      </div>
+    </div>
+
+    <!-- Mô tả -->
+    <div class="supp-form-group">
+      <label>Mô tả</label>
+      <div id="sd-description-editor"></div>
+    </div>
+  </div>
+</div>

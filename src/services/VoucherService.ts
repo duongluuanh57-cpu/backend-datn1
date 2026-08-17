@@ -240,9 +240,9 @@ export class VoucherService {
       return { valid: false, message: 'Mã giảm giá đã hết hạn' };
     }
 
-    // Nếu là voucher toàn sàn, kiểm tra maxUsage chung
-    if (voucher.applicableTo === 'all') {
-      if (voucher.maxUsage !== undefined && voucher.maxUsage !== null && voucher.usedCount >= voucher.maxUsage) {
+    // Nếu là voucher toàn sàn (hoặc chưa cấu hình scope), kiểm tra maxUsage chung (maxUsage > 0)
+    if (!voucher.applicableTo || voucher.applicableTo === 'all') {
+      if (voucher.maxUsage && voucher.maxUsage > 0 && (voucher.usedCount || 0) >= voucher.maxUsage) {
         return { valid: false, message: 'Mã giảm giá đã hết lượt sử dụng' };
       }
     } else {

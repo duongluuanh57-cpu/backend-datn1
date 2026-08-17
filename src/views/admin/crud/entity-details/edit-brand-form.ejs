@@ -1,0 +1,72 @@
+<!-- ── LEFT: Logo upload column ── -->
+<div class="dt-card" style="position:sticky;top:80px;">
+  <h3 style="font-size:14px;font-weight:600;margin:0 0 12px;color:var(--text-primary);display:flex;align-items:center;gap:8px;">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+    Logo thương hiệu
+  </h3>
+
+  <div id="be-logo-preview" style="width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;border:2px solid var(--accent);background:var(--bg);margin-bottom:8px;display:flex;align-items:center;justify-content:center;position:relative;">
+    <span style="color:var(--text-muted);font-size:12px;">Chưa có logo</span>
+  </div>
+
+  <div style="display:flex;gap:6px;margin-bottom:12px;">
+    <input type="file" id="be-logo-upload" accept="image/*" style="display:none;" onchange="handleLogoUpload(event)" />
+    <button type="button" onclick="document.getElementById('be-logo-upload').click()"
+      style="flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:8px;border:2px dashed var(--accent);border-radius:8px;background:rgba(201,169,110,0.04);color:var(--accent);cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;"
+      onmouseover="this.style.background='rgba(201,169,110,0.1)'" onmouseout="this.style.background='rgba(201,169,110,0.04)'">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Tải logo
+    </button>
+    <button type="button" id="be-delete-logo" onclick="deleteLogo()"
+      style="display:none;padding:8px 10px;border:1px solid var(--danger);border-radius:8px;background:rgba(239,68,68,0.06);color:var(--danger);cursor:pointer;font-size:12px;transition:all 0.2s;"
+      onmouseover="this.style.background='rgba(239,68,68,0.12)'" onmouseout="this.style.background='rgba(239,68,68,0.06)'" title="Xóa logo">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+    </button>
+  </div>
+  <input type="hidden" id="be-logo-url" value="" />
+  <div id="be-upload-status" style="font-size:11px;color:var(--text-muted);text-align:center;"></div>
+</div>
+
+<!-- ── RIGHT: Thông tin ── -->
+<div style="display:flex;flex-direction:column;gap:20px;">
+  <div class="dt-card">
+    <h3 style="font-size:14px;font-weight:600;margin:0 0 16px;color:var(--text-primary);">Thông tin cơ bản</h3>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div class="supp-form-group">
+        <label>Tên thương hiệu</label>
+        <input type="text" id="be-name" placeholder="Nhập tên thương hiệu (VD: Chanel, Dior, Gucci...)" />
+        <span id="be-name-dup-warning" style="display:none;font-size:11px;color:#ef4444;font-weight:600;margin-top:2px;">⚠️ Tên thương hiệu này đã tồn tại trên hệ thống!</span>
+      </div>
+      <div class="supp-form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <label>Slug</label>
+          <span id="be-ai-badge" style="display:none;font-size:11px;color:var(--accent);font-weight:600;align-items:center;gap:4px;">
+            ✨ AI tự điền
+          </span>
+        </div>
+        <input type="text" id="be-slug" placeholder="tu-dong-tao-tu-ten" />
+      </div>
+      <div class="supp-form-group">
+        <label>Xuất xứ</label>
+        <input type="text" id="be-origin" placeholder="VD: Pháp, Ý, Mỹ..." />
+      </div>
+      <div class="supp-form-group">
+        <label>Trạng thái</label>
+        <label class="status-toggle-wrap" style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;margin-top:4px;user-select:none;">
+          <input type="checkbox" id="be-status-toggle" style="display:none;" onchange="updateBrandStatusToggle(this.checked)" />
+          <span id="be-status-slider" style="position:relative;width:44px;height:24px;background:var(--border);border-radius:12px;transition:all 0.3s;display:inline-block;">
+            <span id="be-status-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:all 0.3s;box-shadow:0 1px 3px rgba(0,0,0,0.2);"></span>
+          </span>
+          <span id="be-status-text" style="font-size:14px;font-weight:600;color:var(--text-muted);">Hoạt động</span>
+        </label>
+        <input type="hidden" id="be-status" value="active" />
+      </div>
+      <div class="supp-form-group" style="flex-direction:row;align-items:center;gap:12px;">
+        <label style="margin-bottom:0;cursor:pointer;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="be-featured" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;" />
+          <span style="font-size:14px;font-weight:500;color:var(--text-primary);">Thương hiệu nổi bật</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</div>

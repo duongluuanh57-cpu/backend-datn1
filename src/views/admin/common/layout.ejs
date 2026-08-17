@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= pageTitle || 'Dashboard' %> — L'essence Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gold: {
+              50: '#fdf8f0',
+              100: '#f5e6c9',
+              200: '#edcfa3',
+              300: '#d4b87a',
+              400: '#c9a96e',
+              500: '#b8944f',
+              600: '#a17d3a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Flowbite CSS (CDN) -->
+  <link href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css" rel="stylesheet" />
+  <!-- Quill editor CSS (must be before admin.css to allow overrides) -->
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
+  <!-- Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/admin/static/admin.css?v=1.0">
+  <style>
+    body{margin:0;padding:0;background:#F7F6F3;color:#1A1A1A;font-family:"Inter",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv05"}
+    #confirmOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:998;align-items:center;justify-content:center}
+    #confirmOverlay.active{display:flex}
+    .confirm-box{background:var(--color-background-surface);border:1px solid var(--color-border);border-radius:14px;padding:24px;max-width:400px;width:90%;text-align:center;box-shadow:var(--shadow-elevated);}
+    .confirm-box h4{font-size:16px;margin-bottom:8px;color:var(--color-text-primary)}
+    .confirm-box p{font-size:13px;color:var(--color-text-muted);margin-bottom:20px}
+    .confirm-box .actions{display:flex;gap:10px;justify-content:center}
+    .confirm-box .btn-cancel,.confirm-box .btn-confirm{padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:500}
+    .confirm-box .btn-cancel{background:var(--color-background-body);color:var(--color-text-primary);border:1px solid var(--color-border)}
+    .confirm-box .btn-cancel:hover{background:rgba(201,169,110,0.06)}
+    .confirm-box .btn-confirm{background:var(--danger);color:#fff}
+    .confirm-box .btn-confirm:hover{opacity:0.9}
+    .btn-add-new{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:13px;font-weight:600;font-family:inherit;text-decoration:none;transition:all 0.2s ease;white-space:nowrap}
+    .btn-add-new:hover{background:rgba(201,169,110,0.08);border-color:var(--accent);color:var(--accent)}
+    /* Override Flowbite checkbox colors for all admin checkboxes */
+    .filter-multi-dropdown .filter-multi-option input[type="checkbox"],
+    .checkbox-col input[type="checkbox"],
+    .data-table input[type="checkbox"],
+    #brand-edit input[type="checkbox"],
+    #supplement-detail input[type="checkbox"] {
+      -webkit-appearance: auto !important;
+      -moz-appearance: auto !important;
+      appearance: auto !important;
+      accent-color: #c9a96e !important;
+    }
+  </style>
+</head>
+<body>
+  <%- include('./sidebar', { currentPage: currentPage || 'dashboard', apiToken, frontendUrl }) %>
+
+  <header class="admin-header">
+    <div class="header-left">
+      <button class="mobile-toggle" onclick="toggleSidebar()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <h2 id="admin-header-title"><%= pageTitle || 'Dashboard' %></h2>
+      <% if (typeof breadcrumb !== 'undefined' && breadcrumb) { %><span class="breadcrumb">/ <%= breadcrumb %></span><% } %>
+    </div>
+    <div class="header-right">
+      <% if (typeof headerAction !== 'undefined' && headerAction !== null) { %>
+        <a href="<%= headerAction.href %>" class="btn-add-new">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><%= headerAction.icon || '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>' %></svg>
+          <span><%= headerAction.label %></span>
+        </a>
+      <% } else if (typeof headerAction === 'undefined') { %>
+        <% var addBtnMap = {
+          products: { label: '+ Thêm sản phẩm mới', href: '/admin/products/create', icon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>' },
+          brands: { label: '+ Thêm thương hiệu mới', href: '/admin/brands/create', icon: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>' },
+          categories: { label: '+ Thêm danh mục mới', href: '/admin/categories/create', icon: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>' },
+          tags: { label: '+ Thêm tag mới', href: '/admin/tags/create', icon: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>' },
+          vouchers: { label: '+ Thêm mã giảm giá mới', href: '/admin/vouchers/create', icon: '<path d="M20 12H4"/><path d="M2 7h20"/><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M12 12v4"/><path d="M10 14h4"/>' },
+        }; %>
+        <% var addBtn = addBtnMap[currentPage]; %>
+        <% if (addBtn) { %>
+          <a href="<%= addBtn.href %>" class="btn-add-new">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><%= addBtn.icon %></svg>
+            <span><%= addBtn.label %></span>
+          </a>
+        <% } %>
+      <% } %>
+    </div>
+  </header>
+
+  <main class="admin-main">
+    <%- body %>
+  </main>
+
+  <!-- Flowbite JS (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js"></script>
+
+  <script>
+    window.API_TOKEN = '<%= apiToken || '' %>';
+    window.FRONTEND_URL = '<%= frontendUrl || '' %>';
+    function goHome() {
+      var url = window.FRONTEND_URL + '/auth/callback?accessToken=' + encodeURIComponent(window.API_TOKEN) + '&refreshToken=' + encodeURIComponent(window.API_TOKEN);
+      window.open(url, '_blank');
+    }
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebarOverlay').classList.toggle('active');
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.nav-collapse').forEach(function(c) {
+        c.classList.add('open');
+      });
+    });
+  </script>
+
+  <div id="confirmOverlay">
+    <div class="confirm-box">
+      <h4>Xác nhận</h4>
+      <p id="confirmMsg">Bạn có chắc muốn thực hiện hành động này?</p>
+      <div class="actions"><button class="btn-cancel" onclick="closeConfirm()">Hủy</button><button class="btn-confirm" id="confirmBtn">Xác nhận</button></div>
+    </div>
+  </div>
+
+  <script>
+    function gC(n){var m=document.cookie.match('(^|;)\\s*'+n+'=([^;]*)');return m?decodeURIComponent(m[2]):''}
+    function confirmAction(url,method,message){document.getElementById('confirmMsg').textContent=message||'Bạn có chắc chắn?';document.getElementById('confirmOverlay').classList.add('active');document.getElementById('confirmBtn').onclick=function(){closeConfirm();var f=document.createElement('form');f.method=method||'POST';f.action=url;f.style.display='none';var csrf=document.createElement('input');csrf.name='_csrf';csrf.value=gC('csrf_token');f.appendChild(csrf);document.body.appendChild(f);f.submit()}}
+    function openConfirm(message,onConfirm){document.getElementById('confirmMsg').textContent=message||'Bạn có chắc chắn?';document.getElementById('confirmOverlay').classList.add('active');document.getElementById('confirmBtn').onclick=function(){closeConfirm();if(onConfirm)onConfirm()}}
+    function closeConfirm(){document.getElementById('confirmOverlay').classList.remove('active')}
+    document.addEventListener('DOMContentLoaded',function(){
+      document.querySelectorAll('form[method=POST]').forEach(function(f){if(!f.querySelector('input[name=_csrf]')){var csrf=document.createElement('input');csrf.type='hidden';csrf.name='_csrf';csrf.value=gC('csrf_token');f.appendChild(csrf)}f.addEventListener('submit',function(){var b=f.querySelector('button[type=submit]');if(b){b.disabled=true;b.style.opacity='0.6'}})});
+      document.querySelectorAll('[onsubmit*="confirm"]').forEach(function(f){f.onsubmit=function(e){e.preventDefault();var m=(f.getAttribute('onsubmit')||'').match(/confirm\(['\"](.+?)['\"]\)/);confirmAction(f.action,f.method,m?m[1]:'Xác nhận xóa?')}});
+    });
+  </script>
+
+  <%- include('../ai-assistant/help-popup') %>
+  <%- include('./toast') %>
+  <%- include('../ai-assistant/ai-chat') %>
+  <%- include('../ai-assistant/ai-interview-popup') %>
+
+  <script>
+    var IS = '<svg style="display:inline-block;width:16px;height:16px;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+    var S = function(u){ return IS + u + '</svg>'; };
+    var ICONS = {
+      chart: S('<path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/>'),
+      bulb: S('<path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>'),
+      data: S('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>'),
+      eye: S('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
+      cart: S('<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>'),
+      card: S('<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>'),
+      check: S('<polyline points="20 6 9 17 4 12"/>'),
+      clock: S('<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+      target: S('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+    };
+
+    var helpContent = {
+      revenue: {
+        title: 'Doanh thu & đơn hàng',
+        body: '<p><span class="help-tag help-tag-blue">BIỂU ĐỒ KẾT HỢP (LINE CHART)</span></p>' +
+          '<p>Biểu đồ hiển thị sự phát triển doanh số cửa hàng qua hai đường chỉ số song song trong dải ngày bạn chọn:</p>' +
+          '<ul>' +
+          '<li><strong>Doanh thu (Đường Gold - trục bên trái):</strong> Tổng số tiền thu được từ các đơn hàng thành công (tính bằng VND).</li>' +
+          '<li><strong>Đơn hàng (Đường Xanh - trục bên phải):</strong> Tổng số đơn hàng được đặt trong ngày.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Nguồn dữ liệu & Quy tắc tính toán:</strong></p>' +
+          '<ul>' +
+          '<li>Lấy từ CSDL MongoDB, cụ thể là bảng <code>daily_summary_reports</code>.</li>' +
+          '<li>Hệ thống tự động loại trừ toàn bộ doanh thu và số lượng đơn của các đơn hàng đã bị hủy (<code>cancelled</code>) để dữ liệu thực tế và chính xác nhất.</li>' +
+          '<li>Dữ liệu được cập nhật liên tục và cache trên Redis trong vòng 30 phút nhằm tối ưu hiệu năng tải trang.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Ý nghĩa thực tiễn:</strong> Giúp bạn nắm rõ xu hướng tăng trưởng doanh thu theo ngày, phát hiện các ngày biến động doanh số đột biến và đánh giá giá trị trung bình trên mỗi đơn hàng.</p>'
+      },
+      retention: {
+        title: 'Khách mới & Quay lại theo thương hiệu',
+        body: '<p><span class="help-tag help-tag-blue">BIỂU ĐỒ CỘT XẾP CHỒNG (STACKED BAR CHART)</span></p>' +
+          '<p>Biểu đồ phân tích cơ cấu doanh thu đóng góp bởi khách hàng mới và khách hàng cũ của <strong>Top 15 thương hiệu có doanh thu cao nhất</strong> trong vòng 90 ngày qua. Biểu đồ được sắp xếp giảm dần theo tổng doanh thu (Mới + Quay lại) của thương hiệu.</p>' +
+          '<p>Doanh thu của mỗi thương hiệu được chia làm hai phần chính:</p>' +
+          '<ul>' +
+          '<li><strong>Khách mới (Cột màu xanh):</strong> Doanh thu thu được từ <strong>giao dịch mua hàng đầu tiên</strong> của khách hàng (user) đối với thương hiệu này.</li>' +
+          '<li><strong>Khách quay lại (Cột màu vàng):</strong> Doanh thu thu được từ <strong>tất cả các giao dịch tiếp theo</strong> (từ đơn hàng thứ 2 trở đi) của khách hàng đó mua sản phẩm của thương hiệu này.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Nguồn dữ liệu & Quy tắc tính toán:</strong></p>' +
+          '<ul>' +
+          '<li>Nguồn: Bảng <code>OrderItem</code> liên kết với <code>Order</code> (để xác định mã khách hàng <code>userId</code>).</li>' +
+          '<li>Hệ thống quét lịch sử 90 ngày, xác định mốc thời gian mua sản phẩm thương hiệu đó lần đầu tiên của từng user để phân loại đơn hàng là "Mới" hay "Quay lại".</li>' +
+          '<li>Dữ liệu được cache trên Redis trong vòng 5 phút.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Ý nghĩa thực tiễn:</strong> Đánh giá mức độ trung thành của khách hàng đối với từng thương hiệu. Một thương hiệu có phần cột màu vàng lớn chứng minh sản phẩm của thương hiệu đó có chất lượng tốt, khả năng giữ chân khách hàng cao và tạo ra nguồn doanh thu bền vững.</p>'
+      },
+      trend: {
+        title: 'Hiệu suất hiện tại so với kỳ trước',
+        body: '<p><span class="help-tag help-tag-amber">BIỂU ĐỒ ĐƯỜNG ĐỐI SÁNH (COMPARE LINE CHART)</span></p>' +
+          '<p>Biểu đồ so sánh số liệu hành vi chuyển đổi của thương hiệu được chọn qua hai khoảng thời gian đối sánh liên tiếp (kỳ này vs kỳ trước) để phân tích xu hướng phát triển tốt hay xấu.</p>' +
+          '<p>Hai đường biểu diễn trên biểu đồ:</p>' +
+          '<ul>' +
+          '<li><strong>Kỳ hiện tại (Đường Gold nét liền):</strong> Số lượng tương tác trong dải ngày bạn đã lựa chọn trên lịch.</li>' +
+          '<li><strong>Kỳ trước (Đường Xám nét đứt):</strong> Số lượng tương tác trong khoảng thời gian liền kề trước đó có độ dài ngày <strong>bằng đúng</strong> số ngày của kỳ hiện tại. Ví dụ: Nếu kỳ hiện tại bạn chọn 10 ngày (01/08 đến 10/08), thì kỳ trước sẽ tự động đối sánh với 10 ngày ngay trước đó (22/07 đến 31/07).</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>Các chỉ số đối sánh (Metric):</strong></p>' +
+          '<ul>' +
+          '<li>' + ICONS.eye + ' <strong>Thêm giỏ hàng:</strong> Tổng số lượt thêm sản phẩm của thương hiệu đó vào giỏ hàng.</li>' +
+          '<li>' + ICONS.card + ' <strong>Thanh toán:</strong> Tổng số đơn chứa sản phẩm thương hiệu đó tiến hành điền thông tin thanh toán (checkout).</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Dữ liệu được lấy từ đâu?</strong></p>' +
+          '<ul>' +
+          '<li>Nguồn: Ghi nhận thời gian thực qua Redis counters kết hợp với dữ liệu tổng hợp MongoDB.</li>' +
+          '<li>Dải ngày: Tính toán tự động theo thời gian thực dựa trên ngày bắt đầu và kết thúc bạn chọn trên bộ lọc lịch.</li>' +
+          '<li>Dữ liệu được cache trên Redis để tối ưu hóa tốc độ tải trang.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Tác dụng:</strong> Giúp bạn đánh giá hiệu quả của các chiến dịch marketing hoặc chương trình khuyến mãi theo thời gian. Ví dụ: Nếu bạn vừa chạy quảng cáo cho thương hiệu Gucci trong 7 ngày qua, bạn sẽ so sánh với 7 ngày trước đó xem lượt <em>Thêm giỏ hàng</em> và <em>Thanh toán</em> có tăng trưởng vượt trội hay không, từ đó đo lường chính xác hiệu quả đầu tư (ROI).</p>'
+      },
+      funnel: {
+        title: 'Luồng hành vi khách hàng',
+        body: '<p><span class="help-tag help-tag-blue">LUỒNG HÀNH VI KHÁCH HÀNG</span></p>' +
+          '<p>Trực quan hoá luồng hành vi mua sắm của khách hàng đối với thương hiệu được chọn qua 4 giai đoạn cốt lõi của phễu bán hàng:</p>' +
+          '<ol>' +
+          '<li>' + ICONS.eye + ' <strong>Lượt xem:</strong> Tổng số lượt click vào trang chi tiết các sản phẩm thuộc thương hiệu.</li>' +
+          '<li>' + ICONS.cart + ' <strong>Thêm giỏ hàng:</strong> Số lượt click thêm sản phẩm vào giỏ hàng.</li>' +
+          '<li>' + ICONS.card + ' <strong>Thanh toán:</strong> Số lượt đi tới trang điền thông tin giao hàng & thanh toán.</li>' +
+          '<li>' + ICONS.check + ' <strong>Mua hàng:</strong> Số lượng đơn hàng được đặt mua thành công.</li>' +
+          '</ol>' +
+          '<p>Mỗi bước hiển thị giá trị tuyệt đối và <strong>tỷ lệ chuyển đổi (%)</strong> so với bước ngay trước đó để đo lường độ sụt giảm.</p>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Nguồn dữ liệu & Phạm vi thời gian:</strong></p>' +
+          '<ul>' +
+          '<li><strong>Phạm vi:</strong> Số liệu thống kê tích lũy trọn đời (lifetime) kể từ khi website hoạt động, không bị giới hạn hay chọn lọc theo dải ngày.</li>' +
+          '<li>Lượt xem: Tổng tích lũy từ trường <code>Product.viewCount</code> của các sản phẩm.</li>' +
+          '<li>Giỏ hàng & Thanh toán: Bộ đếm tổng cộng dồn (total counters) trên hệ thống Redis.</li>' +
+          '<li>Mua hàng: Tổng hợp tất cả các bản ghi đơn hàng thành công từ trước đến nay trên MongoDB.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.bulb + ' Ý nghĩa thực tiễn:</strong> Xác định chính xác "điểm nghẽn" nơi khách hàng rời bỏ quy trình. Ví dụ: Lượt xem và Thêm giỏ hàng rất nhiều nhưng tỷ lệ đi đến Thanh toán cực thấp => Cần tối ưu lại quy trình giỏ hàng, phí ship hoặc bổ sung thêm khuyến mãi ở bước thanh toán.</p>'
+      },
+      heatmap: {
+        title: 'Bản đồ nhiệt khung giờ vàng',
+        body: '<p><span class="help-tag help-tag-amber">MA TRẬN NHIỆT (HEATMAP MATRIX)</span></p>' +
+          '<p>Hiển thị mức độ tập trung tương tác của khách hàng đối với thương hiệu được chọn theo <strong>khung giờ trong ngày (24 giờ)</strong> và <strong>các ngày trong tuần (Thứ 2 đến Chủ nhật)</strong>.</p>' +
+          '<ul>' +
+          '<li>Ô có màu vàng <strong>càng đậm</strong> = Tương tác càng cao tại thời điểm đó.</li>' +
+          '<li>Ô có màu <strong>nhạt hoặc trắng</strong> = Khách hàng ít tương tác.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>Các chỉ số tùy chọn để xem:</strong></p>' +
+          '<ul>' +
+          '<li><strong>Mua hàng (Default):</strong> Mật độ các đơn hàng được mua thành công.</li>' +
+          '<li><strong>Thêm giỏ hàng / Thanh toán:</strong> Mật độ các tương tác thêm giỏ hoặc đi đến thanh toán.</li>' +
+          '</ul>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.data + ' Nguồn dữ liệu:</strong> Tổng hợp dữ liệu trong phạm vi 28 ngày gần nhất từ Redis hourly logs và MongoDB, giúp đảm bảo số liệu phản ánh thói quen mua sắm hiện tại của khách hàng.</p>' +
+          '<hr>' +
+          '<p><strong>' + ICONS.target + ' Ý nghĩa thực tiễn:</strong> Xác định chính xác <strong>khung giờ vàng mua sắm</strong> của từng thương hiệu. Dựa vào đây, bạn có thể lập kế hoạch tối ưu thời gian đăng bài quảng cáo, thời điểm tung Flash Sale hoặc gửi thông báo voucher để tiếp cận đúng lúc khách hàng online mua sắm nhiều nhất.</p>'
+      }
+    };
+    function openHelp(section) {
+      var content = helpContent[section];
+      if (!content) return;
+      document.getElementById('helpPopupTitle').textContent = content.title;
+      document.getElementById('helpPopupBody').innerHTML = content.body;
+      document.getElementById('helpPopupOverlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeHelp() {
+      document.getElementById('helpPopupOverlay').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      var overlay = document.getElementById('helpPopupOverlay');
+      if (overlay) {
+        overlay.addEventListener('click', function(e) {
+          if (e.target === overlay) closeHelp();
+        });
+      }
+
+      // ── Anti-Spam Click Protection (Block rapid repeated clicking) ──
+      var lastNavClickTime = 0;
+      var NAV_SPAM_WINDOW = 1500; // 1.5 giây
+
+      document.addEventListener('click', function(e) {
+        var targetLink = e.target.closest('a[href], button[type="submit"], .nav-item');
+        if (!targetLink) return;
+
+        var href = targetLink.getAttribute('href');
+        if (href === '#' || href === 'javascript:void(0)' || targetLink.getAttribute('onclick')) return;
+
+        var now = Date.now();
+        if (now - lastNavClickTime < NAV_SPAM_WINDOW) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (typeof showToast === 'function') {
+            showToast('⚠️ Thao tác quá nhanh! Vui lòng đợi trong giây lát...', 'warning');
+          }
+          return false;
+        }
+        lastNavClickTime = now;
+      }, true);
+    });
+  </script>
+
+  <%- include('../ai-assistant/ai-chat') %>
+  <div class="bg-noise"></div>
+
+  <script>
+  // ── Real-time order notifications via SSE ──
+  (function() {
+    var es;
+    function connectOrderEvents() {
+      if (es) { try { es.close(); } catch(e){} }
+      es = new EventSource('/admin/order-events');
+      es.onmessage = function(e) {
+        try {
+          var payload = JSON.parse(e.data);
+          if (payload.type === 'new_order') {
+            var amount = payload.amount
+              ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(payload.amount)
+              : '';
+            var msg = '&#x1F6CD; <strong>' + payload.maskedName + '</strong> v\u1EEBa \u0111\u1EB7t \u0111\u01A1n h\u00E0ng'
+              + (amount ? ' \u00B7 <strong>' + amount + '</strong>' : '')
+              + ' \u2014 <a href="/admin/orders" style="color:inherit;text-decoration:underline;font-weight:600;">Duy\u1EC7t ngay</a>';
+            showToast(msg, 'order');
+          }
+        } catch(err) {}
+      };
+      es.onerror = function() {
+        setTimeout(connectOrderEvents, 5000);
+      };
+    }
+    document.addEventListener('DOMContentLoaded', connectOrderEvents);
+  })();
+  </script>
+
+</body>
+</html>

@@ -7,37 +7,57 @@ export async function generateVoucher(req: FastifyRequest, reply: FastifyReply) 
     const { prompt } = req.body as { prompt: string };
     if (!prompt) return reply.status(400).send({ error: 'Prompt is required' });
 
-    console.log(`🧠 [AI Workflow] Generating voucher with Gemini for prompt: ${prompt}`);
-    const geminiPrompt = `
-You are an expert marketing promotions manager for a luxury perfume e-commerce system.
-Based on the following description, generate a discount voucher/coupon with Vietnamese information.
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const defaultEnd = new Date(now);
+    defaultEnd.setDate(defaultEnd.getDate() + 30);
+    const defaultEndStr = defaultEnd.toISOString().split('T')[0];
 
-Description: "${prompt}"
+    console.log(`🧠 [AI Workflow] Generating voucher with Gemini for prompt: ${prompt} (Current Date: ${todayStr})`);
+    const geminiPrompt = `
+You are an expert marketing promotions manager for a luxury perfume e-commerce system in Vietnam.
+Today's actual date is: "${todayStr}".
+The admin typed a voucher name/code or promotion idea: "${prompt}".
+Analyze the voucher code/name and intelligently infer all the promotion parameters suitable for a luxury perfume brand in Vietnam.
+
+Examples of inference:
+- "GIARE50K" or "GIAM50K" -> fixed 50000 VND, min order 300000 VND, category: discount
+- "FREESHIP", "FSEXPRESS" -> voucherCategory: freeship, type: fixed, value: 0, min order 200000 VND
+- "VIPMEMBER" or "MEMBER10" -> applicableTo: membership, minTier: "MEMBER", type: percentage, value: 10, maxDiscount: 100000 VND
+- "SUMMERSALE20" -> type: percentage, value: 20, maxDiscount: 200000 VND, description: "Ưu đãi mùa hè giảm 20%"
+- "CHAOBANMOI" -> description: "Mã giảm giá chào mừng thành viên mới", min order 100000 VND
 
 Your tasks:
-1. Generate a short, memorable voucher code (uppercase letters and numbers, 5-10 chars, e.g. "SALE20", "WELCOME10")
-2. Choose type: "percentage" (giảm theo %) or "fixed" (giảm số tiền cố định)
-3. Set value: if percentage, 5-50; if fixed, 20000-500000 VND
-4. Set minOrderAmount: reasonable minimum order amount
-5. Set maxDiscount: if percentage, set a max discount cap
-6. Set maxUsage: number of times this voucher can be used (0 = unlimited)
-7. Generate startDate: today or a few days from now (ISO date string YYYY-MM-DD)
-8. Generate endDate: 30-90 days from startDate (ISO date string YYYY-MM-DD)
-9. Set status to "active"
+1. "code": Uppercase clean voucher code (e.g. "${prompt}".toUpperCase() or clean version without spaces)
+2. "description": A concise Vietnamese description (e.g. "Ưu đãi giảm 50.000đ cho đơn từ 300k")
+3. "voucherCategory": "discount" (giảm giá tiền / %) or "freeship" (miễn phí vận chuyển)
+4. "type": "percentage" (giảm theo %) or "fixed" (giảm số tiền cố định). If freeship, set "fixed"
+5. "value": if freeship set 0; if percentage: integer 5-50 (5% to 50%); if fixed: amount in VND (e.g. 20000, 50000, 100000, 200000)
+6. "minOrderAmount": reasonable minimum order in VND (e.g. 0, 100000, 200000, 500000)
+7. "maxDiscount": if percentage, a reasonable max cap in VND (e.g. 50000, 100000, 200000); if fixed or freeship set null
+8. "applicableTo": "all" (toàn sàn), "membership" (hạng thành viên), or "minigame" (mini game)
+9. "minTier": if applicableTo is membership, choose one from "MEMBER", "Bac", "Vang", "KimCuong", otherwise null
+10. "maxUsage": max number of usages (e.g. 50, 100, 500, or 0 for unlimited)
+11. "startDate": "${todayStr}" (MUST BE today: ${todayStr})
+12. "endDate": a date between 30 to 90 days from today (${todayStr})
+13. "status": "active"
 
-Output STRICTLY a valid JSON object conforming to the schema below.
-Do NOT include markdown code block syntax (like \`\`\`json). Just the raw JSON object.
+Output STRICTLY a valid JSON object matching this schema. No markdown wrapping.
 
 JSON Schema:
 {
-  "code": "VOUCHERCODE",
-  "type": "percentage" | "fixed",
-  "value": 20,
-  "minOrderAmount": 500000,
-  "maxDiscount": 200000,
+  "code": "CODE",
+  "description": "Mô tả",
+  "voucherCategory": "discount",
+  "type": "fixed",
+  "value": 50000,
+  "minOrderAmount": 300000,
+  "maxDiscount": null,
+  "applicableTo": "all",
+  "minTier": null,
   "maxUsage": 100,
-  "startDate": "2026-07-01",
-  "endDate": "2026-08-30",
+  "startDate": "${todayStr}",
+  "endDate": "${defaultEndStr}",
   "status": "active"
 }
 `;
@@ -50,6 +70,15 @@ JSON Schema:
     }
 
     const voucherInfo = JSON.parse(jsonString.trim());
+
+    // Sanitize dates to always ensure they are in the present / future
+    if (!voucherInfo.startDate || new Date(voucherInfo.startDate) < new Date(todayStr)) {
+      voucherInfo.startDate = todayStr;
+    }
+    if (!voucherInfo.endDate || new Date(voucherInfo.endDate) <= new Date(voucherInfo.startDate)) {
+      voucherInfo.endDate = defaultEndStr;
+    }
+
     return reply.status(200).send({ success: true, data: voucherInfo });
   } catch (error: any) {
     console.error('AI Voucher Generation Error:', error);

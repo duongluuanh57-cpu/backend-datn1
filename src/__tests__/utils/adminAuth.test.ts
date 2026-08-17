@@ -22,8 +22,8 @@ describe('requireAdmin', () => {
     expect(requireAdmin(req, reply)).toBe(true);
   });
 
-  it('returns true for SUBADMIN role', () => {
-    const req = fakeReq({ role: 'SUBADMIN' });
+  it('returns true for ADMIN role', () => {
+    const req = fakeReq({ role: 'ADMIN' });
     const reply = fakeReply();
     expect(requireAdmin(req, reply)).toBe(true);
   });

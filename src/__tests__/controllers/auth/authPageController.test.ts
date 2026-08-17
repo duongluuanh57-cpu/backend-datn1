@@ -1,7 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthPageController } from '../../../controllers/auth/authPageController.ts';
 
 describe('AuthPageController', () => {
+  beforeEach(() => {
+    vi.stubEnv('FRONTEND_URL', 'https://frontend-datn-tau.vercel.app');
+  });
   describe('getLoginPage', () => {
     it('uses localhost frontend URL when Referer is localhost', async () => {
       const req = { headers: { referer: 'http://localhost:3000/some-page' } } as any;

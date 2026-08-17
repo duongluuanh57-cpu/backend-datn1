@@ -4,7 +4,7 @@ import { Product } from '../models/Product.ts';
 import { OrderItem } from '../models/OrderItem.ts';
 import { Order } from '../models/Order.ts';
 import { User } from '../models/User.ts';
-import { moderateContent } from './ai/aiModerationService.ts';
+import { moderateContent, LOCKED_MODERATION_CATEGORIES } from './ai/aiModerationService.ts';
 
 const VALID_ASPECTS = Object.keys(ASPECT_OPTIONS);
 
@@ -204,9 +204,14 @@ export class ReviewService {
     const moderation = await moderateContent(commentText);
     if (moderation.isAppropriate) {
       review.status = 'visible';
+      review.moderatedBy = 'AI';
+      review.moderatedByType = 'ai';
     } else {
       review.status = 'rejected';
       review.rejectionReason = moderation.reason || 'Bình luận chứa ngôn từ không phù hợp';
+      review.aiRejected = LOCKED_MODERATION_CATEGORIES.includes(moderation.category);
+      review.moderatedBy = 'AI';
+      review.moderatedByType = 'ai';
     }
     await review.save();
 
@@ -292,11 +297,21 @@ export class ReviewService {
     return { reviews, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  static async moderate(reviewId: string, status: 'visible' | 'hidden') {
-    const review = await Review.findByIdAndUpdate(reviewId, { status }, { new: true });
+  static async moderate(reviewId: string, status: 'visible' | 'hidden' | 'rejected', adminName?: string) {
+    const review = await Review.findById(reviewId);
     if (!review) {
       throw new Error('Không tìm thấy review');
     }
+
+    // Bình luận bị AI từ chối là khóa vĩnh viễn, không thể thay đổi trạng thái
+    if (review.aiRejected && status !== 'rejected') {
+      throw new Error('Bình luận đã bị AI từ chối, không thể thay đổi trạng thái');
+    }
+
+    review.status = status;
+    review.moderatedBy = adminName || 'Admin';
+    review.moderatedByType = 'admin';
+    await review.save();
 
     await ReviewService.updateProductStats(review.productId.toString());
     return review;

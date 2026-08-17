@@ -28,6 +28,7 @@ export interface IOrder extends Document {
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
 
   cancelRequested?: boolean;
+  soldCounted?: boolean; // Đã cộng/trừ soldCount của Product chưa
   cancelReason?: 'want_change_voucher' | 'want_change_product' | 'complicated_payment' | 'found_cheaper' | 'changed_mind';
   deliveredAt?: Date;
   cancelledAt?: Date;
@@ -82,6 +83,7 @@ const OrderSchema = new Schema<IOrder>(
     },
 
     cancelRequested: { type: Boolean, default: false },
+    soldCounted: { type: Boolean, default: false },
     cancelReason: {
       type: String,
       enum: ['want_change_voucher', 'want_change_product', 'complicated_payment', 'found_cheaper', 'changed_mind'],

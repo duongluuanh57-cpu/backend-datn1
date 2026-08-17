@@ -53,22 +53,40 @@ import { readFileSync } from 'fs';
 
 import rawBody from 'fastify-raw-body';
 import multipart from '@fastify/multipart';
+import { register } from './config/metrics.ts';
+import { graphqlRoute } from './graphql/route.ts';
+
+const adminStaticCache = new Map<string, string>();
+
+function getCachedAdminStaticFile(filePath: string): string | null {
+  if (process.env.NODE_ENV === 'production' && adminStaticCache.has(filePath)) {
+    return adminStaticCache.get(filePath)!;
+  }
+  try {
+    const content = readFileSync(filePath, 'utf-8');
+    adminStaticCache.set(filePath, content);
+    return content;
+  } catch {
+    return null;
+  }
+}
+
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
-import { register } from './config/metrics.ts';
-import { graphqlRoute } from './graphql/route.ts';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     bodyLimit: 10485760,
-    logger: {
-      level: process.env.LOG_LEVEL || 'info',
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true }
-      }
-    }
+    logger: process.env.NODE_ENV === 'production'
+      ? { level: process.env.LOG_LEVEL || 'info' }
+      : {
+          level: process.env.LOG_LEVEL || 'info',
+          transport: {
+            target: 'pino-pretty',
+            options: { colorize: true }
+          }
+        }
   });
 
   app.register(rawBody, {
@@ -115,7 +133,7 @@ export function buildApp(): FastifyInstance {
       if (request.method === 'GET' || request.method === 'HEAD') return 1000;
       const user = (request as any).user;
       if (user?.role === 'ADMIN') return 500;
-      if (user?.role === 'SUBADMIN') return 500;
+      if (false) return 500;
       if (user?.role === 'USER') return 600;
       return 120;
     },
@@ -168,11 +186,24 @@ export function buildApp(): FastifyInstance {
   // Admin Panel (SSR) — prefix /admin
   app.register(adminRoutes, { prefix: '/admin' });
 
-  // Serve admin static files (CSS)
+  // Serve admin static files (CSS & JS) with in-memory caching & HTTP cache headers
   app.get('/admin/static/admin.css', async (_request, reply) => {
-    const css = readFileSync(join(__dirname, 'views', 'admin', 'admin.css'), 'utf-8');
+    const fullPath = join(__dirname, 'views', 'admin', 'admin.css');
+    const css = getCachedAdminStaticFile(fullPath);
+    if (!css) return reply.status(404).send('Not Found');
     reply.header('Content-Type', 'text/css');
+    reply.header('Cache-Control', 'public, max-age=86400');
     return reply.send(css);
+  });
+
+  app.get('/admin/static/js/*', async (request, reply) => {
+    const filePath = (request.params as any)['*'];
+    const fullPath = join(__dirname, 'views', 'admin', 'js', filePath);
+    const js = getCachedAdminStaticFile(fullPath);
+    if (!js) return reply.status(404).send('Not Found');
+    reply.header('Content-Type', 'application/javascript');
+    reply.header('Cache-Control', 'public, max-age=86400');
+    return reply.send(js);
   });
 
 

@@ -17,6 +17,9 @@ export class ProductMutationService {
    * Cập nhật sản phẩm
    */
   static async updateProduct(id: string, data: any): Promise<any | null> {
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) return null;
+
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined) updateData.description = data.description;
@@ -48,6 +51,19 @@ export class ProductMutationService {
         updateData.brandId = brandDoc._id;
       } else {
         console.warn(`⚠️ [Brand] "${data.brand}" not found in DB - skipping, will NOT create`);
+      }
+    }
+
+    // Kiểm tra trùng tên sản phẩm khi cập nhật
+    if (updateData.name || updateData.brandId) {
+      const checkName = updateData.name || existingProduct.name;
+      const checkBrandId = updateData.brandId || existingProduct.brandId;
+      if (checkName && checkBrandId) {
+        const nameRegex = new RegExp(`^${checkName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        const dup = await Product.findOne({ _id: { $ne: id }, name: nameRegex, brandId: checkBrandId });
+        if (dup) {
+          throw new Error(`Sản phẩm "${checkName.trim()}" đã tồn tại trong thương hiệu này!`);
+        }
       }
     }
 
@@ -115,12 +131,30 @@ export class ProductMutationService {
       // Sync Variants in ProductVariant collection
       if (Array.isArray(data.variants) && data.variants.length > 0) {
         await ProductVariant.deleteMany({ productId: id });
+
+        // Tìm xem có biến thể 50ml hay không
+        const has50ml = data.variants.some((v: any) => (v.size || '').trim().toLowerCase() === '50ml');
+        let defaultIndex = -1;
+        if (has50ml) {
+          defaultIndex = data.variants.findIndex((v: any) => (v.size || '').trim().toLowerCase() === '50ml');
+        } else {
+          defaultIndex = data.variants.findIndex((v: any) => v.isDefault === true);
+          if (defaultIndex === -1) {
+            defaultIndex = 0;
+          }
+        }
+
+        try {
+          const fs = require('fs');
+          fs.appendFileSync('variants_debug.log', `[Variants Debug] productId=${id} has50ml=${has50ml} defaultIndex=${defaultIndex}\nInput variants: ${JSON.stringify(data.variants)}\n\n`);
+        } catch (e) {}
+
         const variantsToInsert = data.variants.map((v: any, index: number) => ({
           productId: id,
           size: v.size || '50ml',
           price: Number(v.price) || 0,
           quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
-          isDefault: v.isDefault ?? (index === 0),
+          isDefault: index === defaultIndex,
           sortOrder: index,
         }));
         const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
@@ -131,12 +165,21 @@ export class ProductMutationService {
 
         const parsed = parseSizes(data.size);
         if (parsed.length > 0) {
+          // Tìm xem có biến thể 50ml hay không trong chuỗi parse
+          const has50ml = parsed.some(item => (item.size || '').trim().toLowerCase() === '50ml');
+          let defaultIndex = -1;
+          if (has50ml) {
+            defaultIndex = parsed.findIndex(item => (item.size || '').trim().toLowerCase() === '50ml');
+          } else {
+            defaultIndex = 0;
+          }
+
           const variantsToInsert = parsed.map((item, index) => ({
             productId: id,
             size: item.size,
             price: item.price,
             quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
-            isDefault: index === 0,
+            isDefault: index === defaultIndex,
             sortOrder: index
           }));
           const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
@@ -262,6 +305,32 @@ export class ProductMutationService {
   }
 
   /**
+   * Cập nhật hàng loạt sản phẩm (status, categories)
+   */
+  static async bulkUpdateProducts(ids: string[], updateData: { status?: string; categories?: string[] }): Promise<boolean> {
+    if (!ids || ids.length === 0) return false;
+    const updateQuery: any = {};
+    if (updateData.status) {
+      updateQuery.status = updateData.status;
+    }
+    if (updateData.categories && Array.isArray(updateData.categories)) {
+      updateQuery.categories = updateData.categories.map(id => new mongoose.Types.ObjectId(id));
+    }
+    if (Object.keys(updateQuery).length === 0) return false;
+    const result = await Product.updateMany({ _id: { $in: ids } }, { $set: updateQuery });
+    if (result.modifiedCount > 0) {
+      await clearProductCache();
+      for (const id of ids) {
+        try {
+          await redis.del(`products:${id}`);
+        } catch (_) {}
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Tạo sản phẩm mới
    */
   static async createProduct(data: any): Promise<any> {
@@ -271,6 +340,7 @@ export class ProductMutationService {
     if (data.reviewsCount !== undefined) productData.reviewsCount = data.reviewsCount;
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
     if (data.image !== undefined) productData.image = data.image;
+    if (data.status !== undefined) productData.status = data.status;
 
     productData.specifications = {
       longevity: data.longevity || data.specifications?.longevity || '',
@@ -323,6 +393,15 @@ export class ProductMutationService {
       throw new Error('Vui lòng kiểm tra lại tên hãng.');
     }
 
+    // Kiểm tra trùng tên sản phẩm trong cùng thương hiệu
+    if (productData.name && productData.brandId) {
+      const nameRegex = new RegExp(`^${productData.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      const existingProd = await Product.findOne({ name: nameRegex, brandId: productData.brandId });
+      if (existingProd) {
+        throw new Error(`Sản phẩm "${productData.name.trim()}" đã tồn tại trong thương hiệu này!`);
+      }
+    }
+
     // Tags mapping — ghi vào bảng trung gian ProductTag sau khi save
     const pendingTagSlugs: string[] = [];
     if (data.tag) {
@@ -359,12 +438,23 @@ export class ProductMutationService {
 
     // Size / Variants mapping
     if (Array.isArray(data.variants) && data.variants.length > 0) {
+      const has50ml = data.variants.some((v: any) => (v.size || '').trim().toLowerCase() === '50ml');
+      let defaultIndex = -1;
+      if (has50ml) {
+        defaultIndex = data.variants.findIndex((v: any) => (v.size || '').trim().toLowerCase() === '50ml');
+      } else {
+        defaultIndex = data.variants.findIndex((v: any) => v.isDefault === true);
+        if (defaultIndex === -1) {
+          defaultIndex = 0;
+        }
+      }
+
       const variantsToInsert = data.variants.map((v: any, index: number) => ({
         productId: saved._id,
         size: v.size || '50ml',
         price: Number(v.price) || 0,
         quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
-        isDefault: v.isDefault ?? (index === 0),
+        isDefault: index === defaultIndex,
         sortOrder: index,
       }));
       const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
@@ -373,12 +463,20 @@ export class ProductMutationService {
     } else if (data.size) {
       const parsed = parseSizes(data.size);
       if (parsed.length > 0) {
+        const has50ml = parsed.some(item => (item.size || '').trim().toLowerCase() === '50ml');
+        let defaultIndex = -1;
+        if (has50ml) {
+          defaultIndex = parsed.findIndex(item => (item.size || '').trim().toLowerCase() === '50ml');
+        } else {
+          defaultIndex = 0;
+        }
+
         const variantsToInsert = parsed.map((item, index) => ({
           productId: saved._id,
           size: item.size,
           price: item.price,
           quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
-          isDefault: index === 0,
+          isDefault: index === defaultIndex,
           sortOrder: index
         }));
         const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
@@ -404,6 +502,56 @@ export class ProductMutationService {
     }
 
     // Clear Redis Cache so that the new product immediately shows up on the homepage/outside!
+    await clearProductCache();
+
+    return saved;
+  }
+
+  static async duplicateProduct(id: string) {
+    const original = await Product.findById(id).lean();
+    if (!original) return null;
+
+    const { _id, createdAt, updatedAt, __v, name, slug, ...rest } = original;
+    const duplicatedName = `${name} (Copy)`;
+    const slugName = `${slug}-copy-${Date.now().toString().slice(-4)}`;
+
+    const newProduct = new Product({
+      ...rest,
+      name: duplicatedName,
+      slug: slugName,
+      status: 'draft',
+    });
+    const saved = await newProduct.save();
+
+    const originalVariants = await ProductVariant.find({ productId: id }).lean();
+    if (originalVariants.length > 0) {
+      const newVariants = originalVariants.map(({ _id, createdAt, updatedAt, __v, productId, ...vRest }) => ({
+        ...vRest,
+        productId: saved._id,
+      }));
+      const insertedVariants = await ProductVariant.insertMany(newVariants);
+      const newVariantIds = insertedVariants.map(v => v._id);
+      await Product.updateOne({ _id: saved._id }, { $set: { variants: newVariantIds } });
+    }
+
+    const originalTags = await ProductTag.find({ productId: id }).lean();
+    if (originalTags.length > 0) {
+      const newTags = originalTags.map(({ _id, productId, ...tRest }) => ({
+        ...tRest,
+        productId: saved._id,
+      }));
+      await ProductTag.insertMany(newTags);
+    }
+
+    const originalImages = await ProductImage.find({ productId: id }).lean();
+    if (originalImages.length > 0) {
+      const newImages = originalImages.map(({ _id, productId, ...iRest }) => ({
+        ...iRest,
+        productId: saved._id,
+      }));
+      await ProductImage.insertMany(newImages);
+    }
+
     await clearProductCache();
 
     return saved;

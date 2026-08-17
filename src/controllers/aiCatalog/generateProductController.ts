@@ -32,7 +32,6 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       image,
       longevity,
       sillage,
-      durability,
       scentTrail,
       style,
       suitableFor,
@@ -56,7 +55,6 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       image?: string;
       longevity?: string;
       sillage?: string;
-      durability?: string;
       scentTrail?: string;
       style?: string;
       suitableFor?: string;
@@ -79,14 +77,13 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
     if (image?.trim()) preFilled.image = image.trim();
     if (longevity?.trim()) preFilled.longevity = longevity.trim();
     if (sillage?.trim()) preFilled.sillage = sillage.trim();
-    if (durability?.trim()) preFilled.durability = durability.trim();
     if (scentTrail?.trim()) preFilled.scentTrail = scentTrail.trim();
     if (style?.trim()) preFilled.style = style.trim();
     if (suitableFor?.trim()) preFilled.suitableFor = suitableFor.trim();
     if (occasion?.trim()) preFilled.occasion = occasion.trim();
 
     const sizesJson = JSON.stringify(
-      availableSizes || ['2ml', '5ml', '10ml', '30ml', '50ml', '75ml', '100ml', '125ml', '150ml']
+      availableSizes || ['5ml', '10ml', '20ml', '50ml', '100ml', '150ml', '200ml']
     );
 
     console.log(`🚀 [AI generateProduct] Loading tags & brands (cached) for: ${name}`);
@@ -150,6 +147,14 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
         message: 'AI trả về JSON không hợp lệ',
         details: parseError.message,
         rawResponse: jsonString.substring(0, 500)
+      });
+    }
+
+    // ── Check if AI marked product as non-perfume ──
+    if (productInfo.isPerfume === false || productInfo.errorMessage) {
+      return reply.status(400).send({
+        success: false,
+        message: productInfo.errorMessage || 'Tên sản phẩm không phải là nước hoa. Vui lòng nhập đúng tên nước hoa.',
       });
     }
 

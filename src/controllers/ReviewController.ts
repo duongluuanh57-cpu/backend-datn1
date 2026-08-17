@@ -3,6 +3,7 @@ import { ReviewService } from '../services/ReviewService.ts';
 import { ImageService } from '../services/ImageService.ts';
 import { requireAdmin } from '../utils/adminAuth.ts';
 import { verifyAccessToken } from '../utils/auth.ts';
+import { User } from '../models/User.ts';
 
 export class ReviewController {
   static async getByProduct(req: FastifyRequest, reply: FastifyReply) {
@@ -144,13 +145,21 @@ export class ReviewController {
       if (!requireAdmin(req, reply)) return;
 
       const { id } = req.params as { id: string };
-      const { status } = req.body as { status: 'visible' | 'hidden' };
+      const { status } = req.body as { status: 'visible' | 'hidden' | 'rejected' };
 
-      if (!status || !['visible', 'hidden'].includes(status)) {
-        return reply.status(400).send({ success: false, message: 'status phải là visible hoặc hidden' });
+      if (!status || !['visible', 'hidden', 'rejected'].includes(status)) {
+        return reply.status(400).send({ success: false, message: 'status phải là visible, hidden hoặc rejected' });
       }
 
-      const review = await ReviewService.moderate(id, status);
+      // Lấy tên tài khoản admin đang thao tác
+      let adminName = 'Admin';
+      const userId = (req as any).user?.userId;
+      if (userId) {
+        const admin = await User.findById(userId).select('username').lean();
+        if (admin?.username) adminName = admin.username;
+      }
+
+      const review = await ReviewService.moderate(id, status, adminName);
       return reply.send({ success: true, data: review });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });

@@ -11,6 +11,8 @@ import { AuditLog } from '../models/AuditLog.ts';
 import { UserRepository } from '../repositories/UserRepository.ts';
 import { FlashSaleService } from '../services/FlashSaleService.ts';
 import { renderEjs, renderAdminPage } from '../utils/viewHelpers.ts';
+import { addSseClient, removeSseClient } from '../utils/adminSseEmitter.ts';
+import crypto from 'crypto';
 
 export async function adminRoutes(app: FastifyInstance) {
   // Rate limit cho admin: 120 req/phút (2x so với user thường)
@@ -41,6 +43,30 @@ export async function adminRoutes(app: FastifyInstance) {
   // CSRF bảo vệ tất cả POST/PUT/DELETE
   app.addHook('preHandler', csrfProtection);
 
+  // ── SSE: Real-time order notifications (GET only, exempt from CSRF) ──
+  // Registered before CSRF hook so the long-lived GET stream is not blocked.
+  app.get('/order-events', { preHandler: adminAuthMiddleware }, async (request, reply) => {
+    const clientId = crypto.randomUUID();
+    reply.raw.setHeader('Content-Type', 'text/event-stream');
+    reply.raw.setHeader('Cache-Control', 'no-cache');
+    reply.raw.setHeader('Connection', 'keep-alive');
+    reply.raw.setHeader('X-Accel-Buffering', 'no');
+    reply.raw.flushHeaders();
+    // Send initial heartbeat
+    reply.raw.write(': connected\n\n');
+    addSseClient(clientId, reply);
+    // Heartbeat every 25s to prevent proxy timeouts
+    const heartbeat = setInterval(() => {
+      try { reply.raw.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
+    }, 25000);
+    request.raw.on('close', () => {
+      clearInterval(heartbeat);
+      removeSseClient(clientId);
+    });
+    // Keep connection open — Fastify will not finalize the reply
+    await new Promise<void>(() => {});
+  });
+
   // Dashboard
   app.get('/', AdminPageController.dashboard);
   app.get('/dashboard-stats', DashboardStatsController.getSummaryStats);
@@ -49,7 +75,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/products', AdminCRUDController.productList);
   app.get('/products/create', AdminCRUDController.productCreate);
   app.get('/products/:id', AdminCRUDController.productDetail);
-  app.post('/products/:id/delete', AdminCRUDController.productDelete);
+  app.get('/products/:id/delete', AdminCRUDController.productDelete);
 
   // ── Edit product (full form) — phải đặt TRƯỚC /products/supplement/:id
   app.get('/products/:id/edit', AdminCRUDController.productEdit);
@@ -65,27 +91,29 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/brands/create', AdminCRUDController.brandCreate);
   app.get('/brands/:id/edit', AdminCRUDController.brandEdit);
   app.get('/brands/:id', AdminCRUDController.brandDetail);
-  app.post('/brands/:id/delete', AdminCRUDController.brandDelete);
+  app.get('/brands/:id/delete', AdminCRUDController.brandDelete);
 
   // ── Categories CRUD ──
   app.get('/categories', AdminCRUDController.categoryList);
   app.get('/categories/create', AdminCRUDController.categoryCreate);
   app.get('/categories/:id/edit', AdminCRUDController.categoryEdit);
   app.get('/categories/:id', AdminCRUDController.categoryDetail);
-  app.post('/categories/:id/delete', AdminCRUDController.categoryDelete);
+  app.get('/categories/:id/delete', AdminCRUDController.categoryDelete);
 
   // ── Tags CRUD ──
   app.get('/tags', async (req, reply) => {
-    const u = await UserRepository.findById((req as any).user?.userId);
+    const userReq = (req as any).user;
+    const u = userReq ? { _id: userReq.userId, fullName: userReq.name || 'Admin', email: userReq.email || '', role: userReq.role } : null;
     const apiToken = (req as any).token || '';
     const config = JSON.stringify({
       entityName:'tag', title:'Tags', apiEndpoint:'/api/tags', itemsPath:'items', totalPath:'total', totalPagesPath:'totalPages',
       columns:[
-        {key:'index', label:'STT', render:'rowIndex'},
+        {key:'index', label:'STT', render:'rowIndex', width:'60px'},
         {key:'name', label:'Tag'},
         {key:'slug', label:'Slug'},
-        {key:'productCount', label:'Số SP liên kết', fallback:'0'},
-        {key:'status', label:'Trạng thái', render:'editableStatus', statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}], statusApiEndpoint:'/api/tags/:id'},
+        {key:'productCount', label:'Sản phẩm', render:'tagProductCount', width:'140px'},
+        {key:'status', label:'Trạng thái', render:'editableStatus', statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}], statusApiEndpoint:'/api/tags/:id', width:'140px'},
+        {key:'actions', label:'Thao tác', render:'tagActions', width:'140px'},
       ],
       deleteEndpoint:'/admin/tags/:id/delete',
       bulkDeleteEndpoint:'/api/tags/bulk-delete',
@@ -93,12 +121,12 @@ export async function adminRoutes(app: FastifyInstance) {
       searchPlaceholder:'Tìm tag...',
     });
     const b = renderEjs('admin/crud/list.ejs', { apiToken, config });
-    return renderAdminPage(reply, u, 'Tags', 'tags', b, apiToken, 'Quản lý Cửa hàng');
+    return renderAdminPage(reply, u, 'Tags', 'tags', b, apiToken, 'Quản lý Cửa hàng', null);
   });
   app.get('/tags/create', AdminCRUDController.tagCreate);
   app.get('/tags/:id/edit', AdminCRUDController.tagEdit);
   app.get('/tags/:id', AdminCRUDController.tagDetail);
-  app.post('/tags/:id/delete', async (req, reply) => {
+  app.get('/tags/:id/delete', async (req, reply) => {
     const tagId = (req.params as any).id;
     await Tag.findByIdAndDelete(tagId);
     await ProductTag.deleteMany({ tagId: tagId });
@@ -115,17 +143,18 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/vouchers/:id', AdminCRUDControllerPart2.voucherDetail);
   app.get('/vouchers/create', AdminCRUDControllerPart2.voucherCreate);
   app.get('/vouchers/:id/edit', AdminCRUDControllerPart2.voucherEdit);
-  app.post('/vouchers/:id/delete', AdminCRUDControllerPart2.voucherDelete);
+  app.get('/vouchers/:id/delete', AdminCRUDControllerPart2.voucherDelete);
 
   // ── Flash Sales CRUD ──
   app.get('/flash-sales', AdminCRUDControllerPart2.flashSaleList);
   app.get('/flash-sales/create', AdminCRUDControllerPart2.flashSaleCreate);
+  app.get('/flash-sales/:id', AdminCRUDControllerPart2.flashSaleDetail);
   app.get('/flash-sales/:id/edit', AdminCRUDControllerPart2.flashSaleEdit);
 
   // ── Users CRUD ──
   app.get('/users', AdminCRUDControllerPart2.userList);
   app.get('/system-users', AdminCRUDControllerPart2.systemUserList);
-  app.post('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
+  app.get('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
 
 
   // ── Reviews CRUD ──

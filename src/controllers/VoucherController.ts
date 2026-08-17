@@ -8,11 +8,29 @@ export class VoucherController {
     try {
       const user = (req as any).user;
 
-      if (user && (user.role === 'ADMIN' || user.role === 'SUBADMIN')) {
+      if (user && (user.role === 'ADMIN')) {
         let list = await VoucherService.getAll();
-        const { applicableTo } = req.query as { applicableTo?: string };
+        const { applicableTo, status, type, search, sortBy } = req.query as { applicableTo?: string; status?: string; type?: string; search?: string; sortBy?: string };
         if (applicableTo) {
           list = list.filter((v: any) => v.applicableTo === applicableTo);
+        }
+        if (type) {
+          list = list.filter((v: any) => v.type === type);
+        }
+        if (status) {
+          if (status === 'active') list = list.filter((v: any) => v.isActive !== false);
+          else if (status === 'inactive') list = list.filter((v: any) => v.isActive === false);
+        }
+        if (search) {
+          const s = search.toLowerCase().trim();
+          list = list.filter((v: any) => (v.code && v.code.toLowerCase().includes(s)) || (v.description && v.description.toLowerCase().includes(s)));
+        }
+        if (sortBy === 'outOfUsage') {
+          list = list.filter((v: any) => v.applicableTo !== 'minigame' && (v.maxUsage ?? 0) <= (v.usedCount || 0));
+        } else if (sortBy === 'newest') {
+          list.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        } else if (sortBy === 'oldest') {
+          list.sort((a: any, b: any) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
         }
         const enriched = list.map((v: any) => ({
           ...v,

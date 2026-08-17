@@ -12,6 +12,9 @@ export interface TaxonomyContext {
 /**
  * Resolve tags từ AI output: Standard + 1 tag do AI chọn (hoặc random nếu thiếu)
  */
+/**
+ * Resolve tags từ AI output: Bắt buộc có Standard và tối đa đúng 2 tags
+ */
 export function resolveTags(
   aiTag: string | undefined,
   hasValidSale: boolean,
@@ -22,44 +25,48 @@ export function resolveTags(
   const standardTag = ctx.allTags.lookup.get('standard');
   const saleTagEntry = ctx.allTags.lookup.get('sale');
 
-  // 1. Standard tag luôn được thêm
+  // 1. Standard tag bắt buộc phải có
   if (standardTag) {
     tagIds.push(standardTag._id);
     tagNames.push(standardTag.name);
     console.log(`✅ Standard tag auto-added: ${standardTag.name}`);
   }
 
-  // 2. Tag từ AI
-  if (aiTag) {
+  // 2. Xác định tag thứ 2 (chỉ lấy đúng 1 tag thứ hai để tối đa là 2)
+  let secondTag: any = null;
+
+  if (hasValidSale && saleTagEntry) {
+    secondTag = saleTagEntry;
+    console.log(`✅ Sale tag selected due to valid sale`);
+  } else if (aiTag) {
     const matched = FuzzyMatchCache.fuzzyFind(aiTag, ctx.allTags.lookup, (t: any) => t.name);
     if (matched && FuzzyMatchCache.normalize(matched.name) !== 'standard') {
       const isSale = FuzzyMatchCache.normalize(matched.name) === 'sale';
-      if (isSale && !hasValidSale) {
-        console.log(`⚠️ AI picked "Sale" but discount does NOT qualify — skipping Sale tag`);
+      if (isSale) {
+        if (hasValidSale && saleTagEntry) {
+          secondTag = saleTagEntry;
+        }
       } else {
-        tagIds.push(matched._id);
-        tagNames.push(matched.name);
-        console.log(`✅ AI tag resolved: ${matched.name}`);
+        secondTag = matched;
       }
     }
   }
 
-  // 3. Auto-add Sale nếu đủ điều kiện nhưng chưa được chọn
-  if (hasValidSale && saleTagEntry && !tagNames.some(n => FuzzyMatchCache.normalize(n) === 'sale')) {
-    tagIds.push(saleTagEntry._id);
-    tagNames.push(saleTagEntry.name);
-    console.log(`✅ Sale tag auto-added`);
-  }
-
-  // 4. Fallback: thêm 1 tag random nếu chỉ có Standard
-  if (tagIds.length < 2) {
+  // 3. Fallback: Nếu chưa tìm được tag thứ 2, chọn tag đầu tiên khác standard/sale
+  if (!secondTag) {
     for (const [norm, tag] of ctx.allTags.lookup) {
-      if (norm === 'standard') continue;
-      tagIds.push(tag._id);
-      tagNames.push(tag.name);
-      console.log(`✅ Extra tag auto-added: ${tag.name}`);
+      if (norm === 'standard' || norm === 'sale') continue;
+      secondTag = tag;
+      console.log(`✅ Extra tag auto-added (fallback): ${tag.name}`);
       break;
     }
+  }
+
+  // Thêm tag thứ 2 vào mảng trả về
+  if (secondTag) {
+    tagIds.push(secondTag._id);
+    tagNames.push(secondTag.name);
+    console.log(`✅ Second tag resolved: ${secondTag.name}`);
   }
 
   return { tagIds, tagNames };
@@ -85,7 +92,7 @@ export function resolveBrand(
 }
 
 /**
- * Resolve categories từ AI output → ObjectId array (đảm bảo ít nhất 2)
+ * Resolve categories từ AI output → ObjectId array (đảm bảo tối thiểu 1, tối đa 1)
  */
 export function resolveCategories(
   aiCategory: string | undefined,
@@ -104,16 +111,19 @@ export function resolveCategories(
       if (!catNames.includes(c.name)) {
         catNames.push(c.name);
         catIds.push(c._id);
+        break; // Chỉ lấy tối đa 1 danh mục
       }
     }
   }
 
-  // 2. Fallback: fill đủ 2 nếu thiếu
-  for (const c of (ctx.allCategories.items || [])) {
-    if (catNames.length >= 2) break;
-    if (!catNames.includes(c.name)) {
-      catNames.push(c.name);
-      catIds.push(c._id);
+  // 2. Fallback: fill đủ 1 nếu thiếu
+  if (catIds.length === 0) {
+    for (const c of (ctx.allCategories.items || [])) {
+      if (catNames.length >= 1) break;
+      if (!catNames.includes(c.name)) {
+        catNames.push(c.name);
+        catIds.push(c._id);
+      }
     }
   }
 

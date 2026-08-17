@@ -17,7 +17,7 @@ describe('adminAuthMiddleware', () => {
     let redirectUrl = '';
     const reply = { redirect: (u: string) => { redirectUrl = u; return reply; }, status: () => ({ send: () => {} }) } as any;
     await adminAuthMiddleware(req, reply);
-    expect(redirectUrl).toBe('/api/auth/login');
+    expect(redirectUrl).toBe('/login');
   });
 
   it('reads token from admin_token cookie', async () => {
@@ -30,7 +30,7 @@ describe('adminAuthMiddleware', () => {
   });
 
   it('falls back to Authorization Bearer header', async () => {
-    vi.mocked(verifyAccessToken).mockReturnValue({ userId: '456', role: 'SUBADMIN' } as any);
+    vi.mocked(verifyAccessToken).mockReturnValue({ userId: '456', role: 'ADMIN' } as any);
     const req = { headers: { authorization: 'Bearer bearer-token-xyz' } } as any;
     const reply = { redirect: () => reply, status: () => ({ send: () => {} }) } as any;
     await adminAuthMiddleware(req, reply);
@@ -67,6 +67,6 @@ describe('adminAuthMiddleware', () => {
     let redirectUrl = '';
     const reply = { redirect: (u: string) => { redirectUrl = u; return reply; }, status: () => ({ send: () => {} }) } as any;
     await adminAuthMiddleware(req, reply);
-    expect(redirectUrl).toBe('/api/auth/login');
+    expect(redirectUrl).toBe('/login');
   });
 });

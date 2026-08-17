@@ -16,7 +16,7 @@ export class BrandMutationController {
         data: brand,
       });
     } catch (error: any) {
-      return reply.status(500).send({
+      return reply.status(400).send({
         success: false,
         message: error.message,
       });

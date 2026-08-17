@@ -58,7 +58,7 @@ async function llmRouteClassify(
   searchMode: string,
   userRole: string | undefined
 ): Promise<RouteClassification> {
-  const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+  const isAdmin = userRole === 'ADMIN';
   const validRoutes: RouteType[] = [
     'greeting', 'confusion', 'gibberish',
     'vector_search', 'sql_search', 'web_search', 'graph_search',
@@ -165,8 +165,8 @@ export async function classifyRoute(input: RouteInput): Promise<RouteClassificat
   }
 
   // ── Fast path 4: Admin intent keywords ──
-  // Nếu user là ADMIN/SUBADMIN và message chứa từ khóa quản trị → admin_query ngay
-  if (userRole === 'ADMIN' || userRole === 'SUBADMIN') {
+  // Nếu user là ADMIN và message chứa từ khóa quản trị → admin_query ngay
+  if (userRole === 'ADMIN') {
     const adminKeywords = /tạo|thêm|xóa|sửa|cập nhật|đổi|thống kê|báo cáo|doanh thu|đơn hàng|brand|hãng\s+\w+|sản phẩm\s+mới|quản lý|sản phẩm|product|danh mục|category|tag|người dùng|user|voucher|mã giảm giá|bao nhiêu|mấy|có mấy|liệt kê|danh sách|kể tên|đếm|tổng|thương hiệu|brand/i;
     if (adminKeywords.test(cleanText)) {
       console.log(`🔀 [QueryRouter] Admin keyword detected → admin_query (rule-based)`);

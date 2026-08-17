@@ -6,7 +6,10 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 import { renderEjs, getCommonData, renderAdminPage } from '../../utils/viewHelpers.ts';
 import { VoucherService } from '../../services/VoucherService.ts';
 
-async function ud(req:FastifyRequest){return UserRepository.findById((req as any).user?.userId)}
+function ud(req:FastifyRequest){
+  const u = (req as any).user;
+  return u ? { _id: u.userId, fullName: u.name || 'Admin', email: u.email || '', role: u.role } : null;
+}
 
 export class AdminCRUDControllerPart2 {
   static async orderList(req:FastifyRequest,reply:FastifyReply){
@@ -18,7 +21,7 @@ export class AdminCRUDControllerPart2 {
         {key:'shippingInfo.customerName',label:'Khách hàng'},
         {key:'totalAmount',label:'Tổng tiền',format:'currency'},
         {key:'status',label:'Trạng thái',render:'editableStatus',statusApiEndpoint:'/api/orders/admin/:id/status',statusOptions:[{v:'pending',l:'Chờ xác nhận'},{v:'processing',l:'Đang xử lý'},{v:'shipped',l:'Đang giao hàng'},{v:'delivered',l:'Hoàn thành'},{v:'cancelled',l:'Đã hủy'}]},
-        {key:'cancelReason',label:'Lý do hủy',render:'cancelReason'},
+        {key:'cancelReason',label:'Trạng thái thanh toán',render:'cancelReason'},
         {key:'createdAt',label:'Ngày',format:'date'},
       ],
       detailEndpoint:'/admin/orders/:id',
@@ -39,19 +42,21 @@ export class AdminCRUDControllerPart2 {
     const config=JSON.stringify({
       entityName:'voucher',title:'Mã giảm giá',apiEndpoint:'/api/vouchers',itemsPath:'',
       columns:[
-        {key:'index',label:'STT',render:'rowIndex'},
+        {key:'index',label:'STT',render:'rowIndex',width:'60px'},
         {key:'code',label:'Mã'},
         {key:'value',label:'Giá trị',render:'voucherValue'},
         {key:'applicableTo',label:'Phân loại',render:'voucherApplicableTo'},
         {key:'status',label:'Trạng thái',render:'editableStatus',statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}],statusApiEndpoint:'/api/vouchers/:id'},
         {key:'remaining',label:'Lượt dùng'},
+        {key:'actions',label:'Thao tác',render:'voucherActions',width:'120px'},
       ],
       detailEndpoint:'/admin/vouchers/:id',
+      editEndpoint:'/admin/vouchers/:id/edit',
       deleteEndpoint:'/admin/vouchers/:id/delete',
       searchPlaceholder:'Tìm mã...',
     });
     const b=renderEjs('admin/crud/list.ejs',{apiToken,config});
-    return renderAdminPage(reply,u,'Mã giảm giá','vouchers',b,apiToken,'Quản lý Cửa hàng');
+    return renderAdminPage(reply,u,'Mã giảm giá','vouchers',b,apiToken,'Quản lý Cửa hàng',null);
   }
   static async voucherDetail(req:FastifyRequest,reply:FastifyReply){
     const u=await ud(req);const apiToken=(req as any).token||'';
@@ -73,7 +78,7 @@ export class AdminCRUDControllerPart2 {
   static async voucherDelete(req:FastifyRequest,reply:FastifyReply){
     try {
       await VoucherService.delete((req.params as any).id);
-      return reply.redirect('/admin/vouchers?toast=Đã+xóa+mã+giảm+giá&type=success');
+      return reply.redirect('/admin/vouchers?toast=' + encodeURIComponent('Đã xóa mã giảm giá') + '&type=success');
     } catch (err: any) {
       return reply.redirect('/admin/vouchers?toast=' + encodeURIComponent(err.message || 'Không thể xóa mã giảm giá') + '&type=error');
     }
@@ -112,10 +117,11 @@ export class AdminCRUDControllerPart2 {
       searchPlaceholder:'Tìm quản trị viên...',
     });
     const b=renderEjs('admin/crud/list.ejs',{apiToken,config});
-    return renderAdminPage(reply,u,'Quản lý quản trị viên','system-users',b,apiToken,'Hệ thống');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    return renderAdminPage(reply,u,'Quản lý quản trị viên','system-users',b,apiToken,'Hệ thống', { label: 'Tạo tài khoản', href: `${frontendUrl.replace(/\/+$/, '')}/auth/register` });
   }
 
-  static async userDelete(req:FastifyRequest,reply:FastifyReply){await UserRepository.delete((req.params as any).id);return reply.redirect('/admin/users?toast=Đã+xóa+người+dùng&type=success')}
+  static async userDelete(req:FastifyRequest,reply:FastifyReply){await UserRepository.delete((req.params as any).id);return reply.redirect('/admin/users?toast=' + encodeURIComponent('Đã xóa người dùng') + '&type=success')}
 
 
   static async reviewList(req:FastifyRequest,reply:FastifyReply){
@@ -164,6 +170,13 @@ export class AdminCRUDControllerPart2 {
     const u=await ud(req);const apiToken=(req as any).token||'';
     const b=renderEjs('admin/crud/flash-sale-edit.ejs',{apiToken,flashSaleId:'',IS_NEW:true});
     return renderAdminPage(reply,u,'Tạo đợt Flash Sale mới','flash-sales',b,apiToken,'Quản lý Cửa hàng',null);
+  }
+
+  static async flashSaleDetail(req:FastifyRequest,reply:FastifyReply){
+    const u=await ud(req);const apiToken=(req as any).token||'';
+    const flashSaleId=(req.params as any).id;
+    const b=renderEjs('admin/crud/entity-details/flash-sale-detail.ejs',{apiToken,flashSaleId});
+    return renderAdminPage(reply,u,'Chi tiết Flash Sale','flash-sales',b,apiToken,'Quản lý Cửa hàng',null);
   }
 
   static async flashSaleEdit(req:FastifyRequest,reply:FastifyReply){

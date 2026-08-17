@@ -31,14 +31,26 @@ async function runKeywordSearch(query: string, limit: number) {
     .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'text' as const })))
     .catch(() => []);
 
-  // ── 2. Text search trên Brand (inverted index) ──
-  const brandTextSearch = Brand.find(
-    { $text: { $search: cleanQuery } },
-    { textScore: { $meta: 'textScore' } }
-  )
-    .sort({ textScore: { $meta: 'textScore' } })
-    .select('_id name')
-    .limit(3)
+  // ── 2. Search trên Brand (Tên hoặc Xuất xứ quốc gia) ──
+  const originKeywords = ['việt nam', 'viet nam', 'vietnam', 'pháp', 'france', 'ý', 'italy', 'italia', 'mỹ', 'usa', 'anh', 'england', 'uk', 'đức', 'germany', 'nhật', 'japan', 'hàn', 'korea', 'oman'];
+  const matchedOrigins = originKeywords.filter(k => cleanQuery.includes(k));
+  const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
+
+  const originFilter: any[] = [];
+  if (matchedOrigins.length > 0) {
+    originFilter.push({ origin: { $regex: matchedOrigins.join('|'), $options: 'i' } });
+  }
+
+  const brandSearch = Brand.find({
+    $or: [
+      { name: { $regex: brandPattern, $options: 'i' } },
+      ...originFilter,
+      { $text: { $search: cleanQuery } },
+    ],
+    status: 'active',
+  })
+    .select('_id name origin')
+    .limit(5)
     .lean()
     .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'brand' as const })))
     .catch(() => []);
@@ -47,7 +59,6 @@ async function runKeywordSearch(query: string, limit: number) {
   const nameConditions = queryWords.map(word => ({
     name: { $regex: '^' + escapeRegex(word), $options: 'i' },
   }));
-  const brandPattern = queryWords.map(w => '^' + escapeRegex(w)).join('|');
 
   const regexSearch = mongoose.connection.db!.collection('products').aggregate([
     { $match: { $or: nameConditions, status: 'active' } },
@@ -63,7 +74,7 @@ async function runKeywordSearch(query: string, limit: number) {
   // ── Chạy song song ──
   const [textResults, brandResults, regexResults] = await Promise.all([
     textSearchProducts,
-    brandTextSearch,
+    brandSearch,
     regexSearch,
   ]);
 
@@ -107,14 +118,17 @@ async function runKeywordSearch(query: string, limit: number) {
     if (!seen.has(id)) seen.set(id, item);
   }
 
-  return Array.from(seen.values()).slice(0, limit);
+  return {
+    products: Array.from(seen.values()).slice(0, limit),
+    brands: brandResults.map((b: any) => ({ _id: b._id, name: b.name, origin: b.origin })),
+  };
 }
 
 export class SearchService {
   static async hybridSearch(query: string, limit: number = 4) {
     try {
       const cleanQuery = query.toLowerCase().trim();
-      if (!cleanQuery) return { products: [], mode: 'general' };
+      if (!cleanQuery) return { products: [], brands: [], mode: 'general' };
 
       const confusionPatterns = [
         /^ủa+$/i, /^hả+$/i, /^gì(\s+vậy)?$/i,
@@ -156,19 +170,34 @@ export class SearchService {
         runKeywordSearch(cleanQuery, limit * 2),
       ]);
 
-      if (vectorResults.length === 0 && keywordResults.length === 0) {
-        return { products: [], mode: 'general' };
-      }
+      const kwProducts = (keywordResults as any).products || [];
+      const kwBrands = (keywordResults as any).brands || [];
 
+      let candidates: any[] = [];
       if (vectorResults.length === 0) {
-        return { products: keywordResults, mode: 'specific' };
+        candidates = kwProducts;
+      } else {
+        candidates = VectorSearchService.rrfMerge(vectorResults, kwProducts, 60, Math.max(limit * 3, 12));
       }
 
-      const merged = VectorSearchService.rrfMerge(vectorResults, keywordResults, 60, limit);
-      return { products: merged, mode: 'specific' };
+      // Đa dạng hóa kết quả: Nếu có nhiều sản phẩm phù hợp, chọn ngẫu nhiên trong nhóm top candidates
+      // để người dùng mỗi lần hỏi/gợi ý đều khám phá được nhiều mùi hương khác nhau
+      let finalProducts = candidates;
+      if (candidates.length > limit) {
+        const topPool = candidates.slice(0, Math.min(candidates.length, limit + 6));
+        for (let i = topPool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [topPool[i], topPool[j]] = [topPool[j], topPool[i]];
+        }
+        finalProducts = topPool.slice(0, limit);
+      } else {
+        finalProducts = candidates.slice(0, limit);
+      }
+
+      return { products: finalProducts, brands: kwBrands, mode: 'specific' };
     } catch (error: any) {
       console.error('❌ [SearchService Error]:', error.message);
-      return { products: [], mode: 'general' };
+      return { products: [], brands: [], mode: 'general' };
     }
   }
 }

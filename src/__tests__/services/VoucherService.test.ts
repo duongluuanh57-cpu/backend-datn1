@@ -6,6 +6,8 @@ vi.mock('../../models/Voucher.ts', () => {
     _store: store,
     find: vi.fn().mockReturnThis(),
     findOne: vi.fn().mockReturnThis(),
+    findById: vi.fn().mockResolvedValue(null),
+    countDocuments: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
     deleteOne: vi.fn(),
     sort: vi.fn().mockReturnThis(),

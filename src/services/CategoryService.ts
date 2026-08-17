@@ -21,25 +21,47 @@ export class CategoryService {
       query.status = status;
     }
 
-    const total = await Category.countDocuments(query);
-    const items = await Category.find(query)
-      .sort({ name: 1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
+    const [items, total] = await Promise.all([
+      Category.find(query)
+        .sort({ name: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      Category.countDocuments(query),
+    ]);
 
-    const itemsWithCounts = await Promise.all(
-      items.map(async (cat: any) => {
-        const productCount = await Product.countDocuments({ categoryId: cat._id });
-        return { ...cat, productCount };
-      })
-    );
+    const catIds = items.map((c: any) => c._id);
+    let countMap: Record<string, number> = {};
+    if (catIds.length > 0) {
+      try {
+        const counts = await Product.aggregate([
+          { $match: { categories: { $in: catIds } } },
+          { $unwind: '$categories' },
+          { $match: { categories: { $in: catIds } } },
+          { $group: { _id: '$categories', count: { $sum: 1 } } },
+        ]);
+        counts.forEach((c: any) => { countMap[String(c._id)] = c.count; });
+      } catch (_) {}
+    }
+
+    const itemsWithCounts = items.map((cat: any) => ({
+      ...cat,
+      productCount: countMap[String(cat._id)] || 0,
+    }));
 
     return { items: itemsWithCounts, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   static async getById(id: string): Promise<any | null> {
-    return Category.findOne({ _id: id }).lean();
+    const category = await Category.findOne({ _id: id }).lean();
+    if (!category) return null;
+    let productCount = 0;
+    try {
+      productCount = await Product.countDocuments({
+        $or: [{ categories: id }, { categoryId: id }],
+      });
+    } catch (_) {}
+    return { ...category, productCount };
   }
 
   static async create(data: { name: string; status?: string }): Promise<any> {
@@ -63,7 +85,7 @@ export class CategoryService {
   }
 
   static async delete(id: string): Promise<boolean> {
-    const productCount = await Product.countDocuments({ categoryId: id });
+    const productCount = await Product.countDocuments({ categories: id });
     if (productCount > 0) {
       throw new Error(`Không thể xoá category vì có ${productCount} sản phẩm đang sử dụng.`);
     }
@@ -74,7 +96,7 @@ export class CategoryService {
   static async bulkDelete(ids: string[]): Promise<boolean> {
     if (!ids || ids.length === 0) return false;
 
-    const productUsing = await Product.countDocuments({ categoryId: { $in: ids } });
+    const productUsing = await Product.countDocuments({ categories: { $in: ids } });
     if (productUsing > 0) {
       throw new Error(`Không thể xoá ${productUsing} danh mục vì có sản phẩm đang sử dụng.`);
     }

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { CartController } from '../controllers/CartController.ts';
+import { CheckoutController } from '../controllers/CheckoutController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 
 export async function cartRoutes(app: FastifyInstance) {
@@ -33,5 +34,5 @@ export async function cartRoutes(app: FastifyInstance) {
   app.post('/remove-voucher', CartController.removeVoucher);
 
   // POST /api/cart/checkout — Tạo đơn hàng từ giỏ hàng
-  app.post('/checkout', CartController.checkout);
+  app.post('/checkout', CheckoutController.checkout);
 }

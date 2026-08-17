@@ -1,0 +1,78 @@
+<style>#aiChatToggle, #aiChatPanel { display: none !important; }</style>
+<script>window.__API_TOKEN__='<%= typeof apiToken !== "undefined" ? apiToken : "" %>';window.__API_ENDPOINT__='<%= typeof apiEndpoint !== "undefined" ? apiEndpoint : "" %>';</script>
+
+<div id="order-detail-app">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+    <a href="/admin/orders" onclick="if(window.history.length>1){window.history.back();return false;}" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);text-decoration:none;font-size:13px;font-weight:500;padding:6px 12px;border-radius:8px;border:1px solid var(--border);" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-muted)';this.style.borderColor='var(--border)'">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Quay lại danh sách
+    </a>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+      <button type="button" id="od-btn-cancel" onclick="cancelOrder()" style="display:none;align-items:center;gap:6px;padding:6px 14px;border:1px solid var(--danger);border-radius:8px;background:transparent;color:var(--danger);cursor:pointer;font-size:13px;font-weight:600;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.background='rgba(239,68,68,0.08)'" onmouseout="this.style.background='transparent'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        Hủy đơn hàng
+      </button>
+    </div>
+  </div>
+
+  <div id="od-cancel-request"></div>
+
+  <!-- ── Timeline ── -->
+  <div id="od-timeline" style="display:none;margin-bottom:20px;padding:20px;background:var(--color-background-surface);border:1px solid var(--border);border-radius:14px;"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch;">
+    <div class="stat-card" style="flex-direction:column;align-items:stretch;padding:20px 24px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <h4 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;">Thông tin khách hàng</h4>
+        <span id="od-status-badge" style="padding:4px 12px;border-radius:12px;font-size:13px;color:#fff;"></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+        <p id="od-customerName"><b>—</b></p>
+        <p id="od-customerPhone" style="display:flex;align-items:center;gap:6px;white-space:nowrap;"></p>
+        <p id="od-customerEmail" style="display:flex;align-items:center;gap:6px;white-space:nowrap;"></p>
+        <p id="od-customerGender" style="display:none;"></p>
+        <p id="od-customerAddress" style="display:flex;align-items:flex-start;gap:6px;"></p>
+        <p id="od-customerFullAddress" style="display:none;"></p>
+        <p id="od-note" style="display:none;"></p>
+        <div id="od-map-container" style="margin-top:8px;border:1px solid var(--border);border-radius:8px;overflow:hidden;display:none;">
+          <iframe id="od-map-iframe" width="100%" height="160" frameborder="0" style="border:0;" allowfullscreen></iframe>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <p id="od-createdAt" style="color:var(--text-muted);font-size:12px;">Ngày tạo: —</p>
+        <p id="od-updatedAt" style="color:var(--text-muted);font-size:12px;margin-top:4px;">Cập nhật: —</p>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px;height:100%;">
+      <div class="stat-card" style="flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:20px 24px;">
+        <h4 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;margin-bottom:10px;">Thanh toán & Vận chuyển</h4>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+          <p id="od-totalAmount" style="display:flex;align-items:center;gap:6px;">Tạm tính: <b style="color:#22c55e;">—</b></p>
+          <p id="od-shippingFee" style="display:none;"></p>
+          <p id="od-paymentMethod" style="display:flex;align-items:center;gap:6px;">Phương thức: —</p>
+          <p id="od-shippingMethod" style="display:flex;align-items:center;gap:6px;">Vận chuyển: —</p>
+          <p id="od-paymentStatus" style="display:flex;align-items:center;gap:6px;">Trạng thái TT: —</p>
+          <p id="od-paymentInfo" style="display:none;"></p>
+        </div>
+      </div>
+
+      <!-- ── Sản phẩm trong đơn ── -->
+      <div class="stat-card" style="flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:20px 24px;">
+        <div>
+          <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            Sản phẩm đã đặt (<span id="od-items-count">0</span>)
+          </h3>
+          <div id="od-items-container" style="width:100%;overflow:hidden;">
+            <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:13px;">Đang tải...</div>
+          </div>
+          <p id="od-voucherInfo" style="display:none;align-items:center;justify-content:flex-end;gap:6px;font-size:12.5px;margin-top:8px;"></p>
+        </div>
+        <div id="od-order-total" style="display:none;margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<%- include('./detail-order-script') %>

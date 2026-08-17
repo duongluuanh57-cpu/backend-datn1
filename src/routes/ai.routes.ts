@@ -57,25 +57,25 @@ export async function aiRoutes(app: FastifyInstance) {
 
   // POST /api/ai/create-user - Tạo user từ dữ liệu AI
   server.post('/create-user', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: createUserFromAI,
   });
 
   // POST /api/ai/create-category - Tạo category từ dữ liệu AI
   server.post('/create-category', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: createCategoryFromAI,
   });
 
   // POST /api/ai/create-tag - Tạo tag từ dữ liệu AI
   server.post('/create-tag', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: createTagFromAI,
   });
 
   // POST /api/ai/create-voucher - Tạo voucher từ dữ liệu AI
   server.post('/create-voucher', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: createVoucherFromAI,
   });
 
@@ -84,9 +84,9 @@ export async function aiRoutes(app: FastifyInstance) {
     handler: chatStream,
   });
 
-  // POST /api/ai/admin/chat - Admin chat (yêu cầu auth + role ADMIN/SUBADMIN)
+  // POST /api/ai/admin/chat - Admin chat (yêu cầu auth + role ADMIN)
   server.post('/admin/chat', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: adminChat,
   });
 
@@ -112,18 +112,18 @@ export async function aiRoutes(app: FastifyInstance) {
   // ── Product Interview (Multi-step product creation) ──
   const { handleProductInterview, checkProductCreationIntent } = await import('../controllers/aiChat/productInterviewController.ts');
   server.post('/admin/product-interview', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: handleProductInterview,
   });
   server.get('/admin/product-interview/check', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: checkProductCreationIntent,
   });
 
   // GET /api/ai/admin/random-brands — 5 brand random không trùng cho admin chọn khi tạo sp
   const { Brand } = await import('../models/Brand.ts');
   server.get('/admin/random-brands', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: async (_req, reply) => {
       const brands = await (Brand as any).aggregate([{ $sample: { size: 5 } }, { $project: { _id: 1, name: 1, origin: 1 } }]);
       return reply.send({ success: true, data: brands });
@@ -132,13 +132,13 @@ export async function aiRoutes(app: FastifyInstance) {
 
   // POST /api/ai/admin/product-fill-missing — AI điền thông tin bị thiếu cho sản phẩm
   server.post('/admin/product-fill-missing', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: productFillMissing,
   });
 
   // POST /api/ai/generate-product — Tạo thông tin sản phẩm từ tên (dùng cho auto-fill)
   server.post('/generate-product', {
-    preHandler: [authMiddleware, requireRole('ADMIN', 'SUBADMIN')],
+    preHandler: [authMiddleware, requireRole('ADMIN')],
     handler: generateProduct,
   });
 }

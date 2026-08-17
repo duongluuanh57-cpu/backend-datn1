@@ -1,0 +1,36 @@
+<!-- ── Filter Bar Component ── -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <select id="al-filter-action" class="admin-input" style="width:160px;padding:8px 12px;font-size:13px;" onchange="alFilterChange()">
+      <option value="">Tất cả hành động</option>
+      <option value="LOGIN">Đăng nhập</option>
+      <option value="LOGOUT">Đăng xuất</option>
+      <option value="REGISTER">Đăng ký</option>
+      <option value="PASSWORD_CHANGE">Đổi mật khẩu</option>
+      <option value="DELETE_USER">Xoá người dùng</option>
+      <option value="UPDATE_USER">Cập nhật người dùng</option>
+      <option value="CREATE">Tạo mới</option>
+      <option value="UPDATE">Cập nhật</option>
+      <option value="DELETE">Xoá</option>
+    </select>
+    <select id="al-filter-resource" class="admin-input" style="width:160px;padding:8px 12px;font-size:13px;" onchange="alFilterChange()">
+      <option value="">Tất cả đối tượng</option>
+      <option value="User">Người dùng</option>
+      <option value="Product">Sản phẩm</option>
+      <option value="Order">Đơn hàng</option>
+      <option value="Brand">Thương hiệu</option>
+      <option value="Category">Danh mục</option>
+      <option value="Tag">Tag</option>
+      <option value="Voucher">Mã giảm giá</option>
+      <option value="Review">Đánh giá</option>
+    </select>
+    <button onclick="alReset()" style="padding:8px 16px;font-size:13px;border-radius:8px;border:1px solid var(--color-border);background:transparent;color:var(--color-text-secondary);cursor:pointer;font-family:inherit;">Đặt lại</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span style="color:var(--text-muted);font-size:13px;">Tổng: <b id="al-total" style="color:var(--text-primary);">0</b></span>
+    <button onclick="alRefresh()" class="admin-btn admin-btn-ghost" style="padding:8px 12px;font-size:13px;display:inline-flex;align-items:center;gap:6px;" title="Làm mới">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      <span>Làm mới</span>
+    </button>
+  </div>
+</div>

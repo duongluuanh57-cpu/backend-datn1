@@ -6,6 +6,7 @@
 import { AIService } from '../AIService.ts';
 import { SearchService } from '../SearchService.ts';
 import { ContentSearchService } from '../ContentSearchService.ts';
+import { formatMultipleProducts } from '../product/productFormatterService.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Tag } from '../../models/Tag.ts';
 import { Product } from '../../models/Product.ts';
@@ -27,7 +28,12 @@ async function buildContext(
       SearchService.hybridSearch(message, 4),
       ContentSearchService.search(message, 3).catch(() => []),
     ]);
-    products = searchResult.products;
+    const rawProducts = searchResult.products || [];
+    if (rawProducts.length > 0) {
+      products = await formatMultipleProducts(rawProducts);
+    } else {
+      products = [];
+    }
     mode = searchResult.mode;
     documents = contentResult;
   } catch (err) {
@@ -37,12 +43,13 @@ async function buildContext(
   let storeOverview = '';
   try {
     const [allBrands, allTags, productCount] = await Promise.all([
-      Brand.find({ status: 'active' }).select('name').lean(),
+      Brand.find({ status: 'active' }).select('name origin').lean(),
       Tag.find({ status: 'active' }).select('name').lean(),
-      Product.countDocuments({}),
+      Product.countDocuments({ status: 'active' }),
     ]);
     storeOverview = `TỔNG QUAN CỬA HÀNG:
-- Thương hiệu: ${allBrands.map((b: any) => b.name).join(', ')}
+- Danh sách thương hiệu và xuất xứ hiện có trong shop:
+${allBrands.map((b: any) => `  + ${b.name}${b.origin ? ` (Xuất xứ: ${b.origin})` : ''}`).join('\n')}
 - Tags: ${allTags.map((t: any) => t.name).join(', ')}
 - Tổng số sản phẩm: ${productCount}`;
   } catch (dbErr) {
@@ -64,13 +71,19 @@ function buildSystemPrompt(
   ctx: RouteContext,
   userRole?: string
 ): string {
-  const basePrompt = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp.
+  const basePrompt = `Bạn là Tinco - Trợ lý AI bán nước hoa cao cấp của cửa hàng L'essence.
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
-KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống"
+KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống".
 
-QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.`;
+QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.
 
-  const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+QUY TẮC ĐỊNH DẠNG TIN NHẮN:
+- Khi nhắc đến hoặc giới thiệu sản phẩm/thương hiệu, hãy in đậm tên bằng cú pháp **Tên Sản Phẩm** (ví dụ: **YSL MYSLF**, **Chanel Bleu**).
+- Trình bày dạng danh sách gạch đầu dòng gọn gàng (ví dụ: - **Tên sản phẩm**: Mô tả ngắn...). Tuyệt đối KHÔNG viết dấu hoa thị dính chùm như *** hay * **.
+
+QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về thương hiệu hoặc các hãng theo xuất xứ quốc gia (như "hãng nước hoa Việt Nam", "nước hoa Pháp", "hãng của Ý", "hãng Mỹ", "hãng Anh", v.v.), bạn BẮT BUỘC phải tra cứu phần "TỔNG QUAN CỬA HÀNG" bên dưới. Nếu cửa hàng có thương hiệu thuộc quốc gia đó (ví dụ: Verites có xuất xứ Việt Nam), bạn PHẢI giới thiệu ngay cho khách hàng. KHÔNG ĐƯỢC trả lời là shop chỉ có hãng quốc tế khi cửa hàng có thương hiệu đó!`;
+
+  const isAdmin = userRole === 'ADMIN';
 
   // Build context string
   let contextStr = '';
@@ -82,7 +95,7 @@ QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặ
     contextStr = `TRẠNG THÁI: Người dùng nhập nội dung không rõ ràng. Hãy lịch sự hỏi lại họ cần tìm gì, KHÔNG đề xuất sản phẩm cụ thể.`;
   } else if (ctx.products.length === 0) {
     if (ctx.storeOverview) {
-      contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm cụ thể. Nhưng bạn CÓ thông tin tổng quan về cửa hàng. Dùng storeOverview để trả lời các câu hỏi chung (số lượng hãng, danh sách hãng...). Với câu hỏi về sản phẩm cụ thể thì xin lỗi lịch sự.`;
+      contextStr = `TRẠNG THÁI: Chưa tìm thấy sản phẩm cụ thể đang mở bán. Nhưng bạn CÓ danh sách thương hiệu và xuất xứ trong storeOverview. Dùng storeOverview để trả lời các câu hỏi về hãng, xuất xứ (ví dụ hãng Việt Nam, Pháp, Ý...). Nếu khách hỏi sản phẩm cụ thể mà chưa có thì báo là hiện tại chưa có sản phẩm cụ thể của hãng đó lên kệ.`;
     } else {
       contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự. KHÔNG đề xuất sản phẩm.`;
     }
@@ -279,7 +292,7 @@ export async function executeAdminQuery(
   userRole?: string
 ): Promise<{ text?: string; stream?: Response }> {
   // Check role
-  if (userRole !== 'ADMIN' && userRole !== 'SUBADMIN') {
+  if (userRole !== 'ADMIN') {
     return { text: roleDeniedResponse() };
   }
 

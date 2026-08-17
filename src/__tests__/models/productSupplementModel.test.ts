@@ -39,7 +39,7 @@ describe("Product Model — Supplement fields", () => {
       brandId: "brand123",
       image: "https://example.com/img.jpg",
       variants: ["var1", "var2"],
-      categories: ["cat1", "cat2"],
+      categories: ["cat1"],
       isSupplemented: false,
       status: "draft",
     };
@@ -53,7 +53,7 @@ describe("Product Model — Supplement fields", () => {
       product.variants &&
       product.variants.length > 0 &&
       product.categories &&
-      product.categories.length >= 2
+      product.categories.length === 1
     );
 
     expect(isFull).toBe(true);
@@ -69,11 +69,12 @@ describe("Product Model — Supplement fields", () => {
 
   it("should NOT auto-switch when missing required fields", () => {
     const testCases = [
-      { name: "No desc", description: "", brandId: "b", image: "i", variants: ["v"], categories: ["c1", "c2"] },
-      { name: "Short desc", description: "Short", brandId: "b", image: "i", variants: ["v"], categories: ["c1", "c2"] },
-      { name: "No image", description: "A".repeat(60), brandId: "b", image: "", variants: ["v"], categories: ["c1", "c2"] },
-      { name: "No variants", description: "A".repeat(60), brandId: "b", image: "i", variants: [], categories: ["c1", "c2"] },
-      { name: "Single category", description: "A".repeat(60), brandId: "b", image: "i", variants: ["v"], categories: ["c1"] },
+      { name: "No desc", description: "", brandId: "b", image: "i", variants: ["v"], categories: ["c1"] },
+      { name: "Short desc", description: "Short", brandId: "b", image: "i", variants: ["v"], categories: ["c1"] },
+      { name: "No image", description: "A".repeat(60), brandId: "b", image: "", variants: ["v"], categories: ["c1"] },
+      { name: "No variants", description: "A".repeat(60), brandId: "b", image: "i", variants: [], categories: ["c1"] },
+      { name: "No categories", description: "A".repeat(60), brandId: "b", image: "i", variants: ["v"], categories: [] },
+      { name: "Multiple categories", description: "A".repeat(60), brandId: "b", image: "i", variants: ["v"], categories: ["c1", "c2"] },
     ];
 
     testCases.forEach((tc) => {
@@ -86,7 +87,7 @@ describe("Product Model — Supplement fields", () => {
         tc.variants &&
         tc.variants.length > 0 &&
         tc.categories &&
-        tc.categories.length >= 2
+        tc.categories.length === 1
       );
       expect(isFull).toBe(false);
     });

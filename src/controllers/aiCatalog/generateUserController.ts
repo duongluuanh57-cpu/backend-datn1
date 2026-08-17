@@ -31,7 +31,7 @@ JSON Schema:
   "username": "generated_username",
   "email": "generated_email@example.com",
   "password": "generated_password",
-  "role": "USER" | "ADMIN" | "SUBADMIN",
+  "role": "USER" | "ADMIN",
   "status": "active",
   "fullName": "Full Vietnamese Name",
   "phoneNumber": "0123456789"

@@ -1,0 +1,130 @@
+<script>
+var TAG_ID = '<%= tagId %>';
+var TOKEN = '<%= apiToken %>';
+var H = { 'Authorization': 'Bearer ' + TOKEN };
+
+<%- include('../../common/shared-js-utils') %>
+
+function productItemHtml(p) {
+  var imgHtml = p.image ? '<img src="' + escapeHtml(p.image) + '" alt="" onerror="this.style.display=\'none\'" />' : '<div style="width:40px;height:40px;border-radius:6px;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:10px;">SP</div>';
+  var statusColor = p.status === 'active' ? '#22c55e' : (p.status === 'draft' ? '#f59e0b' : '#ef4444');
+  var statusLabel = p.status === 'active' ? 'Đang bán' : (p.status === 'draft' ? 'Nháp' : 'Ẩn');
+  return '<div class="product-list-item">' +
+    '<a href="/admin/products/' + p._id + '" class="product-list-link">' +
+    imgHtml +
+    '<div class="product-list-info">' +
+    '<div class="name">' + escapeHtml(p.name) + '</div>' +
+    '<div class="price">' + fmtCurrency(p.price) + ' · <span style="color:' + statusColor + ';">' + statusLabel + '</span></div>' +
+    '</div>' +
+    '</a>' +
+    '</div>';
+}
+
+var TAG_PAGE = 1;
+var TAG_PAGE_SIZE = 20;
+var TAG_LOADING = false;
+function tagMore() {
+  if (TAG_LOADING) return;
+  TAG_LOADING = true;
+  var btn = document.getElementById('tag-load-more');
+  if (btn) btn.textContent = '...';
+  fetch('/api/tags/' + TAG_ID + '/products?page=' + (TAG_PAGE + 1) + '&limit=' + TAG_PAGE_SIZE, { headers: H })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.success && res.data) {
+        TAG_PAGE = res.data.page;
+        var grid = document.getElementById('tag-products-grid');
+        if (grid) { (res.data.items || []).forEach(function(p) { grid.insertAdjacentHTML('beforeend', productItemHtml(p)); }); }
+        var b = document.getElementById('tag-load-more');
+        if (b) b.style.display = res.data.hasMore ? 'inline-flex' : 'none';
+      }
+    })
+    .catch(function() {})
+    .finally(function() { TAG_LOADING = false; });
+}
+
+fetch('/api/tags/' + TAG_ID + '/detail', { headers: H })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (!res.success || !res.data) {
+      $('detail-loading').style.display = 'none';
+      $('detail-error').style.display = 'block';
+      $('detail-error').innerHTML = '<p style="font-size:16px;font-weight:600;">Không tìm thấy tag</p><p style="margin-top:8px;font-size:13px;">Tag có thể đã bị xóa hoặc không tồn tại.</p>';
+      return;
+    }
+    var t = res.data;
+    $('detail-breadcrumb').textContent = t.name || '';
+    document.title = (t.name || 'Tag') + ' — Admin';
+
+    var editBtn = document.getElementById('edit-tag-btn');
+    if (editBtn) { editBtn.style.display = 'inline-flex'; editBtn.href = '/admin/tags/' + t._id + '/edit'; }
+
+    var statusBadge = t.status === 'active'
+      ? '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(34,197,94,0.12);color:#22c55e;"><span style="width:6px;height:6px;border-radius:50%;background:#22c55e;"></span>Hoạt động</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;"></span>Ẩn</span>';
+
+    var productCount = t.productCount || 0;
+    var productBadge = productCount > 0
+      ? '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(59,130,246,0.12);color:#3b82f6;">' + productCount + ' sản phẩm</span>'
+      : '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;background:rgba(148,163,184,0.12);color:#94a3b8;">Chưa có sản phẩm</span>';
+
+    var slugHtml = '<span style="font-family:monospace;background:var(--surface);padding:2px 8px;border-radius:4px;border:1px solid var(--border);">' + escapeHtml(t.slug || '—') + '</span>'
+      + ' <button onclick="copySlug()" style="background:none;border:1px solid var(--border);border-radius:4px;padding:3px 7px;cursor:pointer;font-size:11px;color:var(--text-muted);vertical-align:middle;" title="Sao chép slug"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>';
+
+    var productListHtml = '';
+    if (t.products && t.products.length > 0) {
+      productListHtml = '<h3 style="font-size:14px;font-weight:600;margin:0 0 12px;color:var(--text-primary);">Sản phẩm sử dụng tag này</h3>' +
+        '<div id="tag-products-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;">';
+      t.products.forEach(function(p) { productListHtml += productItemHtml(p); });
+      productListHtml += '</div>';
+      if (productCount > t.products.length) {
+        productListHtml += '<div style="display:flex;justify-content:center;margin-top:14px;"><button type="button" id="tag-load-more" onclick="tagMore()" style="display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:44px;height:36px;padding:0 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.borderColor=\'var(--accent)\';this.style.color=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-muted)\'" title="Hiển thị thêm 20 sản phẩm">...</button></div>';
+      }
+    }
+
+    var infoHtml =
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">' +
+        '<h2 style="font-size:22px;font-weight:700;color:var(--text-primary);margin:0;line-height:1.3;">' + escapeHtml(t.name) + '</h2>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">' + statusBadge + ' ' + productBadge + '</div>' +
+      '<div class="dt-card" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;">' +
+        '<h3 style="font-size:14px;font-weight:600;margin:0 0 16px;color:var(--text-primary);">Thông tin tag</h3>' +
+        '<div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">' +
+          '<div style="display:flex;gap:12px;"><span style="color:var(--text-muted);min-width:110px;">Slug:</span> ' + slugHtml + '</div>' +
+          '<div style="display:flex;gap:12px;"><span style="color:var(--text-muted);min-width:110px;">ID:</span> <span style="font-family:monospace;font-size:12px;">' + t._id + '</span></div>' +
+          '<div style="display:flex;gap:12px;"><span style="color:var(--text-muted);min-width:110px;">Ngày tạo:</span> ' + fmtDate(t.createdAt) + '</div>' +
+          '<div style="display:flex;gap:12px;"><span style="color:var(--text-muted);min-width:110px;">Cập nhật:</span> ' + fmtDate(t.updatedAt) + '</div>' +
+        '</div>' +
+      '</div>';
+
+    var html = productListHtml
+      ? '<div style="max-width:700px;">' + infoHtml + '</div><div style="margin-top:20px;">' + productListHtml + '</div>'
+      : '<div style="max-width:700px;">' + infoHtml + '</div>';
+
+    $('detail-loading').style.display = 'none';
+    $('detail-content').style.display = 'block';
+    $('detail-content').innerHTML = html;
+  })
+  .catch(function() {
+    $('detail-loading').style.display = 'none';
+    $('detail-error').style.display = 'block';
+    $('detail-error').innerHTML = '<p style="font-size:16px;font-weight:600;">Lỗi kết nối</p><p style="margin-top:8px;font-size:13px;">Không thể tải thông tin tag. Vui lòng thử lại.</p>';
+  });
+
+function copySlug() {
+  var slugEl = document.querySelector('#detail-content span[style*="monospace"]');
+  if (slugEl) {
+    var slug = slugEl.textContent || '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(slug).then(function() { showToast('Đã sao chép slug: ' + slug, 'success'); }).catch(function() { fallbackCopy(slug); });
+    } else { fallbackCopy(slug); }
+  }
+}
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showToast('Đã sao chép slug: ' + text, 'success'); } catch(e) { showToast('Không thể sao chép', 'error'); }
+  document.body.removeChild(ta);
+}
+</script>

@@ -23,9 +23,52 @@ function resolveViewsDir(): string {
 
 const viewsDir = resolveViewsDir();
 
-export function renderEjs(templatePath: string, data: Record<string, any> = {}): string {
-  const tmpl = readFileSync(join(viewsDir, templatePath), 'utf-8');
-  return ejs.render(tmpl, data, { views: [viewsDir] });
+// ── Compiled EJS template cache (avoid readFileSync + compile on every request) ──
+const isProd = process.env.NODE_ENV === 'production';
+const compiledTemplateCache = new Map<string, ejs.TemplateFunction>();
+
+export function renderEjs(templateRelPath: string, data: any): string {
+  // Mapping fallback cho các template admin cũ đã được chuyển thư mục
+  let targetPath = templateRelPath;
+  const legacyMap: Record<string, string> = {
+    'admin/layout.ejs': 'admin/common/layout.ejs',
+    'admin/dashboard.ejs': 'admin/dashboard/dashboard.ejs',
+    'admin/crud/list.ejs': 'admin/crud/list.ejs',
+    'admin/supplement-detail.ejs': 'admin/products/supplement-detail.ejs',
+    'admin/supplement.ejs': 'admin/products/supplement.ejs',
+    'admin/activity-log.ejs': 'admin/activity-log/activity-log.ejs',
+    'admin/settings.ejs': 'admin/settings/settings.ejs',
+    'admin/architecture.ejs': 'admin/common/architecture.ejs',
+    'admin/crud/orders-detail.ejs': 'admin/crud/entity-details/orders-detail.ejs',
+    'admin/crud/brand-detail.ejs': 'admin/crud/entity-details/brand-detail.ejs',
+    'admin/crud/brand-edit.ejs': 'admin/crud/entity-details/brand-edit.ejs',
+    'admin/crud/category-detail.ejs': 'admin/crud/entity-details/category-detail.ejs',
+    'admin/crud/category-edit.ejs': 'admin/crud/entity-details/category-edit.ejs',
+    'admin/crud/tag-detail.ejs': 'admin/crud/entity-details/tag-detail.ejs',
+    'admin/crud/tag-edit.ejs': 'admin/crud/entity-details/tag-edit.ejs',
+    'admin/crud/voucher-detail.ejs': 'admin/crud/entity-details/voucher-detail.ejs',
+    'admin/crud/voucher-edit.ejs': 'admin/crud/entity-details/voucher-edit.ejs',
+    'admin/crud/flash-sale-edit.ejs': 'admin/crud/entity-details/flash-sale-edit.ejs',
+    'admin/crud/review-detail.ejs': 'admin/crud/entity-details/review-detail.ejs'
+  };
+
+  if (legacyMap[templateRelPath]) {
+    targetPath = legacyMap[templateRelPath];
+  }
+
+  const p = join(viewsDir, targetPath);
+
+  // Production: dùng compiled template từ cache, dev: luôn đọc lại file
+  if (isProd && compiledTemplateCache.has(p)) {
+    return compiledTemplateCache.get(p)!(data);
+  }
+
+  const src = readFileSync(p, 'utf-8');
+  const compiledFn = ejs.compile(src, { filename: p, views: [viewsDir], cache: isProd });
+  if (isProd) {
+    compiledTemplateCache.set(p, compiledFn);
+  }
+  return compiledFn(data);
 }
 
 export function getFrontendUrl(): string {
@@ -41,7 +84,7 @@ export function detectFrontendUrl(request: FastifyRequest): string {
   if (referer) {
     try {
       const refUrl = new URL(referer);
-      if ((refUrl.hostname === 'localhost' || refUrl.hostname === '127.0.0.1') && refUrl.origin !== backendOrigin) {
+      if (refUrl.origin !== backendOrigin) {
         return refUrl.origin;
       }
     } catch {}
@@ -51,7 +94,7 @@ export function detectFrontendUrl(request: FastifyRequest): string {
   if (origin) {
     try {
       const url = new URL(origin);
-      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      if (url.origin !== backendOrigin) {
         return url.origin;
       }
     } catch {}
@@ -83,11 +126,13 @@ export function getCommonData(userDoc: any, pageTitle: string, currentPage: stri
 
 export async function renderAdminPage(reply: FastifyReply, userDoc: any, pageTitle: string, currentPage: string, bodyHtml: string, apiToken?: string, breadcrumb?: string, headerAction?: { label: string; href: string; icon?: string } | null) {
   const frontendUrl = detectFrontendUrl(reply.request);
-  return reply.view('admin/layout.ejs', {
+  const data = {
     ...getCommonData(userDoc, pageTitle, currentPage, breadcrumb),
     frontendUrl,
     body: bodyHtml,
     apiToken: apiToken || '',
     headerAction: headerAction === null ? null : (headerAction || undefined),
-  });
+  };
+  const html = renderEjs('admin/layout.ejs', data);
+  return reply.type('text/html; charset=utf-8').send(html);
 }

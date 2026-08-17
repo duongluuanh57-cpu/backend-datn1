@@ -211,9 +211,28 @@ export class ProductQueryService {
   }
 
   static async getAllProducts(options: any = {}): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
-    const { page = 1, limit = 25, search, brand, stock, tag, category, sortBy, status, minPrice, maxPrice } = options;
+    const { page = 1, limit = 25, search, brand, tag, category, sortBy, status, minPrice, maxPrice } = options;
+    // Khi sortBy=outOfStock, treat as stock filter
+    const stock = sortBy === 'outOfStock' ? 'outOfStock' : options.stock;
     const query: any = {};
-    if (search) { query.$text = { $search: search }; }
+    if (search) {
+      const cleanSearch = search.trim();
+      const escapedSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matchingVariants = await ProductVariant.find({ sku: { $regex: escapedSearch, $options: 'i' } }).select('productId').lean();
+      const variantProductIds = matchingVariants.map((v: any) => v.productId).filter(Boolean);
+      const matchingBrands = await Brand.find({ name: { $regex: escapedSearch, $options: 'i' } }).select('_id').lean();
+      const brandIds = matchingBrands.map((b: any) => b._id);
+      const searchOr: any[] = [
+        { name: { $regex: escapedSearch, $options: 'i' } }
+      ];
+      if (variantProductIds.length > 0) {
+        searchOr.push({ _id: { $in: variantProductIds.map((id: any) => new mongoose.Types.ObjectId(id.toString())) } });
+      }
+      if (brandIds.length > 0) {
+        searchOr.push({ brandId: { $in: brandIds } });
+      }
+      query.$or = searchOr;
+    }
     if (status) { query.status = status; }
     if (brand) {
       const brandIds = brand.split(',').map((s: string) => s.trim()).filter(Boolean);
@@ -273,7 +292,14 @@ export class ProductQueryService {
         productIds = await FlashSaleService.getActiveFlashSaleProductIds();
       } else {
         const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const tagDoc = await Tag.findOne({ status: 'active', $or: [{ slug: { $regex: `^${escapedTag}$`, $options: 'i' } }, { name: { $regex: `^${escapedTag}$`, $options: 'i' } }] });
+        const orConditions: any[] = [
+          { slug: { $regex: `^${escapedTag}$`, $options: 'i' } },
+          { name: { $regex: `^${escapedTag}$`, $options: 'i' } }
+        ];
+        if (mongoose.Types.ObjectId.isValid(tag)) {
+          orConditions.push({ _id: new mongoose.Types.ObjectId(tag) });
+        }
+        const tagDoc = await Tag.findOne({ status: 'active', $or: orConditions });
         if (tagDoc) {
           const productLinks = await ProductTag.find({ tagId: tagDoc._id }).lean();
           productIds = productLinks.map(l => l.productId);
@@ -329,16 +355,19 @@ export class ProductQueryService {
       case 'stockDesc': stockSortNeeded = true; stockSortAsc = false; break;
       case 'rating': sort = { rating: -1, reviewsCount: -1 }; break;
       case 'newest': sort = { createdAt: -1 }; break;
+      case 'oldest': sort = { createdAt: 1 }; break;
       case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break;
+      case 'nameAsc': sort = { name: 1 }; break;
+      case 'nameDesc': sort = { name: -1 }; break;
     }
     let total: number;
     let products: any[];
     let items: any[];
 
     if (minPrice || maxPrice) {
-      // Price filter: get ALL matches, filter in-memory, then paginate
+      // Price filter: fetch matching documents, format once, filter by price and slice page items
       const all = await Product.find(query)
-        .select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status')
+        .select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status')
         .populate('brandId')
         .populate('categories')
         .sort(sort)
@@ -351,24 +380,11 @@ export class ProductQueryService {
         return price >= min && price <= max;
       });
       total = matched.length;
-      const pageIds = matched.slice((page - 1) * limit, page * limit).map((p: any) => String(p._id));
-      if (pageIds.length) {
-        const prods = await Product.find({ _id: { $in: pageIds } })
-          .select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status')
-          .populate('brandId')
-          .populate('categories')
-          .lean();
-        const map = new Map(prods.map(p => [String(p._id), p]));
-        products = pageIds.map(id => map.get(id)).filter(Boolean);
-        items = await formatMultipleProducts(products);
-      } else {
-        products = [];
-        items = [];
-      }
+      items = matched.slice((page - 1) * limit, page * limit);
     } else {
       try {
         total = await Product.countDocuments(query);
-        products = await Product.find(query).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean();
+        products = await Product.find(query).select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean();
       } catch (err) {
         console.error('Product query error:', err, 'query:', JSON.stringify(query));
         throw new Error('Lỗi truy vấn sản phẩm: ' + (err as any).message);
@@ -405,7 +421,11 @@ export class ProductQueryService {
     if (!ids.length) return [];
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).slice(0, 20).map(id => new mongoose.Types.ObjectId(id));
     if (!validIds.length) return [];
-    const productsRaw = await Product.find({ _id: { $in: validIds }, status: 'active' }).select('name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status').populate('brandId').populate('categories').lean()
+    const productsRaw = await Product.find({ _id: { $in: validIds }, status: 'active' })
+      .select('name slug brandId image images thumbnail variants categories price originalPrice original_price discountPercentage discountStartDate discountEndDate soldCount createdAt status')
+      .populate('brandId')
+      .populate('categories')
+      .lean();
     return formatMultipleProducts(productsRaw);
   }
 
@@ -461,21 +481,35 @@ export class ProductQueryService {
     const product = await Product.findOne({ _id: id, status: 'active' }).populate('brandId').populate('categories').lean();
     if (!product) return null;
 
-    const images = await ProductImage.find({ productId: id }).lean();
     const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
-    const variants = variantIds.length > 0 ? await ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean() : [];
+    const oldCatId = !(product.categories as any[])?.length ? (product as any).categoryId : null;
 
-    const tagLinks = await ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug status' }).lean();
+    // Chạy song song 6 truy vấn độc lập
+    const [images, variants, tagLinks, catDoc, activeFS, reviewStats] = await Promise.all([
+      ProductImage.find({ productId: id }).lean(),
+      variantIds.length > 0
+        ? ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean()
+        : Promise.resolve([]),
+      ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug status' }).lean(),
+      oldCatId ? Category.findById(oldCatId).lean().catch(() => null) : Promise.resolve(null),
+      FlashSale.findOne({
+        status: { $in: ['active', 'scheduled'] },
+        'items.productId': new mongoose.Types.ObjectId(id),
+      }).lean(),
+      Review.aggregate([
+        { $match: { productId: new mongoose.Types.ObjectId(id), status: 'visible' } },
+        { $group: { _id: null, count: { $sum: 1 }, avg: { $avg: '$rating' } } },
+      ]),
+    ]);
+
     const tagSlugs = tagLinks
       .filter(l => (l.tagId as any)?.status === 'active')
       .map(l => (l.tagId as any)?.slug)
       .filter(Boolean);
 
-    let oldCatName = '';
-    if (!(product.categories as any[])?.length) {
-      const oldCatId = (product as any).categoryId;
-      if (oldCatId) { try { const catDoc = await Category.findById(oldCatId).lean(); if (catDoc) oldCatName = catDoc.name; } catch (_) {} }
-    }
+    const oldCatName = catDoc ? catDoc.name : '';
+    const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
+    const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
 
     const variant50mlInStock = variants.find((v: any) => v.size === '50ml' && (v.quantityInStock === undefined || v.quantityInStock > 0));
     const defaultVariant = variant50mlInStock
@@ -489,11 +523,6 @@ export class ProductQueryService {
     let fsStockLimit = 0;
     let fsSoldCount = 0;
     let isFS = false;
-
-    const activeFS = await FlashSale.findOne({
-      status: { $in: ['active', 'scheduled'] },
-      'items.productId': new mongoose.Types.ObjectId(id),
-    }).lean();
 
     if (activeFS) {
       const fsItem = (activeFS.items || []).find((it: any) => it.productId?.toString() === id.toString());
@@ -513,14 +542,6 @@ export class ProductQueryService {
 
     const catStr = resolveCategoryNames(product, undefined, oldCatName);
     const catArr = catStr ? catStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-    // ── Tính reviewsCount và avgRating từ Review collection ──
-    const reviewStats = await Review.aggregate([
-      { $match: { productId: new mongoose.Types.ObjectId(id), status: 'visible' } },
-      { $group: { _id: null, count: { $sum: 1 }, avg: { $avg: '$rating' } } },
-    ]);
-    const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
-    const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
 
     return {
       ...product,
@@ -557,18 +578,26 @@ export class ProductQueryService {
     const product = await Product.findOne({ _id: id }).populate('brandId').populate('categories').lean();
     if (!product) return null;
 
-    const images = await ProductImage.find({ productId: id }).lean();
     const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
-    const variants = variantIds.length > 0 ? await ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean() : [];
+    const oldCatId = !(product.categories as any[])?.length ? (product as any).categoryId : null;
 
-    const tagLinks = await ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug' }).lean();
+    const [images, variants, tagLinks, catDoc, stats] = await Promise.all([
+      ProductImage.find({ productId: id }).lean(),
+      variantIds.length > 0
+        ? ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean()
+        : Promise.resolve([]),
+      ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug' }).lean(),
+      oldCatId ? Category.findById(oldCatId).lean().catch(() => null) : Promise.resolve(null),
+      Review.aggregate([
+        { $match: { productId: new mongoose.Types.ObjectId(id), status: 'visible' } },
+        { $group: { _id: null, count: { $sum: 1 }, avg: { $avg: '$rating' } } },
+      ]),
+    ]);
+
     const tagSlugs = tagLinks.map(l => (l.tagId as any)?.slug).filter(Boolean);
-
-    let oldCatName = '';
-    if (!(product.categories as any[])?.length) {
-      const oldCatId = (product as any).categoryId;
-      if (oldCatId) { try { const catDoc = await Category.findById(oldCatId).lean(); if (catDoc) oldCatName = catDoc.name; } catch (_) {} }
-    }
+    const oldCatName = catDoc ? catDoc.name : '';
+    const reviewsCount = stats[0]?.count || 0;
+    const avgRating = stats[0]?.avg ? Math.round(stats[0].avg * 10) / 10 : 0;
 
     const variant50ml = variants.find((v: any) => v.size === '50ml') || variants[0];
     let computedPrice = variant50ml?.price || 0;
@@ -581,14 +610,6 @@ export class ProductQueryService {
 
     const catStr = resolveCategoryNames(product, undefined, oldCatName);
     const catArr = catStr ? catStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-    // ── Tính reviewsCount và avgRating từ Review collection ──
-    const stats = await Review.aggregate([
-      { $match: { productId: new mongoose.Types.ObjectId(id), status: 'visible' } },
-      { $group: { _id: null, count: { $sum: 1 }, avg: { $avg: '$rating' } } },
-    ]);
-    const reviewsCount = stats[0]?.count || 0;
-    const avgRating = stats[0]?.avg ? Math.round(stats[0].avg * 10) / 10 : 0;
 
     // ── Sold count ──
     const variantObjectIds = variants.map((v: any) => v._id);
@@ -603,19 +624,22 @@ export class ProductQueryService {
 
     const specs = product.specifications || {};
 
+    const imageUrls = images.map(i => i.url);
+    const mainImage = imageUrls[0] || product.image || '';
+
     return {
       ...product,
       specifications: specs,
       longevity: specs.longevity || (product as any).longevity || '',
       sillage: specs.sillage || (product as any).sillage || '',
-      durability: specs.durability || (product as any).durability || '',
       scentTrail: specs.scentTrail || (product as any).scentTrail || '',
       style: specs.style || (product as any).style || '',
       suitableFor: specs.suitableFor || (product as any).suitableFor || '',
       occasion: specs.occasion || (product as any).occasion || '',
       season: specs.season || (product as any).season || '',
       time: specs.time || (product as any).time || '',
-      images: images.map(i => i.url),
+      image: mainImage,
+      images: imageUrls,
       categories: catArr,
       variants: variants.map((v: any) => ({
         _id: v._id,

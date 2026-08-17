@@ -30,13 +30,22 @@ export class FavoriteController {
       // Filter out null productId (deleted products)
       const validFavorites = favorites.filter(f => f.productId);
 
-      // Attach computed price from variant 50ml
-      const enriched = await Promise.all(validFavorites.map(async (fav) => {
+      // Attach computed price from variant 50ml via batch variant query
+      const pIds = validFavorites.map(f => (f.productId as any)._id).filter(Boolean);
+      const allProductVariants = await ProductVariant.find({ productId: { $in: pIds } }).sort({ sortOrder: 1 }).lean() as any[];
+      const variantGroupMap: Record<string, any[]> = {};
+      allProductVariants.forEach(v => {
+        const pid = String(v.productId);
+        if (!variantGroupMap[pid]) variantGroupMap[pid] = [];
+        variantGroupMap[pid].push(v);
+      });
+
+      const enriched = validFavorites.map((fav) => {
         const product = fav.productId as any;
-        const productId = product._id.toString();
-        const productVariants = await ProductVariant.find({ productId }).lean() as any[];
+        const productIdStr = product._id.toString();
+        const productVariants = variantGroupMap[productIdStr] || [];
         const variant50ml = productVariants.find(v => v.size === '50ml');
-        const variant = variant50ml || [...productVariants].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))[0];
+        const variant = variant50ml || productVariants[0];
         const quantityInStock = productVariants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0);
         let price = variant?.price || 0;
         const originalPrice = price;
@@ -57,7 +66,7 @@ export class FavoriteController {
             brand: product.brandId?.name || '',
           },
         };
-      }));
+      });
 
       return reply.send({ success: true, data: enriched });
     } catch (err: any) {

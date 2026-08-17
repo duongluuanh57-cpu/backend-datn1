@@ -8,13 +8,13 @@ export type RouteType =
   | 'sql_search'         // Tìm theo tên, hãng, giá (MongoDB keyword)
   | 'web_search'         // Tra cứu web (tin tức, xu hướng)
   | 'graph_search'       // Tra cứu đồ thị (gợi ý liên quan)
-  | 'admin_query'        // Câu hỏi quản trị (dành cho ADMIN/SUBADMIN)
+  | 'admin_query'        // Câu hỏi quản trị (dành cho ADMIN)
   | 'greeting'           // Chào hỏi — không cần AI
   | 'confusion'          // User không hiểu — response mềm mỏng
   | 'gibberish';         // Vô nghĩa — hỏi lại lịch sự
 
 /** User role */
-export type UserRole = 'USER' | 'ADMIN' | 'SUBADMIN' | undefined;
+export type UserRole = 'USER' | 'ADMIN' | undefined;
 
 /** Route nào yêu cầu role gì */
 export const ROUTE_ROLE_MAP: Partial<Record<RouteType, UserRole[]>> = {

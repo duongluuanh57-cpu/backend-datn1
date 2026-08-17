@@ -32,7 +32,7 @@ describe('normalizeFolder', () => {
   });
 
   it('should fallback to "media" for invalid folders', () => {
-    expect(normalizeFolder('avatars')).toBe('media');
+    expect(normalizeFolder('custom-folder')).toBe('media');
     expect(normalizeFolder('image')).toBe('media');
     expect(normalizeFolder('random')).toBe('media');
   });

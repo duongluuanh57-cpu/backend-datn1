@@ -5,7 +5,7 @@
  * 1. Nhận input (message, messages, image, userRole)
  * 2. Kiểm tra cached answer từ feedback trước (nếu có → trả về ngay, không gọi AI)
  * 3. classifyRoute() → xác định route
- * 4. Kiểm tra role (admin routes cần ADMIN/SUBADMIN)
+ * 4. Kiểm tra role (admin routes cần ADMIN)
  * 5. Execute route tương ứng
  * 6. Trả về kết quả (text hoặc stream)
  */
@@ -30,8 +30,9 @@ export class QueryRouterService {
 
     try {
       // ── Step 0: Kiểm tra cached answer từ feedback trước ──
-      // Nếu có cache hit (câu hỏi tương tự đã được đánh giá 4-5★), trả về ngay, không gọi AI
-      if (message && !image) {
+      // Chỉ dùng cache cho câu hỏi FAQ/chính sách/hỗ trợ cố định, KHÔNG cache các câu hỏi gợi ý/tư vấn sản phẩm để giữ tính đa dạng
+      const isDynamicRecommendation = /gợi ý|tư vấn|recommend|chọn giúp|nước hoa nào|mùi nào|hương nào/i.test(message || '');
+      if (message && !image && !isDynamicRecommendation) {
         const cached = await CachedAnswerService.findCachedAnswer(message);
         if (cached) {
           const elapsed = Date.now() - startTime;
@@ -52,7 +53,7 @@ export class QueryRouterService {
 
       // ── Step 2: Check role for admin routes ──
       if (route === 'admin_query') {
-        const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+        const isAdmin = userRole === 'ADMIN';
         if (!isAdmin) {
           console.log(`⛔ [QueryRouter] Admin route denied for role: ${userRole}`);
           return {
@@ -68,7 +69,7 @@ export class QueryRouterService {
       switch (route) {
         // ── Fast paths: no AI needed ──
         case 'greeting': {
-          const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+          const isAdmin = userRole === 'ADMIN';
           if (isAdmin) {
             const adminName = input.userName || 'sếp';
             result = {
@@ -90,7 +91,7 @@ export class QueryRouterService {
         }
 
         case 'confusion': {
-          const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+          const isAdmin = userRole === 'ADMIN';
           result = {
             type: 'direct',
             content: isAdmin
@@ -101,7 +102,7 @@ export class QueryRouterService {
         }
 
         case 'gibberish': {
-          const isAdmin = userRole === 'ADMIN' || userRole === 'SUBADMIN';
+          const isAdmin = userRole === 'ADMIN';
           result = {
             type: 'direct',
             content: isAdmin

@@ -19,6 +19,7 @@ export function getClientIp(req: FastifyRequest): string {
   return ip === '::1' ? '127.0.0.1' : ip;
 }
 
+import mongoose from 'mongoose';
 import { ShippingMethod } from '../models/ShippingMethod.ts';
 
 export const FREE_SHIP_THRESHOLD = 500_000;
@@ -26,21 +27,22 @@ export const SHIPPING_FEE = 30_000;
 
 /**
  * Tính phí vận chuyển dựa trên ShippingMethod từ DB.
- * Fallback về giá trị mặc định nếu không tìm thấy trong DB.
+ * Fallback về giá trị mặc định nếu không tìm thấy trong DB hoặc DB chưa kết nối.
  */
 export async function calculateShippingFee(totalAmount: number, shippingMethodCode?: string): Promise<{ fee: number; methodId: string | null }> {
   const code = shippingMethodCode || 'standard';
 
-  // Tra cứu phương thức giao hàng từ DB
-  const method = await ShippingMethod.findOne({ code, isActive: true }).lean();
+  try {
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+      const method = await ShippingMethod.findOne({ code, isActive: true }).lean();
+      if (method) {
+        const fee = (method.freeShipMinAmount > 0 && totalAmount >= method.freeShipMinAmount) ? 0 : method.fee;
+        return { fee, methodId: method._id.toString() };
+      }
+    }
+  } catch (_) {}
 
-  if (method) {
-    // Nếu đơn hàng >= mức miễn phí ship của phương thức này
-    const fee = (method.freeShipMinAmount > 0 && totalAmount >= method.freeShipMinAmount) ? 0 : method.fee;
-    return { fee, methodId: method._id.toString() };
-  }
-
-  // Fallback nếu chưa có dữ liệu trong DB
+  // Fallback nếu chưa có dữ liệu trong DB hoặc DB chưa kết nối
   const fallbackFee = totalAmount >= FREE_SHIP_THRESHOLD ? 0 : SHIPPING_FEE;
   return { fee: fallbackFee, methodId: null };
 }

@@ -44,6 +44,9 @@ export class AuthSessionService {
       rememberMe: data.rememberMe
     }), 'EX', sessionTTL);
 
+    // 3b. Cập nhật thời điểm đăng nhập gần nhất (cho tính trạng thái "Không hoạt động")
+    await UserRepository.update(user._id.toString(), { lastLoginAt: new Date() });
+
     // 4. Audit Logging
     await AuditLog.create({
       userId: user._id,

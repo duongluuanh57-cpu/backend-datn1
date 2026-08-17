@@ -7,7 +7,7 @@
  * - SQL/MongoDB: tìm theo tên, hãng, giá
  * - Web Search: tra cứu tin tức, xu hướng
  * - Graph Search: gợi ý sản phẩm liên quan
- * - Admin Query: thống kê quản trị (chỉ ADMIN/SUBADMIN)
+ * - Admin Query: thống kê quản trị (chỉ ADMIN)
  * 
  * Greeting/Confusion/Gibberish được xử lý trực tiếp, không gọi AI.
  */

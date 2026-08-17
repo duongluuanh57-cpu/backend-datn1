@@ -27,15 +27,15 @@ describe("requireRole", () => {
   });
 
   it("should pass if user has required role", async () => {
-    const handler = requireRole("ADMIN", "SUBADMIN");
+    const handler = requireRole("ADMIN");
     const req = { user: { userId: "123", role: "ADMIN" } } as any;
     const reply = { status: () => ({ send: () => {} }) } as any;
     await expect(handler(req, reply)).resolves.toBeUndefined();
   });
 
-  it("should pass for SUBADMIN when ADMIN is listed", async () => {
-    const handler = requireRole("ADMIN", "SUBADMIN");
-    const req = { user: { userId: "456", role: "SUBADMIN" } } as any;
+  it("should pass for ADMIN when ADMIN is listed", async () => {
+    const handler = requireRole("ADMIN");
+    const req = { user: { userId: "456", role: "ADMIN" } } as any;
     const reply = { status: () => ({ send: () => {} }) } as any;
     await expect(handler(req, reply)).resolves.toBeUndefined();
   });

@@ -2,218 +2,29 @@
 <script>window.__API_TOKEN__='<%= apiToken %>';window.__ADMIN_CONFIG__=<%- config %>;</script>
 
 <div id="crud-app">
-  <!-- ── Filter Bar (Compact, Flowbite-style) ── -->
-  <div id="crud-filter-bar" class="filter-bar">
-    <!-- Row 1: Search + Quick filters -->
-    <div class="filter-row filter-row-1">
-      <div class="filter-search-wrap">
-        <svg class="filter-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="crud-search" class="filter-search" placeholder="">
-      </div>
+  <!-- ── Combined Brand, Category & Tag Tab Switcher ── -->
+  <div id="brand-cat-tabs" style="display:none;margin-bottom:16px;">
+    <div style="position:relative;display:inline-flex;gap:4px;background:var(--surface, #fff);padding:4px;border-radius:12px;border:1px solid var(--border, #e2e8f0);box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+      <!-- Animated Active Pill -->
+      <div id="tab-active-pill" style="position:absolute;top:4px;bottom:4px;left:4px;width:0;border-radius:8px;background:var(--accent, #c9a96e);transition:all 0.35s cubic-bezier(0.34, 1.35, 0.64, 1);box-shadow:0 2px 8px rgba(201,169,110,0.3);z-index:1;pointer-events:none;"></div>
 
-      <!-- ── Order Filters (hidden by default, shown inline when entityName === 'order') ── -->
-      <div id="crud-order-filters" style="display:none;align-items:center;gap:8px;">
-        <!-- Order status filter -->
-        <div class="filter-select-wrap">
-          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <select id="crud-order-status-filter" class="filter-select">
-            <option value="">Trạng thái</option>
-            <option value="pending">Chờ xác nhận</option>
-            <option value="processing">Đang xử lý</option>
-            <option value="shipped">Đang giao hàng</option>
-            <option value="delivered">Hoàn thành</option>
-          </select>
-        </div>
-
-        <!-- Cancel request toggle -->
-        <button type="button" id="crud-cancel-request-btn" class="filter-btn-toggle filter-toggle-red">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          Đơn hàng đã hủy
-        </button>
-
-        <!-- Sort filter -->
-        <div class="filter-select-wrap">
-          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5h10M11 9h7M11 13h4"/><path d="M3 4v16"/><path d="M3 4l4 4-4 4"/></svg>
-          <select id="crud-order-sort-filter" class="filter-select">
-            <option value="newest">Mới nhất</option>
-            <option value="oldest">Cũ nhất</option>
-            <option value="totalAsc">Giá trị ↑</option>
-            <option value="totalDesc">Giá trị ↓</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- ── Tag Filters (hidden by default, shown inline when entityName === 'tag') ── -->
-      <div id="crud-tag-filters" style="display:none;align-items:center;gap:8px;">
-        <!-- Tag status filter -->
-        <div class="filter-select-wrap">
-          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <select id="crud-tag-status-filter" class="filter-select">
-            <option value="">Trạng thái</option>
-            <option value="active">Hoạt động</option>
-            <option value="inactive">Ẩn</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- ── Category Page Filters (hidden by default, shown inline when entityName === 'category') ── -->
-      <div id="crud-category-page-filters" style="display:none;align-items:center;gap:8px;">
-        <!-- Category status filter -->
-        <div class="filter-select-wrap">
-          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <select id="crud-category-page-status-filter" class="filter-select">
-            <option value="">Trạng thái</option>
-            <option value="active">Hoạt động</option>
-            <option value="inactive">Ẩn</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Brand dropdown (product only) -->
-      <div id="crud-brand-filter" class="filter-multi-select" style="display:none;">
-        <button class="filter-multi-btn" onclick="event.stopPropagation();toggleBrandDropdown()">
-          <svg class="filter-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-          <span id="crud-brand-label">Thương hiệu</span>
-          <svg class="filter-btn-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
-        </button>
-        <div id="crud-brand-dropdown" class="filter-multi-dropdown" style="display:none;">
-          <div class="filter-multi-options" id="crud-brand-options"></div>
-        </div>
-      </div>
-
-      <!-- Category dropdown (product only) -->
-      <div id="crud-category-filter" class="filter-multi-select" style="display:none;">
-        <button class="filter-multi-btn" onclick="event.stopPropagation();toggleCategoryDropdown()">
-          <svg class="filter-btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span id="crud-category-label">Danh mục</span>
-          <svg class="filter-btn-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
-        </button>
-        <div id="crud-category-dropdown" class="filter-multi-dropdown" style="display:none;">
-          <div class="filter-multi-options" id="crud-category-options"></div>
-        </div>
-      </div>
-
-      <!-- Stock filter (product only) -->
-      <div class="filter-select-wrap" style="display:none;" id="crud-stock-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-        <select id="crud-stock-filter" class="filter-select">
-          <option value="">Tồn kho</option>
-          <option value="inStock">Còn hàng</option>
-          <option value="lowStock">Sắp hết</option>
-          <option value="outOfStock">Hết hàng</option>
-        </select>
-      </div>
-
-      <!-- Sort filter -->
-      <div class="filter-select-wrap" style="display:none;" id="crud-sort-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5h10M11 9h7M11 13h4"/><path d="M3 4v16"/><path d="M3 4l4 4-4 4"/></svg>
-        <select id="crud-sort-filter" class="filter-select">
-          <option value="">Sắp xếp</option>
-          <option value="bestSeller">Bán chạy</option>
-          <option value="priceAsc">Giá ↑</option>
-          <option value="priceDesc">Giá ↓</option>
-        </select>
-      </div>
-
-      <!-- Total + Clear -->
-      <div class="filter-actions">
-        <span class="filter-total"><span id="crud-total-label">Tổng cộng</span>: <b id="crud-total">0</b></span>
-        <a id="crud-clear-search" href="#" class="filter-clear">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          Xoá lọc
-        </a>
-      </div>
+      <a href="/admin/brands" id="tab-brand-link" class="tab-item-link" style="position:relative;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:color 0.25s, transform 0.15s;color:var(--text-muted, #64748b);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Thương hiệu
+      </a>
+      <a href="/admin/categories" id="tab-cat-link" class="tab-item-link" style="position:relative;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:color 0.25s, transform 0.15s;color:var(--text-muted, #64748b);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Danh mục
+      </a>
+      <a href="/admin/tags" id="tab-tag-link" class="tab-item-link" style="position:relative;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:color 0.25s, transform 0.15s;color:var(--text-muted, #64748b);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='none'">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Tags
+      </a>
     </div>
-
-    <!-- Row 2: Advanced filters (product only, collapsible) -->
-    <div id="crud-advanced-filters" class="filter-row-advanced" style="display:none;">
-      <div class="filter-row">
-        <div class="filter-select-wrap">
-          <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-          <select id="crud-status-filter" class="filter-select">
-            <option value="">Trạng thái</option>
-            <option value="draft">Bản nháp</option>
-            <option value="active">Đang bán</option>
-            <option value="archived">Đã ẩn</option>
-          </select>
-        </div>
-
-        <div class="filter-price-wrap">
-          <input type="number" id="crud-price-min" class="filter-price-input" placeholder="Từ">
-          <span class="filter-price-sep">—</span>
-          <input type="number" id="crud-price-max" class="filter-price-input" placeholder="Đến">
-        </div>
-
-        <button type="button" id="crud-needs-supplement-btn" class="filter-btn-toggle filter-toggle-amber">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          Cần bổ sung
-        </button>
-
-        <button type="button" id="crud-out-of-stock-btn" class="filter-btn-toggle filter-toggle-red">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          Hết hàng
-        </button>
-      </div>
-    </div>
-
-
-
-    <!-- ── Review Filters (shown when entityName === 'review') ── -->
-    <div id="crud-review-filters" class="filter-row" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);gap:12px;">
-      <!-- Review status filter -->
-      <div class="filter-select-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-        <select id="crud-review-status-filter" class="filter-select">
-          <option value="">Trạng thái duyệt</option>
-          <option value="pending">Chờ duyệt AI</option>
-          <option value="rejected">Không được duyệt</option>
-          <option value="visible">Hiển thị</option>
-          <option value="hidden">Đã ẩn</option>
-        </select>
-      </div>
-
-      <!-- Rating filter -->
-      <div class="filter-select-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <select id="crud-review-rating-filter" class="filter-select">
-          <option value="">Số sao đánh giá</option>
-          <option value="5">5 sao ★★★★★</option>
-          <option value="4">4 sao ★★★★</option>
-          <option value="3">3 sao ★★★</option>
-          <option value="2">2 sao ★★</option>
-          <option value="1">1 sao ★</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- ── Voucher Filters (shown when entityName === 'voucher') ── -->
-    <div id="crud-voucher-filters" class="filter-row" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);gap:12px;">
-      <div class="filter-select-wrap">
-        <svg class="filter-select-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        <select id="crud-voucher-scope-filter" class="filter-select">
-          <option value="">Tất cả phân loại</option>
-          <option value="all">Toàn sàn</option>
-          <option value="membership">Hạng thành viên</option>
-          <option value="minigame">Mini Game (5 mã cố định)</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- ── Brand Filters (shown when entityName === 'brand') ── -->
-    <div id="crud-brand-filters" class="filter-row" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
-      <div class="filter-search-wrap">
-        <svg class="filter-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="crud-origin-filter" class="filter-search" placeholder="Xuất xứ..." style="width:180px;">
-      </div>
-      <span style="color:var(--text-muted);font-size:12px;align-self:center;">Gõ tên nước xuất xứ để lọc nhanh</span>
-    </div>
-
-    <!-- Toggle advanced filters (product only) -->
-    <button id="crud-toggle-advanced" class="filter-toggle-link" style="display:none;" onclick="toggleAdvancedFilters()">
-      <svg class="filter-toggle-chevron" id="crud-toggle-icon" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-      Bộ lọc nâng cao
-    </button>
   </div>
+
+  <!-- ── Filter Bar Component ── -->
+  <%- include('./crud-filter-bar') %>
 
   <div style="overflow-x:auto;">
     <table class="data-table">
@@ -255,6 +66,8 @@ var ORDER_END_DATE = URL_PARAMS.get('endDate') || '';
 var ORIGIN = URL_PARAMS.get('origin') || '';
 var REVIEW_RATING = URL_PARAMS.get('rating') || '';
 var APPLICABLE_TO = URL_PARAMS.get('applicableTo') || '';
+var VOUCHER_TYPE = URL_PARAMS.get('type') || '';
+var TAG = URL_PARAMS.get('tag') || '';
 var LIMIT = 30;
 var TOTAL_PAGES = 1;
 var ALL_ITEMS = [];       // current page items (with _id)
@@ -262,7 +75,7 @@ var SELECTED = new Set(); // set of selected _id
 
 // ── Lưu/khôi phục trạng thái lọc (localStorage theo từng entity) ──
 var LS_FILTER_KEY = 'crud-filters-' + (C.entityName || 'entity');
-var HAS_URL_FILTERS = (PAGE > 1) || SEARCH || CATEGORY || BRAND || STOCK || SORT || STATUS || PRICE_MIN || PRICE_MAX || CANCEL_REQUESTED || ORDER_START_DATE || ORDER_END_DATE || ORIGIN || REVIEW_RATING || APPLICABLE_TO;
+var HAS_URL_FILTERS = (PAGE > 1) || SEARCH || CATEGORY || BRAND || STOCK || SORT || STATUS || PRICE_MIN || PRICE_MAX || CANCEL_REQUESTED || ORDER_START_DATE || ORDER_END_DATE || ORIGIN || REVIEW_RATING || APPLICABLE_TO || VOUCHER_TYPE;
 if (!HAS_URL_FILTERS) {
   try {
     var savedF = JSON.parse(localStorage.getItem(LS_FILTER_KEY) || 'null');
@@ -286,7 +99,7 @@ if (!HAS_URL_FILTERS) {
   } catch (e) {}
 }
 
-<%- include('admin/partials/utils') %>
+<%- include('../common/utils') %>
 
 var COLORS = { pending:'#f59e0b', processing:'#3b82f6', shipped:'#8b5cf6', delivered:'#22c55e', cancelled:'#ef4444' };
 var STATUS_LABELS = { pending:'Chờ XN', processing:'Đang XL', shipped:'Đang giao hàng', delivered:'Hoàn thành', cancelled:'Đã hủy' };
@@ -312,6 +125,7 @@ function syncUrl() {
   if (ORIGIN) p.set('origin', ORIGIN);
   if (REVIEW_RATING) p.set('rating', REVIEW_RATING);
   if (APPLICABLE_TO) p.set('applicableTo', APPLICABLE_TO);
+  if (VOUCHER_TYPE) p.set('type', VOUCHER_TYPE);
   var qs = p.toString();
   var url = window.location.pathname + (qs ? '?' + qs : '');
   history.replaceState(null, '', url);
@@ -320,12 +134,12 @@ function syncUrl() {
       page: PAGE, search: SEARCH, category: CATEGORY, brand: BRAND, stock: STOCK,
       sortBy: SORT, status: STATUS, minPrice: PRICE_MIN, maxPrice: PRICE_MAX,
       cancelRequested: CANCEL_REQUESTED, startDate: ORDER_START_DATE, endDate: ORDER_END_DATE,
-      origin: ORIGIN, rating: REVIEW_RATING, applicableTo: APPLICABLE_TO
+      origin: ORIGIN, rating: REVIEW_RATING, applicableTo: APPLICABLE_TO, type: VOUCHER_TYPE, tag: TAG
     }));
   } catch (e) {}
 
   // ── Show/hide clear filters button dynamically ──
-  var hasFilters = !!(SEARCH || CATEGORY || BRAND || STOCK || STATUS || PRICE_MIN || PRICE_MAX || CANCEL_REQUESTED || ORDER_START_DATE || ORDER_END_DATE || ORIGIN || REVIEW_RATING || APPLICABLE_TO || (SORT && SORT !== 'newest'));
+  var hasFilters = !!(SEARCH || CATEGORY || BRAND || STOCK || STATUS || SORT || PRICE_MIN || PRICE_MAX || CANCEL_REQUESTED || ORDER_START_DATE || ORDER_END_DATE || ORIGIN || REVIEW_RATING || APPLICABLE_TO || VOUCHER_TYPE);
   var clearBtn = document.getElementById('crud-clear-search');
   if (clearBtn) {
     if (hasFilters) clearBtn.classList.add('show');
@@ -351,6 +165,7 @@ if (showCheckboxes) {
 C.columns.forEach(function(c) {
   var th = document.createElement('th');
   th.textContent = c.label;
+  if (c.render) th.setAttribute('data-col-render', c.render);
   thead.appendChild(th);
 });
 
@@ -401,7 +216,7 @@ function cellContent(row, col, idx) {
     return '<span style="color:' + color + '">' + label + '</span>';
   }
   if (col.render === 'role') {
-    var rc = { ADMIN: '#ef4444', SUBADMIN: '#f59e0b', USER: '#22c55e' };
+    var rc = { ADMIN: '#ef4444', USER: '#22c55e' };
     return '<span style="color:' + (rc[val] || '#94a3b8') + '">' + v(val) + '</span>';
   }
   if (col.render === 'voucherValue') {
@@ -413,6 +228,170 @@ function cellContent(row, col, idx) {
     var label = mapping[val] || 'Toàn sàn';
     var color = val === 'membership' ? '#3b82f6' : (val === 'minigame' ? '#8b5cf6' : '#22c55e');
     return '<span style="color:' + color + '; font-weight: 600;">' + label + '</span>';
+  }
+  if (col.render === 'voucherActions') {
+    var editUrl = (C.editEndpoint || C.detailEndpoint || '').replace(':id', row._id);
+    var deleteUrl = C.deleteEndpoint ? C.deleteEndpoint.replace(':id', row._id) : '';
+    var codeName = escapeHtml(row.code || row._id || '').replace(/'/g, "\\'");
+    var deleteOnClick = 'deleteItemConfirm(\'' + row._id + '\', \'' + codeName + '\', \'' + deleteUrl + '\', event)';
+    return '<div class="row-actions-cell" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation()">' +
+             '<a href="' + editUrl + '" class="btn-action-icon edit-btn" title="Chỉnh sửa" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'#3b82f6\';this.style.borderColor=\'#3b82f6\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
+             '</a>' +
+             '<button type="button" class="btn-action-icon delete-btn" title="Xóa" onclick="' + deleteOnClick + '" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.color=\'#ef4444\';this.style.borderColor=\'#ef4444\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+             '</button>' +
+           '</div>';
+  }
+  if (col.render === 'brandLogo') {
+    var logoUrl = row.logo || val || '';
+    var name = escapeHtml(row.name || '');
+    var origin = escapeHtml(row.origin || '');
+    var imgHtml = logoUrl 
+      ? '<img src="' + escapeHtml(logoUrl) + '" alt="" style="width:36px;height:36px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:#fff;padding:2px;" onerror="this.style.display=\'none\'" />'
+      : '<div style="width:36px;height:36px;border-radius:6px;background:var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--text-muted);font-size:14px;">' + (name ? name.charAt(0).toUpperCase() : 'B') + '</div>';
+    
+    return '<div style="display:flex;align-items:center;gap:10px;">' +
+             imgHtml +
+             '<div style="display:flex;flex-direction:column;gap:2px;">' +
+               '<span style="font-weight:600;color:var(--text-primary);font-size:13.5px;">' + name + '</span>' +
+               (origin ? '<span style="font-size:11px;color:var(--text-muted);">' + origin + '</span>' : '') +
+             '</div>' +
+           '</div>';
+  }
+  if (col.render === 'brandProductCount') {
+    var cnt = Number(val || row.productCount || row.productsCount || 0);
+    var brandId = row._id || '';
+    var filterUrl = '/admin/products?brand=' + encodeURIComponent(brandId);
+    return '<a href="' + filterUrl + '" style="font-weight:600;color:var(--accent);font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Xem các sản phẩm của thương hiệu này" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">' +
+             cnt + ' sản phẩm' +
+             '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+           '</a>';
+  }
+  if (col.render === 'brandActions') {
+    var editUrl = (C.editEndpoint || C.detailEndpoint || '').replace(':id', row._id);
+    var deleteUrl = C.deleteEndpoint ? C.deleteEndpoint.replace(':id', row._id) : '';
+    var deleteOnClick = 'deleteItemConfirm(\'' + row._id + '\', \'' + escapeHtml(row.name || '').replace(/'/g, "\\'") + '\', \'' + deleteUrl + '\', event)';
+    return '<div class="row-actions-cell" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation()">' +
+             '<a href="' + editUrl + '" class="btn-action-icon edit-btn" title="Chỉnh sửa" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'#3b82f6\';this.style.borderColor=\'#3b82f6\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
+             '</a>' +
+             '<button type="button" class="btn-action-icon delete-btn" title="Xóa" onclick="' + deleteOnClick + '" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.color=\'#ef4444\';this.style.borderColor=\'#ef4444\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+             '</button>' +
+           '</div>';
+  }
+  if (col.render === 'categoryProductCount') {
+    var cnt = Number(val || row.productCount || row.productsCount || 0);
+    var catId = row._id || '';
+    var filterUrl = '/admin/products?category=' + encodeURIComponent(catId);
+    return '<a href="' + filterUrl + '" style="font-weight:600;color:var(--accent);font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Xem các sản phẩm của danh mục này" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">' +
+             cnt + ' sản phẩm' +
+             '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+           '</a>';
+  }
+  if (col.render === 'categoryActions') {
+    var editUrl = (C.editEndpoint || C.detailEndpoint || '').replace(':id', row._id);
+    var deleteUrl = C.deleteEndpoint ? C.deleteEndpoint.replace(':id', row._id) : '';
+    var deleteOnClick = 'deleteItemConfirm(\'' + row._id + '\', \'' + escapeHtml(row.name || '').replace(/'/g, "\\'") + '\', \'' + deleteUrl + '\', event)';
+    return '<div class="row-actions-cell" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation()">' +
+             '<a href="' + editUrl + '" class="btn-action-icon edit-btn" title="Chỉnh sửa" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'#3b82f6\';this.style.borderColor=\'#3b82f6\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
+             '</a>' +
+             '<button type="button" class="btn-action-icon delete-btn" title="Xóa" onclick="' + deleteOnClick + '" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.color=\'#ef4444\';this.style.borderColor=\'#ef4444\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+             '</button>' +
+           '</div>';
+  }
+  if (col.render === 'tagProductCount') {
+    var cnt = Number(val || row.productCount || row.productsCount || 0);
+    var tagId = row._id || '';
+    var filterUrl = '/admin/products?tag=' + encodeURIComponent(tagId);
+    return '<a href="' + filterUrl + '" style="font-weight:600;color:var(--accent);font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;" title="Xem các sản phẩm của tag này" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">' +
+             cnt + ' sản phẩm' +
+             '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>' +
+           '</a>';
+  }
+  if (col.render === 'tagActions') {
+    var editUrl = (C.editEndpoint || C.detailEndpoint || '').replace(':id', row._id);
+    var deleteUrl = C.deleteEndpoint ? C.deleteEndpoint.replace(':id', row._id) : '';
+    var deleteOnClick = 'deleteItemConfirm(\'' + row._id + '\', \'' + escapeHtml(row.name || '').replace(/'/g, "\\'") + '\', \'' + deleteUrl + '\', event)';
+    return '<div class="row-actions-cell" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;" onclick="event.stopPropagation()">' +
+             '<a href="' + editUrl + '" class="btn-action-icon edit-btn" title="Chỉnh sửa" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'#3b82f6\';this.style.borderColor=\'#3b82f6\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
+             '</a>' +
+             '<button type="button" class="btn-action-icon delete-btn" title="Xóa" onclick="' + deleteOnClick + '" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.color=\'#ef4444\';this.style.borderColor=\'#ef4444\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+             '</button>' +
+           '</div>';
+  }
+  if (col.render === 'productThumbnail') {
+    if (!val) return '<div class="product-thumb-empty" style="width:40px;height:40px;border-radius:6px;background:var(--border);display:inline-block;"></div>';
+    return '<img src="' + escapeHtml(val) + '" alt="" class="product-thumb-img" style="width:40px;height:40px;object-fit:cover;border-radius:6px;border:1px solid var(--border);background:#fff;" onerror="this.src=\'/assets/images/placeholder.jpg\'" />';
+  }
+  if (col.render === 'productInfo') {
+    var name = escapeHtml(row.name || '');
+    var sku = escapeHtml(row.sku || row._id?.slice(-8).toUpperCase() || '');
+    return '<div class="product-info-cell" style="display:flex;flex-direction:column;gap:2px;max-width:280px;">' +
+             '<span class="product-name" style="font-weight:600;color:var(--text-primary);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;" title="' + name + '">' + name + '</span>' +
+             '<span class="product-sku" style="font-size:11px;color:var(--text-muted);font-family:monospace;letter-spacing:0.5px;">SKU: ' + sku + '</span>' +
+           '</div>';
+  }
+  if (col.render === 'productCategory') {
+    var brandName = row.brandId?.name || (row.brandId && typeof row.brandId === 'object' ? row.brandId.name : '') || row.brandName || row.brand || '';
+    var categories = '';
+    if (Array.isArray(row.categories)) {
+      categories = row.categories.map(function(c) { return typeof c === 'string' ? c : (c.name || ''); }).filter(Boolean).join(', ');
+    } else if (typeof row.categories === 'string') {
+      categories = row.categories;
+    }
+    var parts = [];
+    if (categories) parts.push('<span class="cat-tag" style="font-size:12px;font-weight:500;color:var(--text-primary);">' + escapeHtml(categories) + '</span>');
+    if (brandName) parts.push('<span class="brand-tag" style="font-size:11px;color:var(--text-muted);background:var(--border);padding:2px 6px;border-radius:4px;font-weight:500;">' + escapeHtml(brandName) + '</span>');
+    return '<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">' + parts.join('') + '</div>';
+  }
+  if (col.render === 'productPrice') {
+    var currentPrice = Number(row.price) || 0;
+    var originalPrice = Number(row.originalPrice) || 0;
+    var discount = Number(row.discount) || 0;
+    if (discount > 0 && originalPrice > currentPrice) {
+      return '<div style="display:flex;flex-direction:column;gap:2px;">' +
+               '<span style="font-weight:600;color:var(--text-primary);font-size:13.5px;">' + fmtCurrency(currentPrice) + '</span>' +
+               '<div style="display:flex;align-items:center;gap:6px;font-size:11px;">' +
+                 '<span style="text-decoration:line-through;color:var(--text-muted);">' + fmtCurrency(originalPrice) + '</span>' +
+                 '<span style="color:#ef4444;font-weight:600;">-' + discount + '%</span>' +
+               '</div>' +
+             '</div>';
+    }
+    return '<span style="font-weight:600;color:var(--text-primary);font-size:13.5px;">' + fmtCurrency(currentPrice) + '</span>';
+  }
+  if (col.render === 'productStock') {
+    var stock = Number(val) || 0;
+    if (stock <= 0) {
+      return '<span style="color:#ef4444;font-weight:600;font-size:13px;">0</span>';
+    } else if (stock < 20) {
+      return '<span style="color:#f59e0b;font-weight:600;font-size:13px;">' + stock + '</span>';
+    } else {
+      return '<span style="color:#22c55e;font-weight:500;font-size:13px;">' + stock + '</span>';
+    }
+  }
+  if (col.render === 'productActions') {
+    var editUrl = (C.editEndpoint || C.detailEndpoint || '').replace(':id', row._id);
+    var slug = row.slug || '';
+    var previewUrl = 'http://localhost:3000/product/' + (slug ? slug + '-p.' + row._id : row._id);
+    var deleteUrl = C.deleteEndpoint ? C.deleteEndpoint.replace(':id', row._id) : '';
+    var deleteOnClick = 'deleteItemConfirm(\'' + row._id + '\', \'' + escapeHtml(row.name || '').replace(/'/g, "\\'") + '\', \'' + deleteUrl + '\', event)';
+    return '<div class="row-actions-cell" style="display:flex;align-items:center;gap:6px;" onclick="event.stopPropagation()">' +
+             '<a href="' + previewUrl + '" target="_blank" class="btn-action-icon preview-btn" title="Xem trước" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'var(--accent)\';this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' +
+             '</a>' +
+             '<a href="' + editUrl + '" class="btn-action-icon edit-btn" title="Chỉnh sửa" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);transition:all 0.2s;" onmouseover="this.style.color=\'#3b82f6\';this.style.borderColor=\'#3b82f6\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>' +
+             '</a>' +
+             '<button type="button" class="btn-action-icon delete-btn" title="Xóa" onclick="' + deleteOnClick + '" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);background:var(--bg);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.color=\'#ef4444\';this.style.borderColor=\'#ef4444\'" onmouseout="this.style.color=\'var(--text-muted)\';this.style.borderColor=\'var(--border)\'">' +
+               '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2 2v2"/></svg>' +
+             '</button>' +
+           '</div>';
   }
   if (col.render === 'image') {
     if (!val) return '<span class="product-thumb-empty"></span>';
@@ -430,18 +409,34 @@ function cellContent(row, col, idx) {
     return '<span style="font-family:monospace;font-weight:600;color:var(--text-primary);">#' + shortId + '</span>';
   }
   if (col.render === 'cancelReason') {
-    var cancelLabels = {
-      want_change_voucher: 'Đổi voucher',
-      want_change_product: 'Đổi sản phẩm',
-      complicated_payment: 'TT phức tạp',
-      found_cheaper: 'Tìm nơi rẻ hơn',
-      changed_mind: 'Đổi ý'
-    };
-    if (val) {
-      var label = cancelLabels[val] || val;
-      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;">' + escapeHtml(label) + '</span>';
+    if (row.status === 'cancelled' || STATUS === 'cancelled') {
+      var cancelLabels = {
+        want_change_voucher: 'Đổi voucher',
+        want_change_product: 'Đổi sản phẩm',
+        complicated_payment: 'TT phức tạp',
+        found_cheaper: 'Tìm nơi rẻ hơn',
+        changed_mind: 'Đổi ý'
+      };
+      var reasonVal = row.cancelReason || val;
+      if (reasonVal) {
+        var label = cancelLabels[reasonVal] || reasonVal;
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;">' + escapeHtml(label) + '</span>';
+      }
+      return '<span style="color:var(--text-muted);font-size:12px;">—</span>';
+    } else {
+      var pStatus = row.paymentStatus || 'unpaid';
+      var pMethod = (row.paymentMethod || 'cod').toLowerCase();
+      var methodMap = { cod: 'COD', vnpay: 'VNPAY', momo: 'MoMo', banking: 'Banking', card: 'Thẻ', online: 'Online' };
+      var methodStr = methodMap[pMethod] || pMethod.toUpperCase();
+
+      if (pStatus === 'paid') {
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(34,197,94,0.12);color:#22c55e;">Đã thanh toán (' + methodStr + ')</span>';
+      } else if (pStatus === 'refunded') {
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444;">Đã hoàn tiền</span>';
+      } else {
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:500;background:rgba(245,158,11,0.12);color:#d97706;">Chưa thanh toán (' + methodStr + ')</span>';
+      }
     }
-    return '<span style="color:var(--text-muted);font-size:12px;">—</span>';
   }
   if (col.render === 'editableStatus') {
     var sid = row._id;
@@ -475,6 +470,29 @@ function cellContent(row, col, idx) {
     }
 
     var optsJson = JSON.stringify(sopts).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+
+    if (C.entityName === 'brand' || (sopts.length === 2 && sopts.some(function(o){ return o.v === 'active'; }) && sopts.some(function(o){ return o.v === 'inactive'; }))) {
+      var isActive = val === 'active';
+      var nextStatus = isActive ? 'inactive' : 'active';
+      var nextLabel = isActive ? 'Ẩn' : 'Hoạt động';
+      var toggleBg = isActive ? '#22c55e' : 'var(--border, #cbd5e1)';
+      var thumbLeft = isActive ? '20px' : '2px';
+      var textColor = isActive ? '#22c55e' : 'var(--text-muted, #64748b)';
+      var apiEndpoint = col.statusApiEndpoint || '';
+
+      return '<div class="status-dd-wrap" onclick="event.stopPropagation()">' +
+        '<button type="button" class="status-toggle-btn" title="Bấm để ' + (isActive ? 'Ẩn' : 'Bật hoạt động') + '"' +
+          ' style="background:none;border:none;padding:0;cursor:pointer;display:inline-flex;align-items:center;gap:8px;outline:none;"' +
+          ' data-id="' + sid + '"' +
+          ' data-api="' + apiEndpoint + '"' +
+          ' onclick="toggleBrandStatusDirect(\'' + sid + '\', \'' + nextStatus + '\', \'' + apiEndpoint + '\', \'' + nextLabel + '\', this, event)">' +
+          '<span style="position:relative;width:38px;height:20px;background:' + toggleBg + ';border-radius:10px;transition:all 0.25s;display:inline-block;vertical-align:middle;flex-shrink:0;">' +
+            '<span style="position:absolute;top:2px;left:' + thumbLeft + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:all 0.25s;box-shadow:0 1px 3px rgba(0,0,0,0.25);"></span>' +
+          '</span>' +
+          '<span style="font-size:12.5px;font-weight:600;color:' + textColor + ';">' + escapeHtml(curLabel) + '</span>' +
+        '</button></div>';
+    }
+
     return '<div class="status-dd-wrap">' +
       '<button type="button" class="filter-status-select status-' + (val || '') + '"' +
         ' data-id="' + sid + '"' +
@@ -606,6 +624,20 @@ function bulkDelete() {
     });
 }
 
+// ── Single Item Delete Confirmation ──
+function deleteItemConfirm(id, name, deleteUrl, e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  if (confirm('Bạn có chắc chắn muốn xóa sản phẩm "' + name + '" không?')) {
+    if (deleteUrl) {
+      window.location.href = deleteUrl;
+    } else if (C.deleteEndpoint) {
+      window.location.href = C.deleteEndpoint.replace(':id', id);
+    } else {
+      showToast('Không tìm thấy đường dẫn xóa mục này', 'error');
+    }
+  }
+}
+
 // ── Inline status change (generic) ──
 function changeProductStatus(id, status) {
   fetch('/api/products/' + id, {
@@ -671,6 +703,11 @@ function changeEntityStatus(sel, id, status, apiEndpoint, label) {
       }
       showToast('Lỗi kết nối', 'error');
     });
+}
+
+function toggleBrandStatusDirect(id, newStatus, apiEndpoint, newLabel, btn, e) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  changeEntityStatus(btn, id, newStatus, apiEndpoint, newLabel);
 }
 
 // ── Inline status popup ──
@@ -1014,7 +1051,15 @@ function renderPagination() {
   el.innerHTML = html;
 }
 
+var currentFetchController = null;
+
 function crudFetch() {
+  if (currentFetchController) {
+    try { currentFetchController.abort(); } catch (e) {}
+  }
+  currentFetchController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var fetchSignal = currentFetchController ? currentFetchController.signal : undefined;
+
   var sep = (C.apiEndpoint && C.apiEndpoint.indexOf('?') !== -1) ? '&' : '?';
   var url = C.apiEndpoint + sep + 'page=' + PAGE + '&limit=' + LIMIT;
 
@@ -1031,12 +1076,15 @@ function crudFetch() {
   if (ORDER_END_DATE) url += '&endDate=' + encodeURIComponent(ORDER_END_DATE);
   if (ORIGIN) url += '&origin=' + encodeURIComponent(ORIGIN);
   if (APPLICABLE_TO) url += '&applicableTo=' + encodeURIComponent(APPLICABLE_TO);
+  if (typeof VOUCHER_TYPE !== 'undefined' && VOUCHER_TYPE) url += '&type=' + encodeURIComponent(VOUCHER_TYPE);
   if (C.entityName === 'review' && REVIEW_RATING) url += '&rating=' + encodeURIComponent(REVIEW_RATING);
+  if (typeof TAG !== 'undefined' && TAG) url += '&tag=' + encodeURIComponent(TAG);
   document.getElementById('crud-tbody').innerHTML = skeletonRows(5, C.columns.length);
 
-  fetch(url, { headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__ } })
+  fetch(url, { signal: fetchSignal, headers: { 'Authorization': 'Bearer ' + window.__API_TOKEN__ } })
     .then(function(r) { return r.json(); })
     .then(function(res) {
+      currentFetchController = null;
       if (!res.success) { document.getElementById('crud-tbody').innerHTML = '<tr><td colspan="99" style="text-align:center;padding:40px;color:var(--danger);">Lỗi tải dữ liệu</td></tr>'; return; }
       var data = res.data !== undefined ? res.data : res;
       var items = C.itemsPath ? deepGet(data, C.itemsPath) : data;
@@ -1064,11 +1112,29 @@ function crudFetch() {
       
       // Show product filters
       if (C.entityName === 'product') {
-        document.getElementById('crud-category-filter').style.display = 'inline-block';
+        var catFilter = document.getElementById('crud-category-filter');
+        if (catFilter) catFilter.style.display = 'inline-block';
+        var createBtnWrap = document.getElementById('crud-create-btn-wrap');
+        if (createBtnWrap) createBtnWrap.style.display = 'block';
       }
+      // Cập nhật tiêu đề cột linh hoạt cho đơn hàng (Lý do hủy / Trạng thái thanh toán)
+      if (C.entityName === 'order') {
+        var ths = document.querySelectorAll('#crud-thead th');
+        ths.forEach(function(th) {
+          if (th.getAttribute('data-col-render') === 'cancelReason' || th.textContent.includes('Lý do hủy') || th.textContent.includes('Trạng thái thanh toán') || th.textContent.includes('Trạng thái TT')) {
+            th.textContent = (STATUS === 'cancelled') ? 'Lý do hủy' : 'Trạng thái thanh toán';
+          }
+        });
+      }
+
       syncUrl();
     })
-    .catch(function() {
+    .catch(function(err) {
+      if (err && err.name === 'AbortError') {
+        // Hủy request cũ do bấm quá nhanh - bỏ qua im lặng không hiện lỗi
+        return;
+      }
+      currentFetchController = null;
       document.getElementById('crud-tbody').innerHTML = '<tr><td colspan="99" style="text-align:center;padding:40px;color:var(--danger);">Lỗi kết nối</td></tr>';
     });
 }
@@ -1086,7 +1152,8 @@ function crudGoPage(p) {
 
 document.getElementById('crud-clear-search').addEventListener('click', function(e) {
   e.preventDefault();
-  document.getElementById('crud-search').value = '';
+  var searchEl = document.getElementById('crud-search');
+  if (searchEl) searchEl.value = '';
   SEARCH = '';
   CATEGORY = '';
   BRAND = '';
@@ -1099,13 +1166,16 @@ document.getElementById('crud-clear-search').addEventListener('click', function(
   if (document.getElementById('crud-review-status-filter')) document.getElementById('crud-review-status-filter').value = '';
   if (document.getElementById('crud-review-rating-filter')) document.getElementById('crud-review-rating-filter').value = '';
   CATEGORY_IDS = [];
-  updateCategoryLabel();
-  renderCategoryOptions();
+  if (typeof updateCategoryLabel === 'function') updateCategoryLabel();
+  if (typeof renderCategoryOptions === 'function') renderCategoryOptions();
   BRAND_IDS = [];
-  updateBrandLabel();
-  renderBrandOptions();
-  document.getElementById('crud-stock-filter').value = '';
-  document.getElementById('crud-sort-filter').value = '';
+  if (typeof updateBrandLabel === 'function') updateBrandLabel();
+  if (typeof renderBrandOptions === 'function') renderBrandOptions();
+  var stockFilterEl = document.getElementById('crud-stock-filter');
+  if (stockFilterEl) stockFilterEl.value = '';
+  STOCK = '';
+  var sortFilterEl = document.getElementById('crud-sort-filter');
+  if (sortFilterEl) sortFilterEl.value = '';
   var statusEl = document.getElementById('crud-status-filter');
   if (statusEl) statusEl.value = '';
   var priceMinEl = document.getElementById('crud-price-min');
@@ -1134,6 +1204,11 @@ document.getElementById('crud-clear-search').addEventListener('click', function(
   ORIGIN = '';
   var originEl = document.getElementById('crud-origin-filter');
   if (originEl) originEl.value = '';
+  // Reset brand page filters
+  var brandStatusEl = document.getElementById('crud-brand-status-filter');
+  if (brandStatusEl) brandStatusEl.value = '';
+  var brandSortEl = document.getElementById('crud-brand-sort-filter');
+  if (brandSortEl) brandSortEl.value = '';
   // Reset voucher scope filter
   APPLICABLE_TO = '';
   var voucherScopeEl = document.getElementById('crud-voucher-scope-filter');
@@ -1144,7 +1219,7 @@ document.getElementById('crud-clear-search').addEventListener('click', function(
 });
 
   // ── Multi-select brand state ──
-var BRAND_IDS = [];
+var BRAND_IDS = BRAND ? BRAND.split(',').filter(Boolean) : [];
 var BRAND_DATA = [];
 
 function toggleBrandDropdown() {
@@ -1166,11 +1241,13 @@ function updateBrandLabel() {
   }
 }
 
-function renderBrandOptions() {
+function renderBrandOptions(filter) {
   var container = document.getElementById('crud-brand-options');
   if (!container) return;
   container.innerHTML = '';
-  BRAND_DATA.forEach(function(b) {
+  var keyword = (filter || '').toLowerCase().trim();
+  var list = keyword ? BRAND_DATA.filter(function(b) { return b.name.toLowerCase().indexOf(keyword) !== -1; }) : BRAND_DATA;
+  list.forEach(function(b) {
     var div = document.createElement('div');
     div.className = 'filter-multi-option';
     var cb = document.createElement('input');
@@ -1190,9 +1267,14 @@ function renderBrandOptions() {
     div.appendChild(cb);
     var span = document.createElement('span');
     span.textContent = b.name;
+    span.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;';
     div.appendChild(span);
     container.appendChild(div);
   });
+}
+
+function filterBrandOptions(val) {
+  renderBrandOptions(val);
 }
 
 // ── Multi-select category state ──
@@ -1273,10 +1355,32 @@ function toggleAdvancedFilters() {
 // ── Product-specific filter initialization ──
 if (C.entityName === 'product') {
   // Show all product filters
-  ['crud-brand-filter','crud-category-filter','crud-stock-wrap','crud-sort-wrap'].forEach(function(id) {
+  ['crud-brand-filter','crud-category-filter','crud-product-status-filter','crud-product-stock-filter'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'inline-block';
   });
+
+  // Bind Product status filter select
+  var statusEl = document.getElementById('crud-status-filter');
+  if (statusEl) {
+    statusEl.value = STATUS;
+    statusEl.addEventListener('change', function() {
+      STATUS = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // Bind Product stock filter select
+  var stockEl = document.getElementById('crud-stock-filter');
+  if (stockEl) {
+    stockEl.value = STOCK;
+    stockEl.addEventListener('change', function() {
+      STOCK = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
 
   // Show advanced filters toggle and row
   var advToggle = document.getElementById('crud-toggle-advanced');
@@ -1322,18 +1426,7 @@ if (C.entityName === 'product') {
       .catch(function() {});
   })();
 
-  // Stock filter
-  var stockEl = document.getElementById('crud-stock-filter');
-  if (stockEl) {
-    stockEl.value = STOCK;
-    stockEl.addEventListener('change', function() {
-      STOCK = this.value;
-      PAGE = 1;
-      crudFetch();
-    });
-  }
-
-  // Sort filter
+  // Sort filter (includes A→Z, Z→A, Hết hàng)
   var sortEl = document.getElementById('crud-sort-filter');
   if (sortEl) {
     sortEl.value = SORT;
@@ -1489,12 +1582,16 @@ if (C.entityName === 'order') {
   var orderFilters = document.getElementById('crud-order-filters');
   if (orderFilters) orderFilters.style.display = 'flex';
 
-  // Giảm độ rộng input tìm kiếm mã đơn hàng
+  // Ẩn Row 2 vì trang quản lý đơn hàng sử dụng 1 hàng duy nhất
+  var row2 = document.querySelector('.filter-row-2');
+  if (row2) row2.style.display = 'none';
+
+  // Cho ô tìm kiếm giãn hết khoảng trống bên trái
   var searchWrap = document.querySelector('.filter-search-wrap');
   if (searchWrap) {
-    searchWrap.style.flex = 'none';
+    searchWrap.style.flex = '1';
     searchWrap.style.minWidth = '200px';
-    searchWrap.style.width = '200px';
+    searchWrap.style.width = '100%';
   }
 
   // Chuyển nút xóa lọc ra sau bộ lọc sắp xếp
@@ -1502,6 +1599,15 @@ if (C.entityName === 'order') {
   if (clearBtn && orderFilters) {
     orderFilters.appendChild(clearBtn);
   }
+
+  // Chuyển phần Tổng đơn hàng vào góc phải của Row 1
+  var totalActions = document.querySelector('.filter-actions');
+  if (totalActions && orderFilters) {
+    orderFilters.appendChild(totalActions);
+    totalActions.style.marginLeft = '4px';
+  }
+  var totalLabel = document.getElementById('crud-total-label');
+  if (totalLabel) totalLabel.textContent = 'Tổng đơn hàng';
 
   // Order status filter
   var orderStatusEl = document.getElementById('crud-order-status-filter');
@@ -1567,12 +1673,13 @@ if (C.entityName === 'tag') {
   var tagFilters = document.getElementById('crud-tag-filters');
   if (tagFilters) tagFilters.style.display = 'flex';
 
-  // Giảm độ rộng input tìm kiếm tag
-  var searchWrap = document.querySelector('.filter-search-wrap');
-  if (searchWrap) {
-    searchWrap.style.flex = 'none';
-    searchWrap.style.minWidth = '200px';
-    searchWrap.style.width = '200px';
+  // Show create button
+  var createBtnWrap = document.getElementById('crud-create-btn-wrap');
+  if (createBtnWrap) createBtnWrap.style.display = 'block';
+  var createBtn = createBtnWrap.querySelector('a');
+  if (createBtn) {
+    createBtn.href = '/admin/tags/create';
+    createBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Thêm tag mới';
   }
 
   // Tag status filter
@@ -1593,17 +1700,46 @@ if (C.entityName === 'tag') {
   }
 }
 
+// ── Combined Brand, Category & Tag Tab Initialization & Sliding Animation ──
+if (C.entityName === 'brand' || C.entityName === 'category' || C.entityName === 'tag') {
+  var tabsWrap = document.getElementById('brand-cat-tabs');
+  if (tabsWrap) tabsWrap.style.display = 'block';
+
+  function updateTabPillPosition() {
+    var activeEl = null;
+    if (C.entityName === 'brand') activeEl = document.getElementById('tab-brand-link');
+    else if (C.entityName === 'category') activeEl = document.getElementById('tab-cat-link');
+    else if (C.entityName === 'tag') activeEl = document.getElementById('tab-tag-link');
+
+    var pill = document.getElementById('tab-active-pill');
+    if (activeEl && pill) {
+      pill.style.left = activeEl.offsetLeft + 'px';
+      pill.style.width = activeEl.offsetWidth + 'px';
+      [document.getElementById('tab-brand-link'), document.getElementById('tab-cat-link'), document.getElementById('tab-tag-link')].forEach(function(t) {
+        if (t) {
+          t.style.color = (t === activeEl) ? '#ffffff' : 'var(--text-muted, #64748b)';
+        }
+      });
+    }
+  }
+
+  // Run initial positioning after DOM render
+  setTimeout(updateTabPillPosition, 30);
+  window.addEventListener('resize', updateTabPillPosition);
+}
+
 // ── Category-page-specific filter initialization ──
 if (C.entityName === 'category') {
   var catFilters = document.getElementById('crud-category-page-filters');
   if (catFilters) catFilters.style.display = 'flex';
 
-  // Giảm độ rộng input tìm kiếm category
-  var searchWrap = document.querySelector('.filter-search-wrap');
-  if (searchWrap) {
-    searchWrap.style.flex = 'none';
-    searchWrap.style.minWidth = '200px';
-    searchWrap.style.width = '200px';
+  // Show create button
+  var createBtnWrap = document.getElementById('crud-create-btn-wrap');
+  if (createBtnWrap) createBtnWrap.style.display = 'block';
+  var createBtn = createBtnWrap.querySelector('a');
+  if (createBtn) {
+    createBtn.href = '/admin/categories/create';
+    createBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Thêm danh mục mới';
   }
 
   // Category status filter
@@ -1624,22 +1760,53 @@ if (C.entityName === 'category') {
   }
 }
 
-// ── Brand-specific filter initialization (Xuất xứ) ──
+// ── Brand-specific filter initialization ──
 if (C.entityName === 'brand') {
-  var brandFilters = document.getElementById('crud-brand-filters');
-  if (brandFilters) brandFilters.style.display = 'flex';
+  // Show brand page filters container in Row 2
+  var brandPageFilters = document.getElementById('crud-brand-page-filters');
+  if (brandPageFilters) brandPageFilters.style.display = 'flex';
 
-  var originEl = document.getElementById('crud-origin-filter');
-  if (originEl) {
-    originEl.value = ORIGIN;
-    originEl.addEventListener('input', function() {
-      clearTimeout(window._originTimer);
-      window._originTimer = setTimeout(function() {
-        ORIGIN = document.getElementById('crud-origin-filter').value.trim();
-        PAGE = 1;
-        crudFetch();
-      }, 400);
+  // Customize search placeholder
+  var searchInput = document.getElementById('crud-search');
+  if (searchInput) {
+    searchInput.placeholder = 'Tìm thương hiệu, xuất xứ...';
+  }
+
+  // Show create button
+  var createBtnWrap = document.getElementById('crud-create-btn-wrap');
+  if (createBtnWrap) createBtnWrap.style.display = 'block';
+  var createBtn = createBtnWrap.querySelector('a');
+  if (createBtn) {
+    createBtn.href = '/admin/brands/create';
+    createBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Thêm thương hiệu mới';
+  }
+
+  // Bind Brand sort select
+  var brandSortEl = document.getElementById('crud-brand-sort-filter');
+  if (brandSortEl) {
+    brandSortEl.value = SORT;
+    brandSortEl.addEventListener('change', function() {
+      SORT = this.value;
+      PAGE = 1;
+      crudFetch();
     });
+  }
+
+  // Bind Brand status select
+  var brandStatusEl = document.getElementById('crud-brand-status-filter');
+  if (brandStatusEl) {
+    brandStatusEl.value = STATUS;
+    brandStatusEl.addEventListener('change', function() {
+      STATUS = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // Move clear button to Row 2 brand page filters
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn && brandPageFilters) {
+    brandPageFilters.appendChild(clearBtn);
   }
 }
 
@@ -1674,6 +1841,38 @@ if (C.entityName === 'voucher') {
   var voucherFilters = document.getElementById('crud-voucher-filters');
   if (voucherFilters) voucherFilters.style.display = 'flex';
 
+  // Show create button on Row 1
+  var createBtnWrap = document.getElementById('crud-create-btn-wrap');
+  if (createBtnWrap) createBtnWrap.style.display = 'block';
+  var createBtn = createBtnWrap.querySelector('a');
+  if (createBtn) {
+    createBtn.href = '/admin/vouchers/create';
+    createBtn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Thêm mã giảm giá mới';
+  }
+
+  // 1. Voucher status filter
+  var voucherStatusEl = document.getElementById('crud-voucher-status-filter');
+  if (voucherStatusEl) {
+    voucherStatusEl.value = STATUS;
+    voucherStatusEl.addEventListener('change', function() {
+      STATUS = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // 2. Voucher type filter
+  var voucherTypeEl = document.getElementById('crud-voucher-type-filter');
+  if (voucherTypeEl) {
+    voucherTypeEl.value = VOUCHER_TYPE;
+    voucherTypeEl.addEventListener('change', function() {
+      VOUCHER_TYPE = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // 3. Voucher scope filter
   var voucherScopeEl = document.getElementById('crud-voucher-scope-filter');
   if (voucherScopeEl) {
     voucherScopeEl.value = APPLICABLE_TO;
@@ -1682,6 +1881,23 @@ if (C.entityName === 'voucher') {
       PAGE = 1;
       crudFetch();
     });
+  }
+
+  // 4. Voucher sort filter (including outOfUsage)
+  var voucherSortEl = document.getElementById('crud-voucher-sort-filter');
+  if (voucherSortEl) {
+    voucherSortEl.value = SORT;
+    voucherSortEl.addEventListener('change', function() {
+      SORT = this.value;
+      PAGE = 1;
+      crudFetch();
+    });
+  }
+
+  // Move clear search link into voucher filters row
+  var clearBtn = document.getElementById('crud-clear-search');
+  if (clearBtn && voucherFilters) {
+    voucherFilters.appendChild(clearBtn);
   }
 }
 
