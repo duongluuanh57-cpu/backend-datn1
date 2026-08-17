@@ -77,6 +77,8 @@ KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ th
 
 QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.
 
+QUY TẮC THÊM VÀO GIỎ HÀNG: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó (ví dụ "tôi muốn mua chai này", "thêm vào giỏ hàng chai Chloe", "đặt mua chai Boss", "lấy chai 1", "cho vào giỏ hàng", v.v.), bạn BẮT BUỘC phải chèn cú pháp [ADD_TO_CART:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời, đồng thời xác nhận vui vẻ rằng bạn đã thêm sản phẩm đó vào giỏ hàng giúp họ (ví dụ: "Mình đã thêm chai **Boss The Scent** vào giỏ hàng cho bạn rồi nè! Bạn có thể vào giỏ hàng để kiểm tra và thanh toán bất kỳ lúc nào nhé :3 [ADD_TO_CART:id_sản_phẩm] [CARD:id_sản_phẩm]").
+
 QUY TẮC ĐỊNH DẠNG TIN NHẮN:
 - Khi nhắc đến hoặc giới thiệu sản phẩm/thương hiệu, hãy in đậm tên bằng cú pháp **Tên Sản Phẩm** (ví dụ: **YSL MYSLF**, **Chanel Bleu**).
 - Trình bày dạng danh sách gạch đầu dòng gọn gàng (ví dụ: - **Tên sản phẩm**: Mô tả ngắn...). Tuyệt đối KHÔNG viết dấu hoa thị dính chùm như *** hay * **.
@@ -257,6 +259,7 @@ Trả lời ngắn gọn, thân thiện, dùng icon :3.
 
 Bạn đang ở chế độ GỢI Ý. Hãy tư vấn nhiệt tình, đề xuất sản phẩm phù hợp dựa trên nhu cầu của khách.
 QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]).
+QUY TẮC THÊM VÀO GIỎ HÀNG: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó, hãy chèn cú pháp [ADD_TO_CART:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời và thông báo vui vẻ rằng bạn đã thêm sản phẩm vào giỏ hàng cho họ :3.
 
 ${ctx.products.length > 0 ? `SẢN PHẨM KHỚP:\n${ctx.products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}` : ''}
 ${graphContext ? `\n${graphContext}` : ''}
