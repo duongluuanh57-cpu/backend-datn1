@@ -3,15 +3,36 @@ import { MiniGameSession } from '../models/MiniGameSession.ts';
 import { UserVoucher } from '../models/UserVoucher.ts';
 
 // Thứ tự hạng từ thấp đến cao
-const TIER_ORDER: Record<string, number> = {
+export const TIER_ORDER: Record<string, number> = {
   MEMBER: 0,
+  member: 0,
+  'Thành viên': 0,
+  'thành viên': 0,
+  dong: 0,
+  Dong: 0,
+  Bronze: 0,
+  bronze: 0,
   Bac: 1,
+  bac: 1,
+  'Bạc': 1,
+  'bạc': 1,
+  Silver: 1,
+  silver: 1,
   Vang: 2,
+  vang: 2,
+  'Vàng': 2,
+  'vàng': 2,
+  Gold: 2,
+  gold: 2,
   KimCuong: 3,
+  kimcuong: 3,
+  'Kim Cương': 3,
+  'kim cương': 3,
+  Diamond: 3,
+  diamond: 3,
 };
 
 export class VoucherService {
-  /**
   /**
    * Đảm bảo luôn có đúng 5 voucher cố định cho Vòng Quay May Mắn (applicableTo = 'minigame')
    */
@@ -72,14 +93,24 @@ export class VoucherService {
   static async getActive(userTier?: string | null, userId?: string | null) {
     await this.syncVouchersState();
     const now = new Date();
+    const userLevel = TIER_ORDER[userTier || 'MEMBER'] ?? 0;
 
-    // 1. Lấy tất cả voucher toàn sàn (applicableTo = 'all')
-    const globalVouchers = await Voucher.find({
+    // 1. Lấy voucher toàn sàn & membership công khai
+    const publicVouchers = await Voucher.find({
       status: 'active',
-      applicableTo: 'all',
+      applicableTo: { $in: ['all', 'membership'] },
       startDate: { $lte: now },
       endDate: { $gte: now },
     }).sort({ createdAt: -1 }).lean();
+
+    // Lọc theo minTier: chỉ lấy voucher mà user đủ hạng (minTier <= userLevel)
+    const eligiblePublicVouchers = publicVouchers.filter((v: any) => {
+      if (v.minTier) {
+        const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
+        if (userLevel < requiredLevel) return false;
+      }
+      return true;
+    });
 
     // 2. Lấy tất cả voucher được cấp riêng cho user này (từ membership và minigame) qua UserVoucher
     let grantedVouchers: any[] = [];
@@ -99,6 +130,10 @@ export class VoucherService {
             new Date(v.startDate) <= now &&
             new Date(v.endDate) >= now;
           if (!isActive) return null;
+          if (v.minTier) {
+            const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
+            if (userLevel < requiredLevel) return null;
+          }
           return {
             ...v,
             userVoucherId: uv._id, // Lưu ID của UserVoucher để tham chiếu nếu cần
@@ -108,7 +143,7 @@ export class VoucherService {
     }
 
     // Gộp cả 2 danh sách lại và loại bỏ trùng lặp nếu có trùng code
-    const allActive = [...globalVouchers, ...grantedVouchers];
+    const allActive = [...eligiblePublicVouchers, ...grantedVouchers];
     const uniqueMap = new Map<string, any>();
     for (const v of allActive) {
       uniqueMap.set(v.code, v);

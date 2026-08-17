@@ -3,14 +3,23 @@ import { VoucherService } from '../services/VoucherService.ts';
 import { requireAdmin } from '../utils/adminAuth.ts';
 
 export class VoucherController {
-  /** GET /api/vouchers — Lấy tất cả voucher (admin: all, user: active) */
+  /** GET /api/vouchers — Lấy tất cả voucher (admin: all khi forAdmin=true, user: active theo hạng) */
   static async getAll(req: FastifyRequest, reply: FastifyReply) {
     try {
       const user = (req as any).user;
+      const { applicableTo, status, type, search, sortBy, forAdmin, orderAmount, includeAll } = req.query as {
+        applicableTo?: string;
+        status?: string;
+        type?: string;
+        search?: string;
+        sortBy?: string;
+        forAdmin?: string;
+        orderAmount?: string;
+        includeAll?: string;
+      };
 
-      if (user && (user.role === 'ADMIN')) {
+      if (user && (user.role === 'ADMIN') && (forAdmin === 'true' || search !== undefined || sortBy !== undefined)) {
         let list = await VoucherService.getAll();
-        const { applicableTo, status, type, search, sortBy } = req.query as { applicableTo?: string; status?: string; type?: string; search?: string; sortBy?: string };
         if (applicableTo) {
           list = list.filter((v: any) => v.applicableTo === applicableTo);
         }
@@ -39,19 +48,12 @@ export class VoucherController {
         return reply.send({ success: true, data: enriched });
       }
 
-      const userTier = user?.memberTier || null;
+      const userTier = user?.memberTier || 'MEMBER';
       const userId = user?.userId || null;
-      const { orderAmount, includeAll } = req.query as { orderAmount?: string; includeAll?: string };
       const totalAmount = orderAmount ? Number(orderAmount) : 0;
       const hasOrderAmount = orderAmount !== undefined && orderAmount !== '';
 
-      let list: any[];
-      if (includeAll === 'true') {
-        // Trả về tất cả voucher (kể cả hết hạn, hết lượt) — dùng cho trang profile
-        list = await VoucherService.getAll();
-      } else {
-        list = await VoucherService.getActive(userTier, userId);
-      }
+      const list = await VoucherService.getActive(userTier, userId);
 
       // Add remaining field + eligible flag (chỉ khi có orderAmount)
       const enriched = list.map((v: any) => {
