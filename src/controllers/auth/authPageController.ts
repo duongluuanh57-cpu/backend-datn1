@@ -8,19 +8,23 @@ const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/sit
 async function verifyTurnstile(token: string, ip: string): Promise<boolean> {
   if (!token) return false;
   try {
-    const secret = process.env.TURNSTILE_SECRET_KEY || '';
+    const secret = process.env.TURNSTILE_SECRET_KEY || process.env.TURNSTILE_SECRET || '0x4AAAAAAESq8PaG7jLudjuSkaJG3fNrO2s';
     const formData = new URLSearchParams();
     formData.append('secret', secret);
     formData.append('response', token);
-    if (ip) formData.append('remoteip', ip);
+    if (ip && !['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'].includes(ip)) {
+      formData.append('remoteip', ip);
+    }
     const res = await fetch(TURNSTILE_VERIFY_URL, {
       method: 'POST',
       body: formData,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
     const outcome = await res.json() as any;
+    console.log('[Turnstile verify result]:', outcome);
     return outcome.success === true;
-  } catch {
+  } catch (err) {
+    console.error('[Turnstile verify error]:', err);
     return false;
   }
 }

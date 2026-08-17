@@ -8,13 +8,6 @@ import type { FastifyInstance } from 'fastify';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import compress from '@fastify/compress';
-import view from '@fastify/view';
-import ejs from 'ejs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 import { authRoutes } from './routes/auth.routes.ts';
 import { aiRoutes } from './routes/ai.routes.ts';
@@ -49,28 +42,11 @@ import { adminRoutes } from './routes/admin.routes.ts';
 import { mediaRoutes } from './routes/media.routes.ts';
 import { reviewRoutes } from './routes/review.routes.ts';
 import { AuthPageController } from './controllers/auth/authPageController.ts';
-import { readFileSync } from 'fs';
 
 import rawBody from 'fastify-raw-body';
 import multipart from '@fastify/multipart';
 import { register } from './config/metrics.ts';
 import { graphqlRoute } from './graphql/route.ts';
-
-const adminStaticCache = new Map<string, string>();
-
-function getCachedAdminStaticFile(filePath: string): string | null {
-  if (process.env.NODE_ENV === 'production' && adminStaticCache.has(filePath)) {
-    return adminStaticCache.get(filePath)!;
-  }
-  try {
-    const content = readFileSync(filePath, 'utf-8');
-    adminStaticCache.set(filePath, content);
-    return content;
-  } catch {
-    return null;
-  }
-}
-
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
@@ -98,18 +74,10 @@ export function buildApp(): FastifyInstance {
 
   app.register(corePlugin);
 
-  // View engine — EJS cho auth pages (login/register)
-  app.register(view, {
-    engine: { ejs },
-    root: join(__dirname, 'views'),
-    viewExt: 'ejs',
-  });
-
-
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || ['http://localhost:3000', 'https://frontend-datn-tau.vercel.app'];
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || ['http://localhost:3000', 'https://lessence-livid.vercel.app', 'https://frontend-datn-tau.vercel.app'];
   app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
@@ -124,7 +92,7 @@ export function buildApp(): FastifyInstance {
   app.register(helmet, { contentSecurityPolicy: false });
   app.register(compress);
 
-  // GraphQL — phục vụ homepage query (dùng graphql trực tiếp, không qua Yoga)
+  // GraphQL — phục vụ homepage query
   app.register(graphqlRoute);
 
   // Global Rate Limiting
@@ -133,7 +101,6 @@ export function buildApp(): FastifyInstance {
       if (request.method === 'GET' || request.method === 'HEAD') return 1000;
       const user = (request as any).user;
       if (user?.role === 'ADMIN') return 500;
-      if (false) return 500;
       if (user?.role === 'USER') return 600;
       return 120;
     },
@@ -150,13 +117,14 @@ export function buildApp(): FastifyInstance {
     },
   });
 
-  // Routes
+  // REST API Routes
   app.register(authRoutes, { prefix: '/api/auth' });
   app.register(oauthRoutes, { prefix: '/api/auth' });
 
-  // Root-level auth page routes (hide /api/auth prefix)
+  // Redirect auth helper routes to frontend
   app.get('/login', AuthPageController.getLoginPage);
   app.get('/register', AuthPageController.getRegisterPage);
+
   app.register(aiRoutes, { prefix: '/api/ai' });
   app.register(productRoutes, { prefix: '/api/products' });
   app.register(userRoutes, { prefix: '/api/users' });
@@ -183,42 +151,25 @@ export function buildApp(): FastifyInstance {
   startDailySummaryCron();
   startFlashSaleCron();
 
-  // Admin Panel (SSR) — prefix /admin
+  // Admin API & SSE — prefix /admin
   app.register(adminRoutes, { prefix: '/admin' });
-
-  // Serve admin static files (CSS & JS) with in-memory caching & HTTP cache headers
-  app.get('/admin/static/admin.css', async (_request, reply) => {
-    const fullPath = join(__dirname, 'views', 'admin', 'admin.css');
-    const css = getCachedAdminStaticFile(fullPath);
-    if (!css) return reply.status(404).send('Not Found');
-    reply.header('Content-Type', 'text/css');
-    reply.header('Cache-Control', 'public, max-age=86400');
-    return reply.send(css);
-  });
-
-  app.get('/admin/static/js/*', async (request, reply) => {
-    const filePath = (request.params as any)['*'];
-    const fullPath = join(__dirname, 'views', 'admin', 'js', filePath);
-    const js = getCachedAdminStaticFile(fullPath);
-    if (!js) return reply.status(404).send('Not Found');
-    reply.header('Content-Type', 'application/javascript');
-    reply.header('Cache-Control', 'public, max-age=86400');
-    return reply.send(js);
-  });
-
 
   app.setErrorHandler(errorHandler);
 
-  app.get('/', async (request, reply) => {
-    return reply.redirect('/login');
+  app.get('/', async (_request, reply) => {
+    return reply.send({
+      status: 'ok',
+      service: 'L\'essence E-Commerce REST API Server',
+      timestamp: new Date().toISOString(),
+    });
   });
 
-  app.get('/health', async (request, reply) => {
+  app.get('/health', async (_request, reply) => {
     const { httpStatus, body } = await runHealthChecks();
     return reply.status(httpStatus).send(body);
   });
 
-  app.get('/ping', async (request, reply) => {
+  app.get('/ping', async (_request, reply) => {
     const dbCheck = await checkDatabase();
     if (dbCheck.status !== 'up') {
       return reply.status(503).send({ status: 'warming_up', timestamp: new Date().toISOString() });
@@ -226,7 +177,7 @@ export function buildApp(): FastifyInstance {
     return reply.status(200).send({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  app.get('/metrics', async (request, reply) => {
+  app.get('/metrics', async (_request, reply) => {
     reply.header('Content-Type', register.contentType);
     return reply.send(await register.metrics());
   });

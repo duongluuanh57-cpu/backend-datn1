@@ -14,7 +14,7 @@ import * as crypto from 'crypto';
 const VNPAY_TMN_CODE = process.env.VNPAY_TMN_CODE || '';
 const VNPAY_HASH_SECRET = process.env.VNPAY_HASH_SECRET || '';
 const VNPAY_URL = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
-const VNPAY_RETURN_URL = process.env.VNPAY_RETURN_URL || (process.env.FRONTEND_URL || 'https://frontend-datn-tau.vercel.app') + '/payment/return';
+const VNPAY_RETURN_URL = process.env.VNPAY_RETURN_URL || (process.env.FRONTEND_URL || 'https://lessence-livid.vercel.app') + '/payment/return';
 
 if (!VNPAY_HASH_SECRET) {
   throw new Error('VNPAY_HASH_SECRET is not configured. Set it in .env or environment variables.');

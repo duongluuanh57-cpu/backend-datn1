@@ -204,7 +204,34 @@ export class UserController {
   static async updateUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string };
+      const currentUserId = (request as any).user?.userId;
+      const targetUser = await UserRepository.findById(id);
+
+      if (!targetUser) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      // Bảo vệ tài khoản Quản trị viên:
+      // Admin A không thể chỉnh sửa của Admin B. Chỉ Admin B mới có thể chỉnh sửa tài khoản của mình.
+      if (targetUser.role === 'ADMIN' && currentUserId !== id) {
+        return reply.status(403).send({
+          success: false,
+          message: 'Bạn không thể chỉnh sửa thông tin của quản trị viên khác. Mỗi quản trị viên chỉ có thể tự cập nhật tài khoản của mình.',
+        });
+      }
+
       const body = request.body as any;
+
+      // Không cho phép khóa tài khoản ADMIN hoặc hạ quyền ADMIN qua updateUser
+      if (targetUser.role === 'ADMIN' && (body.status === 'suspended' || (body.role && body.role !== 'ADMIN'))) {
+        return reply.status(403).send({
+          success: false,
+          message: 'Không thể khóa hoặc thay đổi vai trò của quản trị viên.',
+        });
+      }
 
       // Chỉ cho phép cập nhật các field an toàn
       const allowedFields = [
@@ -255,8 +282,23 @@ export class UserController {
   static async updateUserRole(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string };
+      const targetUser = await UserRepository.findById(id);
+      if (!targetUser) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy người dùng',
+        });
+      }
+
+      // Không cho phép hạ quyền hay thay đổi vai trò của Quản trị viên
+      if (targetUser.role === 'ADMIN') {
+        return reply.status(403).send({
+          success: false,
+          message: 'Không thể thay đổi vai trò của quản trị viên.',
+        });
+      }
+
       const { role } = request.body as { role: 'USER' | 'ADMIN' };
-      
       if (!role || !['USER', 'ADMIN'].includes(role)) {
         return reply.status(400).send({
           success: false,
@@ -292,6 +334,21 @@ export class UserController {
   static async deleteUser(request: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = request.params as { id: string };
+      const targetUser = await UserRepository.findById(id);
+      if (!targetUser) {
+        return reply.status(404).send({
+          success: false,
+          message: 'Không tìm thấy người dùng để xóa',
+        });
+      }
+
+      // Các quản trị viên không thể xóa tài khoản của nhau
+      if (targetUser.role === 'ADMIN') {
+        return reply.status(403).send({
+          success: false,
+          message: 'Không thể xóa tài khoản của quản trị viên.',
+        });
+      }
       
       const success = await UserRepository.delete(id);
       if (!success) {

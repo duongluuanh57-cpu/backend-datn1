@@ -1,30 +1,21 @@
 import type { FastifyInstance } from 'fastify';
 import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware.ts';
 import { csrfProtection } from '../middleware/csrfMiddleware.ts';
-import { AdminPageController } from '../controllers/admin/AdminPageController.ts';
-import { AdminCRUDController } from '../controllers/admin/AdminCRUDController.ts';
-import { AdminCRUDControllerPart2 } from '../controllers/admin/AdminCRUDControllerPart2.ts';
 import { DashboardStatsController } from '../controllers/admin/dashboardStatsController.ts';
-import { Tag } from '../models/Tag.ts';
-import { ProductTag } from '../models/ProductTag.ts';
 import { AuditLog } from '../models/AuditLog.ts';
-import { UserRepository } from '../repositories/UserRepository.ts';
-import { FlashSaleService } from '../services/FlashSaleService.ts';
-import { renderEjs, renderAdminPage } from '../utils/viewHelpers.ts';
 import { addSseClient, removeSseClient } from '../utils/adminSseEmitter.ts';
+import { detectFrontendUrl } from '../utils/viewHelpers.ts';
 import crypto from 'crypto';
 
 export async function adminRoutes(app: FastifyInstance) {
-  // Rate limit cho admin: 120 req/phút (2x so với user thường)
+  // Rate limit cho admin: 120 req/phút
   app.addHook('preHandler', adminAuthMiddleware);
 
-
-  // Rate limit cứng cho form submit
+  // Rate limit cứng cho form submit / write operations
   app.addHook('preHandler', async (req, reply) => {
-    if (['POST','PUT','PATCH','DELETE'].includes(req.method)) {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
       const ip = req.ip;
       const key = `admin-rl:${ip}`;
-      // Đơn giản: dùng biến global để đếm (production nên dùng Redis)
       const now = Date.now();
       const windowMs = 60000;
       const maxReqs = 30;
@@ -44,7 +35,6 @@ export async function adminRoutes(app: FastifyInstance) {
   app.addHook('preHandler', csrfProtection);
 
   // ── SSE: Real-time order notifications (GET only, exempt from CSRF) ──
-  // Registered before CSRF hook so the long-lived GET stream is not blocked.
   app.get('/order-events', { preHandler: adminAuthMiddleware }, async (request, reply) => {
     const clientId = crypto.randomUUID();
     reply.raw.setHeader('Content-Type', 'text/event-stream');
@@ -52,10 +42,8 @@ export async function adminRoutes(app: FastifyInstance) {
     reply.raw.setHeader('Connection', 'keep-alive');
     reply.raw.setHeader('X-Accel-Buffering', 'no');
     reply.raw.flushHeaders();
-    // Send initial heartbeat
     reply.raw.write(': connected\n\n');
     addSseClient(clientId, reply);
-    // Heartbeat every 25s to prevent proxy timeouts
     const heartbeat = setInterval(() => {
       try { reply.raw.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
     }, 25000);
@@ -63,108 +51,11 @@ export async function adminRoutes(app: FastifyInstance) {
       clearInterval(heartbeat);
       removeSseClient(clientId);
     });
-    // Keep connection open — Fastify will not finalize the reply
     await new Promise<void>(() => {});
   });
 
-  // Dashboard
-  app.get('/', AdminPageController.dashboard);
+  // Dashboard Stats API
   app.get('/dashboard-stats', DashboardStatsController.getSummaryStats);
-
-  // ── Products CRUD ──
-  app.get('/products', AdminCRUDController.productList);
-  app.get('/products/create', AdminCRUDController.productCreate);
-  app.get('/products/:id', AdminCRUDController.productDetail);
-  app.get('/products/:id/delete', AdminCRUDController.productDelete);
-
-  // ── Edit product (full form) — phải đặt TRƯỚC /products/supplement/:id
-  app.get('/products/:id/edit', AdminCRUDController.productEdit);
-
-  // ── Supplement sản phẩm: chi tiết (phải đặt TRƯỚC /products/supplement) ──
-  app.get('/products/supplement/:id', AdminCRUDController.productSupplementDetail);
-
-  // ── Supplement sản phẩm: danh sách ──
-  app.get('/products/supplement', AdminCRUDController.productSupplement);
-
-  // ── Brands CRUD ──
-  app.get('/brands', AdminCRUDController.brandList);
-  app.get('/brands/create', AdminCRUDController.brandCreate);
-  app.get('/brands/:id/edit', AdminCRUDController.brandEdit);
-  app.get('/brands/:id', AdminCRUDController.brandDetail);
-  app.get('/brands/:id/delete', AdminCRUDController.brandDelete);
-
-  // ── Categories CRUD ──
-  app.get('/categories', AdminCRUDController.categoryList);
-  app.get('/categories/create', AdminCRUDController.categoryCreate);
-  app.get('/categories/:id/edit', AdminCRUDController.categoryEdit);
-  app.get('/categories/:id', AdminCRUDController.categoryDetail);
-  app.get('/categories/:id/delete', AdminCRUDController.categoryDelete);
-
-  // ── Tags CRUD ──
-  app.get('/tags', async (req, reply) => {
-    const userReq = (req as any).user;
-    const u = userReq ? { _id: userReq.userId, fullName: userReq.name || 'Admin', email: userReq.email || '', role: userReq.role } : null;
-    const apiToken = (req as any).token || '';
-    const config = JSON.stringify({
-      entityName:'tag', title:'Tags', apiEndpoint:'/api/tags', itemsPath:'items', totalPath:'total', totalPagesPath:'totalPages',
-      columns:[
-        {key:'index', label:'STT', render:'rowIndex', width:'60px'},
-        {key:'name', label:'Tag'},
-        {key:'slug', label:'Slug'},
-        {key:'productCount', label:'Sản phẩm', render:'tagProductCount', width:'140px'},
-        {key:'status', label:'Trạng thái', render:'editableStatus', statusOptions:[{v:'active',l:'Hoạt động'},{v:'inactive',l:'Ẩn'}], statusApiEndpoint:'/api/tags/:id', width:'140px'},
-        {key:'actions', label:'Thao tác', render:'tagActions', width:'140px'},
-      ],
-      deleteEndpoint:'/admin/tags/:id/delete',
-      bulkDeleteEndpoint:'/api/tags/bulk-delete',
-      detailEndpoint:'/admin/tags/:id',
-      searchPlaceholder:'Tìm tag...',
-    });
-    const b = renderEjs('admin/crud/list.ejs', { apiToken, config });
-    return renderAdminPage(reply, u, 'Tags', 'tags', b, apiToken, 'Quản lý Cửa hàng', null);
-  });
-  app.get('/tags/create', AdminCRUDController.tagCreate);
-  app.get('/tags/:id/edit', AdminCRUDController.tagEdit);
-  app.get('/tags/:id', AdminCRUDController.tagDetail);
-  app.get('/tags/:id/delete', async (req, reply) => {
-    const tagId = (req.params as any).id;
-    await Tag.findByIdAndDelete(tagId);
-    await ProductTag.deleteMany({ tagId: tagId });
-    await FlashSaleService.clearCache();
-    return reply.redirect('/admin/tags?toast=Đã+xóa+tag&type=success');
-  });
-
-  // ── Orders CRUD ──
-  app.get('/orders', AdminCRUDControllerPart2.orderList);
-  app.get('/orders/:id', AdminCRUDControllerPart2.orderDetail);
-
-  // ── Vouchers CRUD ──
-  app.get('/vouchers', AdminCRUDControllerPart2.voucherList);
-  app.get('/vouchers/:id', AdminCRUDControllerPart2.voucherDetail);
-  app.get('/vouchers/create', AdminCRUDControllerPart2.voucherCreate);
-  app.get('/vouchers/:id/edit', AdminCRUDControllerPart2.voucherEdit);
-  app.get('/vouchers/:id/delete', AdminCRUDControllerPart2.voucherDelete);
-
-  // ── Flash Sales CRUD ──
-  app.get('/flash-sales', AdminCRUDControllerPart2.flashSaleList);
-  app.get('/flash-sales/create', AdminCRUDControllerPart2.flashSaleCreate);
-  app.get('/flash-sales/:id', AdminCRUDControllerPart2.flashSaleDetail);
-  app.get('/flash-sales/:id/edit', AdminCRUDControllerPart2.flashSaleEdit);
-
-  // ── Users CRUD ──
-  app.get('/users', AdminCRUDControllerPart2.userList);
-  app.get('/system-users', AdminCRUDControllerPart2.systemUserList);
-  app.get('/users/:id/delete', AdminCRUDControllerPart2.userDelete);
-
-
-  // ── Reviews CRUD ──
-  app.get('/reviews', AdminCRUDControllerPart2.reviewList);
-  app.get('/reviews/:id', AdminCRUDControllerPart2.reviewDetail);
-  app.post('/reviews/:id/moderate', AdminCRUDControllerPart2.reviewModerate);
-
-  // ── Settings ──
-  app.get('/settings', AdminPageController.settingsPage);
-  app.post('/settings', AdminPageController.settingsSave);
 
   // ── Activity Log API ──
   app.get('/activity-log-api', async (req, reply) => {
@@ -208,12 +99,9 @@ export async function adminRoutes(app: FastifyInstance) {
     });
   });
 
-  // ── Activity Log page ──
-  app.get('/activity-log', AdminPageController.activityLog);
-
-  // ── Architecture Diagram ──
-  app.get('/architecture', AdminPageController.architecture);
-
-  // Logout
-  app.post('/logout', AdminPageController.logout);
+  // Redirect /admin root to frontend admin dashboard
+  app.get('/', async (req, reply) => {
+    const frontendUrl = detectFrontendUrl(req);
+    return reply.redirect(`${frontendUrl.replace(/\/+$/, '')}/admin`);
+  });
 }

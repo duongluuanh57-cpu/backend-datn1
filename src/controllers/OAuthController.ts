@@ -32,7 +32,7 @@ export class OAuthController {
     await redis.del(`oauth:state:${state}`);
 
     const result = await OAuthService.handleGoogleCallback(code);
-    const frontendUrl = process.env.FRONTEND_URL || 'https://frontend-datn-tau.vercel.app';
+    const frontendUrl = process.env.FRONTEND_URL || 'https://lessence-livid.vercel.app';
     
     // Redirect về Frontend kèm token
     const redirectUrl = new URL(`${frontendUrl}/auth/callback`);

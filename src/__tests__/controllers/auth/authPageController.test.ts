@@ -3,51 +3,34 @@ import { AuthPageController } from '../../../controllers/auth/authPageController
 
 describe('AuthPageController', () => {
   beforeEach(() => {
-    vi.stubEnv('FRONTEND_URL', 'https://frontend-datn-tau.vercel.app');
+    vi.stubEnv('FRONTEND_URL', 'https://lessence-livid.vercel.app');
   });
+
   describe('getLoginPage', () => {
-    it('uses localhost frontend URL when Referer is localhost', async () => {
+    it('redirects to localhost frontend URL when Referer is localhost', async () => {
       const req = { headers: { referer: 'http://localhost:3000/some-page' } } as any;
-      let viewPath = '', viewData: any = {};
-      const reply = { view: (p: string, d: any) => { viewPath = p; viewData = d; return reply; } } as any;
+      let redirectUrl = '';
+      const reply = { redirect: (url: string) => { redirectUrl = url; return reply; } } as any;
       await AuthPageController.getLoginPage(req, reply);
-      expect(viewPath).toBe('auth.ejs');
-      expect(viewData.frontendUrl).toBe('http://localhost:3000');
+      expect(redirectUrl).toBe('http://localhost:3000/auth/login');
     });
 
-    it('uses localhost frontend URL when Referer is localhost with port', async () => {
-      const req = { headers: { referer: 'http://127.0.0.1:3000/login' } } as any;
-      let viewData: any = {};
-      const reply = { view: (_p: string, d: any) => { viewData = d; return reply; } } as any;
-      await AuthPageController.getLoginPage(req, reply);
-      expect(viewData.frontendUrl).toBe('http://127.0.0.1:3000');
-    });
-
-    it('falls back to env FRONTEND_URL when no localhost Referer', async () => {
-      const req = { headers: { referer: 'https://frontend-datn-tau.vercel.app/login' } } as any;
-      let viewData: any = {};
-      const reply = { view: (_p: string, d: any) => { viewData = d; return reply; } } as any;
-      await AuthPageController.getLoginPage(req, reply);
-      expect(viewData.frontendUrl).toBe('https://frontend-datn-tau.vercel.app');
-    });
-
-    it('falls back to default when no Referer header', async () => {
+    it('redirects to env FRONTEND_URL when no localhost Referer', async () => {
       const req = { headers: {} } as any;
-      let viewData: any = {};
-      const reply = { view: (_p: string, d: any) => { viewData = d; return reply; } } as any;
+      let redirectUrl = '';
+      const reply = { redirect: (url: string) => { redirectUrl = url; return reply; } } as any;
       await AuthPageController.getLoginPage(req, reply);
-      expect(viewData.frontendUrl).toBe('https://frontend-datn-tau.vercel.app');
+      expect(redirectUrl).toBe('https://lessence-livid.vercel.app/auth/login');
     });
   });
 
   describe('getRegisterPage', () => {
-    it('uses localhost frontend URL when Referer is localhost', async () => {
+    it('redirects to localhost frontend URL when Referer is localhost', async () => {
       const req = { headers: { referer: 'http://localhost:3000/register' } } as any;
-      let viewData: any = {};
-      const reply = { view: (_p: string, d: any) => { viewData = d; return reply; } } as any;
+      let redirectUrl = '';
+      const reply = { redirect: (url: string) => { redirectUrl = url; return reply; } } as any;
       await AuthPageController.getRegisterPage(req, reply);
-      expect(viewData.frontendUrl).toBe('http://localhost:3000');
-      expect(viewData.mode).toBe('register');
+      expect(redirectUrl).toBe('http://localhost:3000/auth/register');
     });
   });
 
