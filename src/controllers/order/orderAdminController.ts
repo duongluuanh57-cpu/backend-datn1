@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
+import { Payment } from '../../models/Payment.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { UserAddress } from '../../models/UserAddress.ts';
 import { Voucher } from '../../models/Voucher.ts';
@@ -239,6 +240,10 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
     if (status === 'delivered') {
       updateData.paymentStatus = 'paid';
       updateData.deliveredAt = new Date();
+      await Payment.updateMany(
+        { orderId: orderId },
+        { $set: { status: 'paid', paidAt: new Date() } }
+      );
     }
 
     const order = await Order.findByIdAndUpdate(
