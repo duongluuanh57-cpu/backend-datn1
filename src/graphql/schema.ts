@@ -23,6 +23,7 @@ const typeDefs = `#graphql
     soldCount: Int
     quantityInStock: Int
     rating: Float
+    categories: String
     isFeatured: Boolean
     isNewArrival: Boolean
     isBestSeller: Boolean
@@ -66,6 +67,7 @@ const typeDefs = `#graphql
     discount: Float
     reviewsCount: Int
     soldCount: Int
+    rating: Float
     categories: [String!]
     variants: [Variant!]
     size: String
@@ -167,6 +169,11 @@ function mapProduct(p: any) {
     soldCount: p.soldCount ?? p.sold_count ?? null,
     quantityInStock: p.quantityInStock ?? 0,
     rating: p.rating ?? p.avgRating ?? p.averageRating ?? null,
+    categories: typeof p.categories === 'string'
+      ? p.categories
+      : Array.isArray(p.categories)
+        ? p.categories.map((c: any) => (c && typeof c === 'object' && c.name ? c.name : String(c))).join(', ')
+        : '',
     isFeatured: p.isFeatured ?? false,
     isNewArrival: p.isNewArrival ?? false,
     isBestSeller: p.isBestSeller ?? false,
@@ -206,6 +213,7 @@ function mapProductDetail(p: any) {
     discount: p.discount ?? p.discountPercentage ?? null,
     reviewsCount: p.reviewsCount ?? p.reviews_count ?? 0,
     soldCount: p.soldCount ?? p.sold_count ?? 0,
+    rating: p.rating ?? p.avgRating ?? p.averageRating ?? null,
     categories: typeof p.categories === 'string'
       ? p.categories.split(',').map((s: string) => s.trim()).filter(Boolean)
       : Array.isArray(p.categories)
@@ -240,7 +248,7 @@ const EMPTY_CART_AND_FAVORITES = {
 const resolvers = {
   Query: {
     homepage: async () => {
-      const cacheKey = 'homepage:v6';
+      const cacheKey = 'homepage:v7';
       const cached = await safeRedisGet(cacheKey);
       if (cached) {
         console.log('[Cache HIT] Homepage');
@@ -270,9 +278,9 @@ const resolvers = {
       const result = {
         flashSales: formattedFlashSales,
         sale: (sale || []).slice(0, 20).map(mapProduct),
-        new: (newProducts || []).slice(0, 8).map(mapProduct),
-        hot: (hot || []).slice(0, 10).map(mapProduct),
-        limited: (limited || []).slice(0, 10).map(mapProduct),
+        new: (newProducts || []).slice(0, 15).map(mapProduct),
+        hot: (hot || []).slice(0, 15).map(mapProduct),
+        limited: (limited || []).slice(0, 15).map(mapProduct),
         standard: (standard || []).slice(0, 10).map(mapProduct),
         brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
       };

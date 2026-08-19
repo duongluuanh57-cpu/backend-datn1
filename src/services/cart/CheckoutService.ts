@@ -44,7 +44,7 @@ export class CheckoutService {
 
       const product = await Product.findById(entry.productId)
         .select('name brandId brand image discountPercentage discountStartDate discountEndDate')
-        .populate('brandId', 'name')
+        .populate('brandId', 'name logo')
         .lean() as any;
       if (!product) {
         const err: any = new Error('Sản phẩm không tồn tại');
@@ -93,12 +93,13 @@ export class CheckoutService {
         finalPrice = Math.round(variantPrice * (1 - discountPct / 100));
       }
 
-      let imageUrl = product.image || undefined;
-      if (!imageUrl) {
-        const productImage = await ProductImage.findOne({ productId: new mongoose.Types.ObjectId(entry.productId) })
-          .select('url')
-          .sort({ createdAt: 1 })
-          .lean() as any;
+      const productImage = await ProductImage.findOne({ productId: new mongoose.Types.ObjectId(entry.productId) })
+        .select('url')
+        .sort({ createdAt: 1 })
+        .lean() as any;
+      const brandLogo = (product.brandId as any)?.logo;
+      let imageUrl = productImage?.url || product.image || undefined;
+      if (brandLogo && imageUrl === brandLogo) {
         imageUrl = productImage?.url || undefined;
       }
 

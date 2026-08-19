@@ -13,10 +13,20 @@ export class CartService {
   static async enrichItemsWithVariants(items: any[]) {
     if (!items || items.length === 0) return [];
     const productIds = items.map(item => item.productId).filter(Boolean);
-    const allVariants = await ProductVariant.find({ productId: { $in: productIds } })
-      .select('productId size price quantityInStock isDefault sortOrder')
-      .sort({ sortOrder: 1 })
-      .lean();
+    const [allVariants, allProductImages, allProducts] = await Promise.all([
+      ProductVariant.find({ productId: { $in: productIds } })
+        .select('productId size price quantityInStock isDefault sortOrder')
+        .sort({ sortOrder: 1 })
+        .lean(),
+      ProductImage.find({ productId: { $in: productIds } })
+        .select('url productId')
+        .sort({ createdAt: 1 })
+        .lean(),
+      Product.find({ _id: { $in: productIds } })
+        .select('image brandId')
+        .populate('brandId', 'logo')
+        .lean(),
+    ]);
 
     const variantMap: Record<string, any[]> = {};
     allVariants.forEach((v: any) => {
@@ -25,14 +35,34 @@ export class CartService {
       variantMap[pid].push(v);
     });
 
+    const imgMap: Record<string, string> = {};
+    allProductImages.forEach((pi: any) => {
+      const pid = String(pi.productId);
+      if (!imgMap[pid]) imgMap[pid] = pi.url;
+    });
+
+    const prodMap: Record<string, any> = {};
+    allProducts.forEach((p: any) => {
+      prodMap[String(p._id)] = p;
+    });
+
     return items.map(item => {
-      const variants = variantMap[String(item.productId)] || [];
+      const pid = String(item.productId);
+      const variants = variantMap[pid] || [];
+      const prod = prodMap[pid];
+      const brandLogo = (prod?.brandId as any)?.logo;
+      let finalImg = imgMap[pid] || item.image || prod?.image || undefined;
+      if (brandLogo && finalImg === brandLogo) {
+        finalImg = imgMap[pid] || undefined;
+      }
       return {
         ...item,
+        image: finalImg,
         availableVariants: variants.map((v: any) => ({
           size: v.size,
           price: v.price,
-          inStock: v.quantityInStock > 0,
+          quantityInStock: v.quantityInStock ?? 0,
+          inStock: (v.quantityInStock ?? 0) > 0,
           isDefault: v.isDefault,
         })),
       };
@@ -74,7 +104,7 @@ export class CartService {
 
     const product = await Product.findById(productId)
       .select('name brandId brand image discountPercentage discountStartDate discountEndDate')
-      .populate('brandId', 'name')
+      .populate('brandId', 'name logo')
       .lean() as any;
     if (!product) {
       const err: any = new Error('Sản phẩm không tồn tại');
@@ -128,12 +158,13 @@ export class CartService {
       finalPrice = Math.round(variantPrice * (1 - discountPct / 100));
     }
 
-    let imageUrl = product.image || undefined;
-    if (!imageUrl) {
-      const productImage = await ProductImage.findOne({ productId: new mongoose.Types.ObjectId(productId) })
-        .select('url')
-        .sort({ createdAt: 1 })
-        .lean() as any;
+    const productImage = await ProductImage.findOne({ productId: new mongoose.Types.ObjectId(productId) })
+      .select('url')
+      .sort({ createdAt: 1 })
+      .lean() as any;
+    const brandLogo = (product.brandId as any)?.logo;
+    let imageUrl = productImage?.url || product.image || undefined;
+    if (brandLogo && imageUrl === brandLogo) {
       imageUrl = productImage?.url || undefined;
     }
 
@@ -225,6 +256,21 @@ export class CartService {
     if (quantity === 0) {
       await CartItem.deleteOne({ _id: item._id });
     } else {
+      // Check stock limit for the product variant
+      const variantSize = item.variantSize || '50ml';
+      const variantDoc = await ProductVariant.findOne({
+        productId: new mongoose.Types.ObjectId(productId),
+        size: variantSize,
+      }).lean();
+
+      if (variantDoc && variantDoc.quantityInStock !== undefined) {
+        if (quantity > variantDoc.quantityInStock) {
+          const err: any = new Error(`Quá số lượng tồn kho, sản phẩm này hiện có ${variantDoc.quantityInStock} sản phẩm`);
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
       if (!item.userId) item.userId = new mongoose.Types.ObjectId(userId);
       item.quantity = quantity;
       await item.save();
@@ -287,9 +333,13 @@ export class CartService {
       if (startOk && endOk) finalPrice = Math.round(variantDoc.price * (1 - product.discountPercentage / 100));
     }
 
+    const newStock = variantDoc.quantityInStock !== undefined ? variantDoc.quantityInStock : 999;
+    const adjustedQuantity = Math.max(1, Math.min(item.quantity, newStock));
+
     if (existingWithNewVariant) {
       if (!existingWithNewVariant.userId) existingWithNewVariant.userId = new mongoose.Types.ObjectId(userId);
-      existingWithNewVariant.quantity += item.quantity;
+      const combinedQuantity = Math.min(existingWithNewVariant.quantity + adjustedQuantity, newStock);
+      existingWithNewVariant.quantity = combinedQuantity;
       existingWithNewVariant.price = finalPrice;
       await existingWithNewVariant.save();
       await CartItem.deleteOne({ _id: item._id });
@@ -297,6 +347,7 @@ export class CartService {
       if (!item.userId) item.userId = new mongoose.Types.ObjectId(userId);
       item.variantSize = newVariantSize;
       item.price = finalPrice;
+      item.quantity = adjustedQuantity;
       await item.save();
     }
 

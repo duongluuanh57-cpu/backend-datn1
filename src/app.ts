@@ -41,6 +41,7 @@ import { cartRoutes } from './routes/cart.routes.ts';
 import { adminRoutes } from './routes/admin.routes.ts';
 import { mediaRoutes } from './routes/media.routes.ts';
 import { reviewRoutes } from './routes/review.routes.ts';
+import { newsRoutes } from './routes/newsRoutes.ts';
 import { AuthPageController } from './controllers/auth/authPageController.ts';
 
 import rawBody from 'fastify-raw-body';
@@ -146,6 +147,7 @@ export function buildApp(): FastifyInstance {
   app.register(dailySummaryRoutes, { prefix: '/api/admin' });
   app.register(mediaRoutes, { prefix: '/api/media' });
   app.register(reviewRoutes, { prefix: '/api/reviews' });
+  app.register(newsRoutes, { prefix: '/api' });
 
   // Start background cron jobs
   startDailySummaryCron();

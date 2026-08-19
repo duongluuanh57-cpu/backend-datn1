@@ -36,6 +36,10 @@ export async function calculateShippingFee(totalAmount: number, shippingMethodCo
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       const method = await ShippingMethod.findOne({ code, isActive: true }).lean();
       if (method) {
+        if (code === 'express') {
+          const fee = Math.round(totalAmount * 0.05);
+          return { fee, methodId: method._id.toString() };
+        }
         const fee = (method.freeShipMinAmount > 0 && totalAmount >= method.freeShipMinAmount) ? 0 : method.fee;
         return { fee, methodId: method._id.toString() };
       }
@@ -43,6 +47,9 @@ export async function calculateShippingFee(totalAmount: number, shippingMethodCo
   } catch (_) {}
 
   // Fallback nếu chưa có dữ liệu trong DB hoặc DB chưa kết nối
+  if (code === 'express') {
+    return { fee: Math.round(totalAmount * 0.05), methodId: null };
+  }
   const fallbackFee = totalAmount >= FREE_SHIP_THRESHOLD ? 0 : SHIPPING_FEE;
   return { fee: fallbackFee, methodId: null };
 }

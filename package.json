@@ -27,7 +27,8 @@
     "seed:fix-order-payments": "tsx src/scripts/fix-order-payments.ts",
     "migrate:backfill-ai-rejected-reviews": "tsx src/scripts/backfill-ai-rejected-reviews.ts",
     "seed:review-moderators": "tsx src/scripts/seed-review-moderators.ts",
-    "seed:order-phones": "tsx src/scripts/seed-order-phones.ts"
+    "seed:order-phones": "tsx src/scripts/seed-order-phones.ts",
+    "seed:news": "tsx src/scripts/seed-articles.ts"
   },
   "keywords": [],
   "author": "",

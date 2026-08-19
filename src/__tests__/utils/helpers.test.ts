@@ -73,6 +73,13 @@ describe('calculateShippingFee', () => {
     expect(res2.fee).toBe(SHIPPING_FEE);
   });
 
+  it('returns 5% of total amount for express shipping', async () => {
+    const res1 = await calculateShippingFee(1_000_000, 'express');
+    expect(res1.fee).toBe(50_000);
+    const res2 = await calculateShippingFee(500_000, 'express');
+    expect(res2.fee).toBe(25_000);
+  });
+
   it('exports correct constants', () => {
     expect(FREE_SHIP_THRESHOLD).toBe(500_000);
     expect(SHIPPING_FEE).toBe(30_000);

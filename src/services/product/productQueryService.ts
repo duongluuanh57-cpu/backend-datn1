@@ -327,11 +327,32 @@ export class ProductQueryService {
       }
     }
     if (category) {
-      const categoryIds = category.split(',').map((s: string) => s.trim()).filter(Boolean);
-      const validCategoryIds = categoryIds.filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+      const categoryInputs = category.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const validCategoryIds: mongoose.Types.ObjectId[] = [];
+      const categoryNames: string[] = [];
+
+      for (const input of categoryInputs) {
+        if (mongoose.Types.ObjectId.isValid(input)) {
+          validCategoryIds.push(new mongoose.Types.ObjectId(input));
+        } else {
+          categoryNames.push(input);
+        }
+      }
+
+      if (categoryNames.length > 0) {
+        const foundCategories = await Category.find({
+          name: { $in: categoryNames.map(name => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')) }
+        }).select('_id').lean();
+        for (const catDoc of foundCategories) {
+          validCategoryIds.push(new mongoose.Types.ObjectId(catDoc._id.toString()));
+        }
+      }
+
       if (validCategoryIds.length > 0) {
         query.$and = query.$and || [];
-        const catConditions = validCategoryIds.map((id: string) => ({ $or: [{ categories: new mongoose.Types.ObjectId(id) }, { categoryId: new mongoose.Types.ObjectId(id) }] }));
+        const catConditions = validCategoryIds.map((id: mongoose.Types.ObjectId) => ({
+          $or: [{ categories: id }, { categoryId: id }]
+        }));
         query.$and.push({ $or: catConditions });
       } else {
         return { items: [], total: 0, page, totalPages: 0 };

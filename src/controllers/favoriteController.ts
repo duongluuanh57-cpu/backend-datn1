@@ -3,6 +3,7 @@ import { Favorite } from '../models/Favorite.ts';
 import { User } from '../models/User.ts';
 import { Product } from '../models/Product.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
+import { ProductImage } from '../models/ProductImage.ts';
 import mongoose from 'mongoose';
 
 export class FavoriteController {
@@ -21,7 +22,7 @@ export class FavoriteController {
           select: 'name brandId image discountPercentage discountStartDate discountEndDate variants reviewsCount avgRating soldCount status',
           populate: {
             path: 'brandId',
-            select: 'name',
+            select: 'name logo',
           },
         })
         .sort({ createdAt: -1 })
@@ -30,14 +31,24 @@ export class FavoriteController {
       // Filter out null productId (deleted products)
       const validFavorites = favorites.filter(f => f.productId);
 
-      // Attach computed price from variant 50ml via batch variant query
+      // Attach computed price from variant 50ml via batch variant query and product images
       const pIds = validFavorites.map(f => (f.productId as any)._id).filter(Boolean);
-      const allProductVariants = await ProductVariant.find({ productId: { $in: pIds } }).sort({ sortOrder: 1 }).lean() as any[];
+      const [allProductVariants, allProductImages] = await Promise.all([
+        ProductVariant.find({ productId: { $in: pIds } }).sort({ sortOrder: 1 }).lean() as Promise<any[]>,
+        ProductImage.find({ productId: { $in: pIds } }).select('url productId').sort({ createdAt: 1 }).lean() as Promise<any[]>,
+      ]);
+
       const variantGroupMap: Record<string, any[]> = {};
       allProductVariants.forEach(v => {
         const pid = String(v.productId);
         if (!variantGroupMap[pid]) variantGroupMap[pid] = [];
         variantGroupMap[pid].push(v);
+      });
+
+      const imageGroupMap: Record<string, string> = {};
+      allProductImages.forEach((img: any) => {
+        const pid = String(img.productId);
+        if (!imageGroupMap[pid]) imageGroupMap[pid] = img.url;
       });
 
       const enriched = validFavorites.map((fav) => {
@@ -55,10 +66,19 @@ export class FavoriteController {
           const endOk = !product.discountEndDate || new Date(product.discountEndDate) >= now;
           if (startOk && endOk) price = Math.round(price * (1 - product.discountPercentage / 100));
         }
+
+        const brandLogo = product.brandId?.logo;
+        let finalImage = imageGroupMap[productIdStr] || product.image || '';
+        // If product image matches brand logo, prefer actual product image or clear fallback
+        if (brandLogo && finalImage === brandLogo) {
+          finalImage = imageGroupMap[productIdStr] || '';
+        }
+
         return {
           ...fav,
           productId: {
             ...product,
+            image: finalImage,
             price,
             originalPrice,
             quantityInStock,

@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { Product } from '../../models/Product.ts';
+import { ProductImage } from '../../models/ProductImage.ts';
 import { requireAdmin } from '../../utils/adminAuth.ts';
 
 export { requireAdmin } from '../../utils/adminAuth.ts';
@@ -16,20 +17,33 @@ export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
 
   if (productIds.length === 0) return;
 
-  const [variants, productData] = await Promise.all([
+  const [variants, productData, productImages] = await Promise.all([
     ProductVariant.find({ productId: { $in: productIds } }).lean(),
     Product.find(
       { _id: { $in: productIds } },
       { _id: 1, reviewsCount: 1, image: 1, brandId: 1 }
     ).populate('brandId', 'name logo').lean(),
+    ProductImage.find({ productId: { $in: productIds } }).select('url productId').sort({ createdAt: 1 }).lean(),
   ]);
+
+  const imgMap = new Map<string, string>();
+  for (const pi of productImages) {
+    const pid = pi.productId.toString();
+    if (!imgMap.has(pid)) imgMap.set(pid, pi.url);
+  }
 
   for (const item of items) {
     const pid = item.productId?.toString();
     item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
     const prod = productData.find((p: any) => p._id.toString() === pid);
+    const brandLogo = (prod?.brandId as any)?.logo;
+    const resolvedProdImage = imgMap.get(pid || '') || prod?.image || null;
     item.productReviewsCount = prod?.reviewsCount || 0;
-    item.productImage = item.image || prod?.image || (prod?.brandId as any)?.logo || null;
+    let finalImg = item.image || resolvedProdImage;
+    if (brandLogo && finalImg === brandLogo) {
+      finalImg = imgMap.get(pid || '') || null;
+    }
+    item.productImage = finalImg;
   }
 }
 
