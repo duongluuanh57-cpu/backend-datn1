@@ -3,20 +3,43 @@ import { UserAddressController } from '../controllers/userAddress/userAddressCon
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 
 export async function userAddressRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authMiddleware);
+  // Public proxy routes cho tỉnh/thành Việt Nam (tránh CORS và Open-API redirect errors trên deploy)
+  app.get('/provinces', async (_req, reply) => {
+    try {
+      const res = await fetch('https://provinces.open-api.vn/api/p/');
+      const data = await res.json();
+      return reply.send({ success: true, data: data || [] });
+    } catch {
+      return reply.send({ success: true, data: [] });
+    }
+  });
 
-  // GET /api/user-addresses — Lấy tất cả địa chỉ
-  app.get('/', UserAddressController.getMyAddresses);
+  app.get('/districts/:provinceCode', async (req, reply) => {
+    try {
+      const { provinceCode } = req.params as { provinceCode: string };
+      const res = await fetch(`https://provinces.open-api.vn/api/p/${provinceCode}?depth=2`);
+      const data = await res.json();
+      return reply.send({ success: true, data: data?.districts || [] });
+    } catch {
+      return reply.send({ success: true, data: [] });
+    }
+  });
 
-  // POST /api/user-addresses — Thêm địa chỉ mới
-  app.post('/', UserAddressController.createAddress);
+  app.get('/wards/:districtCode', async (req, reply) => {
+    try {
+      const { districtCode } = req.params as { districtCode: string };
+      const res = await fetch(`https://provinces.open-api.vn/api/d/${districtCode}?depth=2`);
+      const data = await res.json();
+      return reply.send({ success: true, data: data?.wards || [] });
+    } catch {
+      return reply.send({ success: true, data: [] });
+    }
+  });
 
-  // PATCH /api/user-addresses/:id — Cập nhật địa chỉ
-  app.patch('/:id', UserAddressController.updateAddress);
-
-  // DELETE /api/user-addresses/:id — Xóa địa chỉ
-  app.delete('/:id', UserAddressController.deleteAddress);
-
-  // PATCH /api/user-addresses/:id/set-default — Đặt làm mặc định
-  app.patch('/:id/set-default', UserAddressController.setDefault);
+  // Protected routes cho user addresses
+  app.get('/', { preHandler: authMiddleware }, UserAddressController.getMyAddresses);
+  app.post('/', { preHandler: authMiddleware }, UserAddressController.createAddress);
+  app.patch('/:id', { preHandler: authMiddleware }, UserAddressController.updateAddress);
+  app.delete('/:id', { preHandler: authMiddleware }, UserAddressController.deleteAddress);
+  app.patch('/:id/set-default', { preHandler: authMiddleware }, UserAddressController.setDefault);
 }

@@ -53,8 +53,17 @@ export class AuthPageController {
         return reply.send({ success: true, message: "Đăng nhập quản trị thành công", redirectUrl: adminUrl });
       }
       const frontendUrl = data.frontendUrl || detectFrontendUrl(request);
-      const redirectUrl = frontendUrl + '/auth/callback?accessToken=' + encodeURIComponent(result.tokens.accessToken) + '&refreshToken=' + encodeURIComponent(result.tokens.refreshToken);
-      return reply.send({ success: true, message: 'Đăng nhập thành công', redirectUrl });
+      const redirectUrl = frontendUrl + '/auth/callback?accessToken=' + encodeURIComponent(result.tokens.accessToken) + '&refreshToken=' + encodeURIComponent(result.tokens.refreshToken) + '&user=' + encodeURIComponent(JSON.stringify(result.user));
+      return reply.send({
+        success: true,
+        message: 'Đăng nhập thành công',
+        redirectUrl,
+        data: {
+          user: result.user,
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+        },
+      });
     } catch (error: any) {
       return reply.send({ success: false, message: error.message || 'Email hoặc mật khẩu không chính xác' });
     }
