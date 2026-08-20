@@ -22,12 +22,19 @@ vi.mock('../../models/Brand.ts', () => {
   return { Brand: BrandMock, IBrand: {} };
 });
 
+vi.mock('../../models/Product.ts', () => ({
+  Product: {
+    aggregate: vi.fn().mockResolvedValue([]),
+  },
+}));
+
 vi.mock('../../services/ImageService.ts', () => ({
   ImageService: { deleteFromR2: vi.fn().mockResolvedValue(undefined) },
 }));
 
 import { BrandService } from '../../services/BrandService.ts';
 import { Brand } from '../../models/Brand.ts';
+import { Product } from '../../models/Product.ts';
 import { ImageService } from '../../services/ImageService.ts';
 
 beforeEach(() => {
@@ -58,6 +65,7 @@ describe('BrandService', () => {
   });
 
   it('createBrand saves new brand', async () => {
+    (Brand.findOne as any).mockResolvedValue(null);
     const saveSpy = vi.fn().mockResolvedValue({ name: 'New' });
     (Brand as any).mockImplementation(function (this: any) { this.save = saveSpy; });
     await BrandService.createBrand({ name: 'New' });

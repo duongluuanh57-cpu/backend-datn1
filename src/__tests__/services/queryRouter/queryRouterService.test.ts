@@ -70,12 +70,6 @@ describe('QueryRouterService — Role Check', () => {
     expect(isAdmin).toBe(true);
   });
 
-  it('should allow ADMIN to access admin_query', () => {
-    const userRole: string = 'SUBADMIN';
-    const isAdmin = userRole === "ADMIN";
-    expect(isAdmin).toBe(true);
-  });
-
   it('should deny USER from admin_query', () => {
     const userRole: string = 'USER';
     const isAdmin = userRole === "ADMIN";

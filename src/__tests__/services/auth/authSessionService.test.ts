@@ -6,6 +6,7 @@ vi.mock('../../../repositories/UserRepository.ts', () => ({
   UserRepository: {
     findByEmail: vi.fn(),
     findByUsername: vi.fn(),
+    update: vi.fn(),
   },
 }));
 
