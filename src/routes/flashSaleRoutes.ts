@@ -11,6 +11,7 @@ export async function flashSaleRoutes(app: FastifyInstance) {
   // Admin APIs
   app.get('/admin', { preHandler: adminOnly }, FlashSaleController.getAdminFlashSales);
   app.get('/admin/:id', { preHandler: adminOnly }, FlashSaleController.getById);
+  app.get('/suggest-name', { preHandler: adminOnly }, FlashSaleController.suggestName);
   app.post('/admin', { preHandler: adminOnly }, FlashSaleController.create);
   app.patch('/admin/:id', { preHandler: adminOnly }, FlashSaleController.update);
   app.delete('/admin/:id', { preHandler: adminOnly }, FlashSaleController.delete);

@@ -164,4 +164,88 @@ export class FlashSaleController {
       });
     }
   }
+
+  /**
+   * GET /api/flash-sales/suggest-name
+   * AI đề xuất tên sự kiện Flash Sale theo thời gian, ngày lễ hoặc từ khóa
+   */
+  static async suggestName(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const query = req.query as { date?: string; keyword?: string };
+      const dateStr = query.date || new Date().toISOString();
+      const keyword = query.keyword || '';
+
+      const { getGeminiClient, PRIMARY_MODEL } = await import('../services/ai/aiClient.ts');
+      
+      const targetDate = new Date(dateStr);
+      const day = targetDate.getDate();
+      const month = targetDate.getMonth() + 1;
+      const year = targetDate.getFullYear();
+
+      const prompt = `Bạn là chuyên gia Marketing E-commerce cho sàn thương mại điện tử chuyên về nước hoa cao cấp L'Essence (phong cách Shopee / Lazada / TikTok Shop).
+Nhiệm vụ: Hãy đề xuất 4 đến 6 tên sự kiện Flash Sale cực kỳ hấp dẫn, bắt mắt, đúng chất giờ vàng săn sale.
+Thông tin tham khảo:
+- Thời gian tổ chức: Ngày ${day}/${month}/${year} (Hãy kiểm tra xem có ngày đôi như ${day}.${month}, đầu tháng lương về, cuối tháng xả kho, lễ 8/3, 14/2, 30/4, 2/9, Trung thu, Black Friday, Giáng sinh, Tết... hoặc khung giờ vàng nào không).
+${keyword ? `- Người dùng đang gõ từ khóa: "${keyword}" (Hãy ưu tiên gợi ý phù hợp với từ khóa này)` : ''}
+
+Yêu cầu định dạng đầu ra: Trả về JSON thuần (không markdown) dạng danh sách:
+{
+  "suggestions": [
+    {
+      "title": "Tên sự kiện ngắn gọn, giật tít hấp dẫn (Ví dụ: Đại Tiệc Siêu Sale 9.9 - Deal Nước Hoa 0Đ)",
+      "badge": "Tag nổi bật (VD: Siêu Sale / Lương Về / Khung Giờ Vàng / Ngày Đôi)",
+      "description": "Mô tả ngắn gọn lý do hấp dẫn"
+    }
+  ]
+}`;
+
+      try {
+        const client = getGeminiClient();
+        const model = client.getGenerativeModel({
+          model: PRIMARY_MODEL,
+          generationConfig: { responseMimeType: 'application/json' }
+        });
+        const res = await model.generateContent(prompt);
+        const text = res.response.text();
+        const parsed = JSON.parse(text);
+        return reply.send({
+          success: true,
+          data: parsed.suggestions || [],
+        });
+      } catch (aiErr) {
+        // Fallback thông minh nếu AI bận
+        const fallback = [
+          {
+            title: `Flash Sale Giờ Vàng ${day}.${month} - Săn Deal Nước Hoa Hàng Hiệu`,
+            badge: `Siêu Sale ${day}.${month}`,
+            description: `Khuyến mãi khung giờ vàng ngày ${day}/${month}`,
+          },
+          {
+            title: `Sale Lương Về - Nước Hoa Chính Hãng Giảm Đến 50%`,
+            badge: 'Lương Về',
+            description: 'Đại tiệc săn sale đầu/cuối tháng cực hot',
+          },
+          {
+            title: `Đêm Hội Hương Thơm - Flash Sale Nửa Đêm 20h - 22h`,
+            badge: 'Giờ Vàng',
+            description: 'Chớp nhoáng giá sốc chỉ trong 2 tiếng',
+          },
+          {
+            title: `Xả Kho Cuối Tuần - Nước Hoa Pháp Đồng Giá`,
+            badge: 'Xả Kho',
+            description: 'Giảm giá chạm đáy số lượng có hạn',
+          }
+        ];
+        return reply.send({
+          success: true,
+          data: fallback,
+        });
+      }
+    } catch (error: any) {
+      return reply.status(500).send({
+        success: false,
+        message: error.message || 'Lỗi đề xuất tên sự kiện',
+      });
+    }
+  }
 }
