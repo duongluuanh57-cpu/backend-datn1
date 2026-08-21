@@ -167,37 +167,53 @@ export class FlashSaleController {
 
   /**
    * GET /api/flash-sales/suggest-name
-   * AI đề xuất tên sự kiện Flash Sale theo thời gian, ngày lễ hoặc từ khóa
+   * AI đề xuất tên sự kiện Flash Sale theo thời gian, ngày lễ hoặc từ khóa (kèm khung giờ đề xuất)
    */
   static async suggestName(req: FastifyRequest, reply: FastifyReply) {
     try {
       const query = req.query as { date?: string; keyword?: string };
       const dateStr = query.date || new Date().toISOString();
-      const keyword = query.keyword || '';
+      const keyword = (query.keyword || '').trim();
 
-      const { getGeminiClient, PRIMARY_MODEL } = await import('../services/ai/aiClient.ts');
+      const { redis } = await import('../config/redis.ts');
+      const cacheKey = `flash_sale:ai_suggest:${dateStr.split('T')[0]}:${keyword.toLowerCase()}`;
       
+      // 1. Kiểm tra cache Redis để trả kết quả tức thì (0ms)
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return reply.send({ success: true, data: JSON.parse(cached), cached: true });
+        }
+      } catch {}
+
       const targetDate = new Date(dateStr);
       const day = targetDate.getDate();
       const month = targetDate.getMonth() + 1;
       const year = targetDate.getFullYear();
+      const datePrefix = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-      const prompt = `Bạn là chuyên gia Marketing E-commerce cho sàn thương mại điện tử chuyên về nước hoa cao cấp L'Essence (phong cách Shopee / Lazada / TikTok Shop).
-Nhiệm vụ: Hãy đề xuất 4 đến 6 tên sự kiện Flash Sale cực kỳ hấp dẫn, bắt mắt, đúng chất giờ vàng săn sale.
-Thông tin tham khảo:
-- Thời gian tổ chức: Ngày ${day}/${month}/${year} (Hãy kiểm tra xem có ngày đôi như ${day}.${month}, đầu tháng lương về, cuối tháng xả kho, lễ 8/3, 14/2, 30/4, 2/9, Trung thu, Black Friday, Giáng sinh, Tết... hoặc khung giờ vàng nào không).
-${keyword ? `- Người dùng đang gõ từ khóa: "${keyword}" (Hãy ưu tiên gợi ý phù hợp với từ khóa này)` : ''}
+      const { getGeminiClient, PRIMARY_MODEL } = await import('../services/ai/aiClient.ts');
 
-Yêu cầu định dạng đầu ra: Trả về JSON thuần (không markdown) dạng danh sách:
+      const prompt = `Bạn là chuyên gia Marketing E-commerce cho sàn thương mại điện tử nước hoa L'Essence (phong cách Shopee / TikTok Shop).
+Nhiệm vụ: Hãy đề xuất 5 tên sự kiện Flash Sale kèm khung giờ diễn ra lý tưởng.
+Thông tin:
+- Ngày tổ chức: ${day}/${month}/${year} (Kiểm tra ngày đôi ${day}.${month}, đầu tháng lương về, cuối tháng xả kho, lễ 8/3, 20/10, 14/2, Black Friday...).
+${keyword ? `- Từ khóa người dùng: "${keyword}"` : ''}
+
+Định dạng JSON thuần:
 {
   "suggestions": [
     {
-      "title": "Tên sự kiện ngắn gọn, giật tít hấp dẫn (Ví dụ: Đại Tiệc Siêu Sale 9.9 - Deal Nước Hoa 0Đ)",
-      "badge": "Tag nổi bật (VD: Siêu Sale / Lương Về / Khung Giờ Vàng / Ngày Đôi)",
-      "description": "Mô tả ngắn gọn lý do hấp dẫn"
+      "title": "Tên sự kiện giật tít bắt mắt",
+      "badge": "Tag ngắn (VD: Siêu Sale / Lương Về / Khung Giờ Vàng)",
+      "description": "Lý do ngắn gọn",
+      "startHour": 20,
+      "endHour": 22
     }
   ]
 }`;
+
+      let suggestions: any[] = [];
 
       try {
         const client = getGeminiClient();
@@ -206,41 +222,61 @@ Yêu cầu định dạng đầu ra: Trả về JSON thuần (không markdown) d
           generationConfig: { responseMimeType: 'application/json' }
         });
         const res = await model.generateContent(prompt);
-        const text = res.response.text();
-        const parsed = JSON.parse(text);
-        return reply.send({
-          success: true,
-          data: parsed.suggestions || [],
+        const parsed = JSON.parse(res.response.text());
+        suggestions = (parsed.suggestions || []).map((s: any) => {
+          const sH = typeof s.startHour === 'number' ? s.startHour : 20;
+          const eH = typeof s.endHour === 'number' ? s.endHour : (sH + 2);
+          return {
+            title: s.title,
+            badge: s.badge || 'Flash Sale',
+            description: s.description || '',
+            suggestedStartDate: `${datePrefix}T${String(sH).padStart(2, '0')}:00`,
+            suggestedEndDate: `${datePrefix}T${String(Math.min(23, eH)).padStart(2, '0')}:59`,
+          };
         });
       } catch (aiErr) {
-        // Fallback thông minh nếu AI bận
-        const fallback = [
+        // Fallback tức thì nếu AI lỗi
+        suggestions = [
           {
             title: `Flash Sale Giờ Vàng ${day}.${month} - Săn Deal Nước Hoa Hàng Hiệu`,
             badge: `Siêu Sale ${day}.${month}`,
-            description: `Khuyến mãi khung giờ vàng ngày ${day}/${month}`,
+            description: `Khung giờ vàng 12h - 14h ngày ${day}/${month}`,
+            suggestedStartDate: `${datePrefix}T12:00`,
+            suggestedEndDate: `${datePrefix}T14:00`,
+          },
+          {
+            title: `Đêm Hội Hương Thơm - Flash Sale Nửa Đêm 20h - 22h`,
+            badge: 'Giờ Vàng 20h-22h',
+            description: 'Chớp nhoáng giá sốc trong 2 tiếng tối nay',
+            suggestedStartDate: `${datePrefix}T20:00`,
+            suggestedEndDate: `${datePrefix}T22:00`,
           },
           {
             title: `Sale Lương Về - Nước Hoa Chính Hãng Giảm Đến 50%`,
             badge: 'Lương Về',
             description: 'Đại tiệc săn sale đầu/cuối tháng cực hot',
+            suggestedStartDate: `${datePrefix}T09:00`,
+            suggestedEndDate: `${datePrefix}T23:59`,
           },
           {
-            title: `Đêm Hội Hương Thơm - Flash Sale Nửa Đêm 20h - 22h`,
-            badge: 'Giờ Vàng',
-            description: 'Chớp nhoáng giá sốc chỉ trong 2 tiếng',
-          },
-          {
-            title: `Xả Kho Cuối Tuần - Nước Hoa Pháp Đồng Giá`,
+            title: `Xả Kho Cuối Tuần - Đồng Giá Nước Hoa Pháp`,
             badge: 'Xả Kho',
             description: 'Giảm giá chạm đáy số lượng có hạn',
+            suggestedStartDate: `${datePrefix}T08:00`,
+            suggestedEndDate: `${datePrefix}T22:00`,
           }
         ];
-        return reply.send({
-          success: true,
-          data: fallback,
-        });
       }
+
+      // Lưu cache 2 giờ
+      try {
+        await redis.set(cacheKey, JSON.stringify(suggestions), 'EX', 7200);
+      } catch {}
+
+      return reply.send({
+        success: true,
+        data: suggestions,
+      });
     } catch (error: any) {
       return reply.status(500).send({
         success: false,
