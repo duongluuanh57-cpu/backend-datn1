@@ -28,6 +28,8 @@ const typeDefs = `#graphql
     isNewArrival: Boolean
     isBestSeller: Boolean
     defaultVariantSize: String
+    isFlashSale: Boolean
+    stockLimit: Int
   }
 
   type Brand {

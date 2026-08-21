@@ -17,7 +17,7 @@
     "migrate:product-taxonomy": "tsx src/scripts/migrate-product-taxonomy.ts",
     "migrate:brand-slugs": "tsx src/scripts/populate-brand-slugs.ts",
     "seed:vouchers": "tsx src/scripts/seed-vouchers.ts",
-    "seed:orders": "tsx src/scripts/seed-orders.ts",
+    "seed:orders": "tsx src/scripts/seed-orders-full.ts",
     "seed:daily-summary": "tsx src/scripts/seed-daily-summary.ts",
     "seed:customers": "tsx src/scripts/seed-customers.ts",
     "update:user-names": "tsx src/scripts/update-user-names.ts",
