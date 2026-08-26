@@ -1,10 +1,23 @@
 import { Category } from '../models/Category.ts';
 import { Product } from '../models/Product.ts';
 import { slugify } from '../utils/textNormalizer.ts';
+import { redis } from '../config/redis.ts';
 
 export class CategoryService {
   static async getAll(): Promise<any[]> {
-    return Category.find({}).sort({ name: 1 }).lean();
+    const cacheKey = 'categories:all';
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+
+    const categories = await Category.find({}).sort({ name: 1 }).lean();
+    if (categories.length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(categories), 'EX', 300);
+      } catch (_) {}
+    }
+    return categories;
   }
 
   static async getPaginatedCategories(
@@ -71,7 +84,9 @@ export class CategoryService {
       slug,
       status: data.status || 'active',
     });
-    return category.save();
+    const saved = await category.save();
+    try { await redis.del('categories:all'); } catch (_) {}
+    return saved;
   }
 
   static async update(id: string, data: { name?: string; status?: string }): Promise<any | null> {
@@ -81,7 +96,9 @@ export class CategoryService {
       updateData.slug = slugify(data.name);
     }
     if (data.status !== undefined) updateData.status = data.status;
-    return Category.findOneAndUpdate({ _id: id }, { $set: updateData }, { new: true }).lean();
+    const updated = await Category.findOneAndUpdate({ _id: id }, { $set: updateData }, { new: true }).lean();
+    try { await redis.del('categories:all'); } catch (_) {}
+    return updated;
   }
 
   static async delete(id: string): Promise<boolean> {
@@ -90,6 +107,7 @@ export class CategoryService {
       throw new Error(`Không thể xoá category vì có ${productCount} sản phẩm đang sử dụng.`);
     }
     const result = await Category.deleteOne({ _id: id });
+    try { await redis.del('categories:all'); } catch (_) {}
     return result.deletedCount > 0;
   }
 
@@ -102,6 +120,7 @@ export class CategoryService {
     }
 
     const result = await Category.deleteMany({ _id: { $in: ids } });
+    try { await redis.del('categories:all'); } catch (_) {}
     return result.deletedCount > 0;
   }
 }

@@ -50,7 +50,17 @@ export class AuthPageController {
       if (role === "ADMIN") {
         const adminUrl = "/admin";
         reply.header("Set-Cookie", `admin_token=${encodeURIComponent(result.tokens.accessToken)}; Path=/; SameSite=Lax; HttpOnly`);
-        return reply.send({ success: true, message: "Đăng nhập quản trị thành công", redirectUrl: adminUrl });
+        return reply.send({
+          success: true,
+          message: "Đăng nhập quản trị thành công",
+          redirectUrl: adminUrl,
+          data: {
+            user: result.user,
+            tokens: result.tokens,
+            accessToken: result.tokens.accessToken,
+            refreshToken: result.tokens.refreshToken,
+          },
+        });
       }
       const frontendUrl = data.frontendUrl || detectFrontendUrl(request);
       const redirectUrl = frontendUrl + '/auth/callback?accessToken=' + encodeURIComponent(result.tokens.accessToken) + '&refreshToken=' + encodeURIComponent(result.tokens.refreshToken) + '&user=' + encodeURIComponent(JSON.stringify(result.user));
@@ -60,6 +70,7 @@ export class AuthPageController {
         redirectUrl,
         data: {
           user: result.user,
+          tokens: result.tokens,
           accessToken: result.tokens.accessToken,
           refreshToken: result.tokens.refreshToken,
         },
@@ -75,7 +86,16 @@ export class AuthPageController {
     if (!turnstileValid) return reply.send({ success: false, message: 'Xác minh bảo mật thất bại.' });
     try {
       const result = await AuthRegisterService.register(data);
-      return reply.send({ success: true, message: 'Đăng ký tài khoản thành công', data: result });
+      return reply.send({
+        success: true,
+        message: 'Đăng ký tài khoản thành công',
+        data: {
+          user: result.user,
+          tokens: result.tokens,
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+        },
+      });
     } catch (error: any) {
       return reply.send({ success: false, message: error.message || 'Đăng ký thất bại' });
     }

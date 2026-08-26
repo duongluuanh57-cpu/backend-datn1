@@ -26,6 +26,6 @@ const BrandSchema = new Schema<IBrand>(
 );
 
 BrandSchema.index({ name: 'text' });
-BrandSchema.index({ slug: 1 });
+BrandSchema.index({ status: 1, featured: -1 });
 
 export const Brand = mongoose.models.Brand || mongoose.model<IBrand>('Brand', BrandSchema);

@@ -499,6 +499,16 @@ export class ProductQueryService {
   }
 
   static async getProductById(id: string): Promise<any | null> {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
+
+    const cacheKey = `product:detail:${id}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (err) {
+      console.warn('Redis get error in getProductById:', err);
+    }
+
     const product = await Product.findOne({ _id: id, status: 'active' }).populate('brandId').populate('categories').lean();
     if (!product) return null;
 
@@ -564,7 +574,7 @@ export class ProductQueryService {
     const catStr = resolveCategoryNames(product, undefined, oldCatName);
     const catArr = catStr ? catStr.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-    return {
+    const result = {
       ...product,
       price: computedPrice,
       originalPrice: rawVariantPrice,
@@ -593,6 +603,14 @@ export class ProductQueryService {
       avgRating,
       rating: avgRating,
     };
+
+    try {
+      await redis.set(cacheKey, JSON.stringify(result), 'EX', this.CACHE_TTL);
+    } catch (err) {
+      console.warn('Redis set error in getProductById:', err);
+    }
+
+    return result;
   }
 
   static async getProductByIdAdmin(id: string): Promise<any | null> {

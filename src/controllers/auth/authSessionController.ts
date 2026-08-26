@@ -13,7 +13,12 @@ export class AuthSessionController {
     return reply.status(201).send({
       success: true,
       message: 'Đăng ký thành công',
-      data: result,
+      data: {
+        user: result.user,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      },
     });
   }
 
@@ -28,7 +33,12 @@ export class AuthSessionController {
     return reply.send({
       success: true,
       message: 'Đăng nhập thành công',
-      data: result,
+      data: {
+        user: result.user,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      },
     });
   }
 

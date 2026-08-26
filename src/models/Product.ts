@@ -97,40 +97,52 @@ const ProductSchema = new Schema<IProduct>(
  * TỰ ĐỘNG NẠP KIẾN THỨC (Auto-Ingestion)
  * Mỗi khi lưu sản phẩm, tự động tạo Vector Embedding để AI thấu hiểu sản phẩm
  */
-ProductSchema.post('save', async function() {
-  try {
-    console.log(`🧠 [AI Auto-Train] Đang nạp kiến thức cho sản phẩm: ${this.name}`);
-    void Brand;
-    void Category;
+ProductSchema.post('save', function(doc) {
+  // Thực thi bất đồng bộ ở background, không block luồng lưu DB và response HTTP
+  setImmediate(async () => {
+    try {
+      if (!doc || !doc._id) return;
+      void Brand;
+      void Category;
 
-    const populated = await this.populate([
-      { path: 'brandId', select: 'name' },
-      { path: 'categories', select: 'name' },
-    ]) as any;
-    const brandName = populated.brandId?.name || '';
-    const categoryNames = (populated.categories as any[] || [])
-      .map((c: any) => c?.name)
-      .filter(Boolean)
-      .join(' ');
+      const populated = await Product.findById(doc._id)
+        .select('name description brandId categories')
+        .populate([
+          { path: 'brandId', select: 'name' },
+          { path: 'categories', select: 'name' },
+        ])
+        .lean() as any;
+      if (!populated) return;
 
-    const textToEmbed = `${this.name} ${brandName} ${this.description} ${categoryNames}`;
+      const brandName = populated.brandId?.name || '';
+      const categoryNames = (populated.categories as any[] || [])
+        .map((c: any) => c?.name)
+        .filter(Boolean)
+        .join(' ');
 
-    const { AIService } = await import('../services/AIService.ts');
-    const vector = await AIService.generateEmbedding(textToEmbed);
+      const textToEmbed = `${populated.name} ${brandName} ${populated.description || ''} ${categoryNames}`;
 
-    await Product.updateOne(
-      { _id: this._id },
-      { $set: { 'aiData.embedding': vector } }
-    );
-  } catch (err) {
-    console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
-  }
+      const { AIService } = await import('../services/AIService.ts');
+      const vector = await AIService.generateEmbedding(textToEmbed);
+
+      if (vector && vector.length > 0) {
+        await Product.updateOne(
+          { _id: doc._id },
+          { $set: { 'aiData.embedding': vector } }
+        );
+      }
+    } catch (err) {
+      console.error('⚠️ [AI Auto-Train Error] Không thể tạo embedding:', err);
+    }
+  });
 });
 
 ProductSchema.index({ name: 'text', description: 'text' });
 ProductSchema.index({ status: 1, createdAt: -1 });
 ProductSchema.index({ status: 1, soldCount: -1 });
-ProductSchema.index({ categories: 1 });
+ProductSchema.index({ status: 1, discountPercentage: -1 });
+ProductSchema.index({ status: 1, isFeatured: 1, createdAt: -1 });
+ProductSchema.index({ categories: 1, status: 1 });
 ProductSchema.index({ brandId: 1, status: 1 });
 
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);

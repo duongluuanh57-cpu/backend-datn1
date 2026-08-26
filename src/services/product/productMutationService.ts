@@ -559,19 +559,35 @@ export class ProductMutationService {
 }
 
 /**
- * Helper: xóa toàn bộ cache product list
+ * Helper: xóa toàn bộ cache product list, detail và graphql
  */
-async function clearProductCache(): Promise<void> {
+export async function clearProductCache(productId?: string): Promise<void> {
   try {
-    const keysToDelete = [
-      `products:new:tag`,
-      `products:new:tag:v3`,
-      `products:limited:tag:v2`,
-      `products:sale:tag`,
-      `products:trending:tag`,
-      `products:trending:tag:v3`,
+    const keysToDelete: string[] = [];
+    if (productId) {
+      keysToDelete.push(`product:detail:${productId}`, `products:${productId}`);
+    }
+    const patterns = [
+      'products:new:*',
+      'products:limited:*',
+      'products:trending:*',
+      'products:sale:*',
+      'products:public:*',
+      'products:suggest:*',
+      'graphql:*',
     ];
-    await Promise.all(keysToDelete.map(k => redis.del(k)));
+    for (const pattern of patterns) {
+      try {
+        const found = await redis.keys(pattern);
+        if (found && found.length > 0) {
+          keysToDelete.push(...found);
+        }
+      } catch (_) {}
+    }
+    const uniqueKeys = [...new Set(keysToDelete)];
+    if (uniqueKeys.length > 0) {
+      await redis.del(...uniqueKeys);
+    }
   } catch (err) {
     console.warn('Failed to clear product caches:', err);
   }

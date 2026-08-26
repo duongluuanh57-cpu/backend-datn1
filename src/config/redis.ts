@@ -1,3 +1,5 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
 import { Redis } from 'ioredis';
 
 // Sử dụng chung 1 connection cho toàn bộ ứng dụng (Singleton Pattern)

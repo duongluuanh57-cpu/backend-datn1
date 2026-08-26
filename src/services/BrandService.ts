@@ -2,11 +2,24 @@ import { Brand } from '../models/Brand.ts';
 import type { IBrand } from '../models/Brand.ts';
 import { Product } from '../models/Product.ts';
 import { ImageService } from './ImageService.ts';
+import { redis } from '../config/redis.ts';
 
 export class BrandService {
-  /** Lấy danh sách toàn bộ thương hiệu (không phân trang) */
+  /** Lấy danh sách toàn bộ thương hiệu (không phân trang, có cache) */
   static async getAllBrands(): Promise<IBrand[]> {
-    return await Brand.find({}).sort({ name: 1 });
+    const cacheKey = 'brands:all';
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+
+    const brands = await Brand.find({}).sort({ name: 1 });
+    if (brands && (brands as any[]).length > 0) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(brands), 'EX', 300);
+      } catch (_) {}
+    }
+    return brands as any;
   }
 
   /** Lấy danh sách thương hiệu với phân trang, lọc và sắp xếp */
@@ -81,7 +94,9 @@ export class BrandService {
       }
     }
     const brand = new Brand({ ...data });
-    return await brand.save();
+    const saved = await brand.save();
+    try { await redis.del('brands:all'); } catch (_) {}
+    return saved;
   }
 
   /** Cập nhật thông tin thương hiệu */
@@ -114,6 +129,7 @@ export class BrandService {
       });
     }
 
+    try { await redis.del('brands:all'); } catch (_) {}
     return updatedBrand;
   }
 
@@ -128,6 +144,7 @@ export class BrandService {
         console.error('Lỗi khi xóa logo thương hiệu khỏi R2:', err);
       });
     }
+    try { await redis.del('brands:all'); } catch (_) {}
     return result.deletedCount > 0;
   }
 
@@ -146,6 +163,7 @@ export class BrandService {
         });
       }
     }
+    try { await redis.del('brands:all'); } catch (_) {}
     return result.deletedCount > 0;
   }
 }

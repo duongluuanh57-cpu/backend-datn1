@@ -81,9 +81,15 @@ QUY TẮC THÊM VÀO GIỎ HÀNG: Khi người dùng nói muốn mua, đặt mua
 
 QUY TẮC ĐỊNH DẠNG TIN NHẮN:
 - Khi nhắc đến hoặc giới thiệu sản phẩm/thương hiệu, hãy in đậm tên bằng cú pháp **Tên Sản Phẩm** (ví dụ: **YSL MYSLF**, **Chanel Bleu**).
-- Trình bày dạng danh sách gạch đầu dòng gọn gàng (ví dụ: - **Tên sản phẩm**: Mô tả ngắn...). Tuyệt đối KHÔNG viết dấu hoa thị dính chùm như *** hay * **.
+- Trình bày dạng danh sách gạch đầu dòng gọn gàng kèm giá bán cụ thể (ví dụ: - **Tên sản phẩm** (Hãng) - Giá: 2.150.000đ: Mô tả ngắn...). Tuyệt đối KHÔNG viết dấu hoa thị dính chùm như *** hay * **.
 
-QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về thương hiệu hoặc các hãng theo xuất xứ quốc gia (như "hãng nước hoa Việt Nam", "nước hoa Pháp", "hãng của Ý", "hãng Mỹ", "hãng Anh", v.v.), bạn BẮT BUỘC phải tra cứu phần "TỔNG QUAN CỬA HÀNG" bên dưới. Nếu cửa hàng có thương hiệu thuộc quốc gia đó (ví dụ: Verites có xuất xứ Việt Nam), bạn PHẢI giới thiệu ngay cho khách hàng. KHÔNG ĐƯỢC trả lời là shop chỉ có hãng quốc tế khi cửa hàng có thương hiệu đó!`;
+QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về thương hiệu hoặc các hãng theo xuất xứ quốc gia (như "hãng nước hoa Việt Nam", "nước hoa Pháp", "hãng của Ý", "hãng Mỹ", "hãng Anh", v.v.), bạn BẮT BUỘC phải tra cứu phần "TỔNG QUAN CỬA HÀNG" bên dưới. Nếu cửa hàng có thương hiệu thuộc quốc gia đó (ví dụ: Verites có xuất xứ Việt Nam), bạn PHẢI giới thiệu ngay cho khách hàng. KHÔNG ĐƯỢC trả lời là shop chỉ có hãng quốc tế khi cửa hàng có thương hiệu đó!
+
+CHÍNH SÁCH CỬA HÀNG L'ESSENCE:
+- Giao hàng & Freeship: Miễn phí vận chuyển toàn quốc cho đơn hàng từ 500.000đ trở lên.
+- Cam kết chất lượng: 100% nước hoa chính hãng nhập khẩu nguyên seal, đền bù 200% giá trị nếu phát hiện hàng giả/kém chất lượng.
+- Chính sách đổi trả: Hỗ trợ đổi trả miễn phí trong vòng 7 ngày nếu lỗi do nhà sản xuất hoặc sản phẩm còn nguyên tem mác.
+- Phương thức thanh toán: Hỗ trợ thanh toán tiện lợi qua VNPAY, Thẻ Visa/Master, Chuyển khoản ngân hàng hoặc COD (nhận hàng kiểm tra rồi mới thanh toán).`;
 
   const isAdmin = userRole === 'ADMIN';
 
@@ -102,7 +108,14 @@ QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về
       contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự. KHÔNG đề xuất sản phẩm.`;
     }
   } else {
-    contextStr = `DANH SÁCH SẢN PHẨM KHỚP NHẤT:\n${ctx.products.map(p => `- ${p.name} (Hãng: ${p.brand}): [CARD:${p._id}]`).join('\n')}`;
+    contextStr = `DANH SÁCH SẢN PHẨM KHỚP NHẤT:\n${ctx.products.map(p => {
+      const priceStr = p.price ? `${p.price.toLocaleString('vi-VN')}đ` : 'Liên hệ';
+      const origPriceStr = p.originalPrice && p.originalPrice > p.price ? ` (Giá gốc: ${p.originalPrice.toLocaleString('vi-VN')}đ, Giảm: ${p.discount}%)` : '';
+      const descStr = p.description ? ` | Mô tả: ${p.description.substring(0, 100)}` : '';
+      const catStr = p.categories ? ` | Danh mục: ${p.categories}` : '';
+      const sizeStr = p.size ? ` | Dung tích: ${p.size}` : '';
+      return `- **${p.name}** (Hãng: ${p.brand} | Giá: ${priceStr}${origPriceStr}${catStr}${sizeStr}${descStr}) [CARD:${p._id}]`;
+    }).join('\n')}`;
   }
 
   if (ctx.documents.length > 0) {

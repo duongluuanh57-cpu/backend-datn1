@@ -24,7 +24,7 @@ export interface IVoucher extends Document {
 
 const VoucherSchema = new Schema<IVoucher>(
   {
-    code: { type: String, required: true, uppercase: true, index: true },
+    code: { type: String, required: true, uppercase: true },
     type: {
       type: String,
       required: true,

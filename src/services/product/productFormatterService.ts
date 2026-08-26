@@ -25,6 +25,25 @@ function getPriceFromVariants(product: any, productVariants: any[], discountPerc
   return Math.round(price);
 }
 
+let cachedFlashSales: any[] | null = null;
+let flashSalesCacheExpiry = 0;
+
+async function getCachedActiveFlashSales(): Promise<any[]> {
+  const now = Date.now();
+  if (cachedFlashSales && now < flashSalesCacheExpiry) {
+    return cachedFlashSales;
+  }
+  const fsList = await FlashSale.find({ status: { $in: ['active', 'scheduled'] } }).select('name status items').lean() as any[];
+  cachedFlashSales = fsList;
+  flashSalesCacheExpiry = now + 15000; // 15s in-memory TTL
+  return fsList;
+}
+
+export function invalidateFlashSaleFormatterCache(): void {
+  cachedFlashSales = null;
+  flashSalesCacheExpiry = 0;
+}
+
 export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   if (products.length === 0) return [];
 
@@ -37,14 +56,14 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     .filter(p => !(p.categories as any[])?.length && (p as any).categoryId)
     .map(p => (p as any).categoryId).filter(Boolean);
 
-  // Chạy song song 6 truy vấn độc lập bằng Promise.all — giảm từ ~6x latency DB xuống ~1x latency
+  // Chạy song song 6 truy vấn độc lập bằng Promise.all với populate trực tiếp tagId
   const [images, variants, tagLinks, catDocs, reviewAgg, activeFlashSales] = await Promise.all([
     ProductImage.find({ productId: { $in: productIds } }).select('url productId').lean() as Promise<any[]>,
     allVariantIds.length > 0
       ? ProductVariant.find({ _id: { $in: allVariantIds.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) } })
           .select('size price sortOrder quantityInStock').sort({ sortOrder: 1 }).lean() as Promise<any[]>
       : Promise.resolve([]),
-    ProductTag.find({ productId: { $in: productIds } }).select('productId tagId').lean() as Promise<any[]>,
+    ProductTag.find({ productId: { $in: productIds } }).populate({ path: 'tagId', select: 'slug status' }).select('productId tagId').lean() as Promise<any[]>,
     oldCatIds.length > 0
       ? Category.find({ _id: { $in: oldCatIds } }).select('name').lean() as Promise<any[]>
       : Promise.resolve([]),
@@ -52,7 +71,7 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
       { $match: { productId: { $in: productIds.map(id => new mongoose.Types.ObjectId(id)) }, status: 'visible' } },
       { $group: { _id: '$productId', count: { $sum: 1 }, avg: { $avg: '$rating' } } },
     ]),
-    FlashSale.find({ status: { $in: ['active', 'scheduled'] } }).select('name status items').lean() as Promise<any[]>,
+    getCachedActiveFlashSales(),
   ]);
 
   const imageMap = new Map<string, string[]>();
@@ -65,18 +84,14 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   const variantById = new Map<string, any>();
   for (const v of variants) variantById.set(v._id.toString(), v);
 
-  const allTagIds = [...new Set(tagLinks.map((l: any) => l.tagId?.toString()).filter(Boolean))];
-  const tagDocs = allTagIds.length > 0
-    ? await Tag.find({ _id: { $in: allTagIds }, status: 'active' }).select('slug').lean() as any[]
-    : [];
-  const tagSlugById = new Map<string, string>();
-  for (const t of tagDocs) tagSlugById.set(t._id.toString(), t.slug);
   const tagMap = new Map<string, string[]>();
   for (const link of tagLinks) {
     const pId = link.productId.toString();
-    if (!tagMap.has(pId)) tagMap.set(pId, []);
-    const slug = tagSlugById.get(link.tagId?.toString());
-    if (slug) tagMap.get(pId)!.push(slug);
+    const tagDoc = link.tagId as any;
+    if (tagDoc && tagDoc.status === 'active' && tagDoc.slug) {
+      if (!tagMap.has(pId)) tagMap.set(pId, []);
+      tagMap.get(pId)!.push(tagDoc.slug);
+    }
   }
 
   const oldCatMap = new Map<string, string>();

@@ -91,7 +91,28 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(helmet, { contentSecurityPolicy: false });
-  app.register(compress);
+  app.register(compress, {
+    threshold: 1024,
+    encodings: ['br', 'gzip', 'deflate'],
+  });
+
+  // Tự động thêm HTTP Cache-Control cho các GET public endpoint
+  app.addHook('onSend', async (request, reply, payload) => {
+    if (request.method === 'GET' && reply.statusCode === 200) {
+      const url = request.url;
+      if (
+        url.startsWith('/api/products') ||
+        url.startsWith('/api/brands') ||
+        url.startsWith('/api/categories') ||
+        url.startsWith('/api/tags')
+      ) {
+        if (!reply.hasHeader('Cache-Control')) {
+          reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+        }
+      }
+    }
+    return payload;
+  });
 
   // GraphQL — phục vụ homepage query
   app.register(graphqlRoute);

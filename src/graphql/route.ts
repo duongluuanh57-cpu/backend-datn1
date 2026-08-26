@@ -26,6 +26,22 @@ export async function graphqlRoute(app: FastifyInstance) {
       return reply.status(400).send({ errors: [{ message: 'No query provided' }] });
     }
 
+    const isPublicQuery = !req.headers.authorization && !query.includes('mutation');
+    const queryHash = isPublicQuery
+      ? (await import('node:crypto')).createHash('md5').update(`${query}:${JSON.stringify(variables || {})}`).digest('hex')
+      : null;
+    const cacheKey = queryHash ? `graphql:${queryHash}` : null;
+
+    if (cacheKey) {
+      try {
+        const { redis } = await import('../config/redis.ts');
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return reply.send(JSON.parse(cached));
+        }
+      } catch (_) {}
+    }
+
     try {
       const document = parse(query);
 
@@ -53,6 +69,11 @@ export async function graphqlRoute(app: FastifyInstance) {
 
       if (result.errors && result.errors.length > 0) {
         console.error('[GraphQL] Execution errors:', JSON.stringify(result.errors, null, 2));
+      } else if (cacheKey && !result.errors) {
+        try {
+          const { redis } = await import('../config/redis.ts');
+          await redis.set(cacheKey, JSON.stringify(result), 'EX', 120); // 2 minutes TTL
+        } catch (_) {}
       }
 
       return reply.send(result);

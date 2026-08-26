@@ -124,6 +124,50 @@ async function runKeywordSearch(query: string, limit: number) {
   };
 }
 
+function extractPriceRange(query: string): { minPrice?: number; maxPrice?: number } | null {
+  const clean = query.toLowerCase();
+
+  // Dưới X triệu / X tr / X k
+  const underMatch = clean.match(/(?:dưới|<|thấp hơn|nhỏ hơn|tối đa|max)\s*(\d+(?:[.,]\d+)?)\s*(tr|triệu|k|nghìn|ngàn|vnd|đ|dong|đồng)?/i);
+  if (underMatch) {
+    const num = parseFloat(underMatch[1].replace(',', '.'));
+    const unit = underMatch[2] || 'tr';
+    const multiplier = (unit.startsWith('k') || unit.startsWith('ng')) ? 1_000 : 1_000_000;
+    return { maxPrice: num * multiplier };
+  }
+
+  // Trên X triệu / X tr
+  const overMatch = clean.match(/(?:trên|>|cao hơn|lớn hơn|tối thiểu|min)\s*(\d+(?:[.,]\d+)?)\s*(tr|triệu|k|nghìn|ngàn|vnd|đ|dong|đồng)?/i);
+  if (overMatch) {
+    const num = parseFloat(overMatch[1].replace(',', '.'));
+    const unit = overMatch[2] || 'tr';
+    const multiplier = (unit.startsWith('k') || unit.startsWith('ng')) ? 1_000 : 1_000_000;
+    return { minPrice: num * multiplier };
+  }
+
+  // Từ X đến Y (triệu / tr)
+  const rangeMatch = clean.match(/(?:từ|khoảng|tầm)?\s*(\d+(?:[.,]\d+)?)\s*(?:đến|-|tới)\s*(\d+(?:[.,]\d+)?)\s*(tr|triệu|k|nghìn|ngàn|vnd|đ)?/i);
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1].replace(',', '.'));
+    const max = parseFloat(rangeMatch[2].replace(',', '.'));
+    const unit = rangeMatch[3] || 'tr';
+    const multiplier = (unit.startsWith('k') || unit.startsWith('ng')) ? 1_000 : 1_000_000;
+    return { minPrice: min * multiplier, maxPrice: max * multiplier };
+  }
+
+  // Tầm / khoảng / giá X triệu / X tr
+  const approxMatch = clean.match(/(?:tầm|khoảng|giá|mức giá)\s*(\d+(?:[.,]\d+)?)\s*(tr|triệu|k|nghìn|ngàn|vnd|đ)/i);
+  if (approxMatch) {
+    const num = parseFloat(approxMatch[1].replace(',', '.'));
+    const unit = approxMatch[2] || 'tr';
+    const multiplier = (unit.startsWith('k') || unit.startsWith('ng')) ? 1_000 : 1_000_000;
+    const target = num * multiplier;
+    return { minPrice: target * 0.7, maxPrice: target * 1.3 };
+  }
+
+  return null;
+}
+
 export class SearchService {
   static async hybridSearch(query: string, limit: number = 4) {
     try {
@@ -165,6 +209,8 @@ export class SearchService {
       const queryWords = cleanQuery.split(/\s+/).filter(w => w.length >= 2);
       if (queryWords.length === 0) return { products: [], mode: 'general' };
 
+      const priceRange = extractPriceRange(cleanQuery);
+
       const [vectorResults, keywordResults] = await Promise.all([
         VectorSearchService.searchProducts(cleanQuery, limit * 2).catch(() => [] as any[]),
         runKeywordSearch(cleanQuery, limit * 2),
@@ -180,8 +226,38 @@ export class SearchService {
         candidates = VectorSearchService.rrfMerge(vectorResults, kwProducts, 60, Math.max(limit * 3, 12));
       }
 
+      // Nếu có yêu cầu về khoảng giá, ưu tiên các sản phẩm phù hợp mức giá đó
+      if (priceRange) {
+        const { minPrice, maxPrice } = priceRange;
+        const matchesPrice = (p: any) => {
+          const pVal = p.price ?? 0;
+          if (pVal === 0) return true;
+          if (minPrice !== undefined && pVal < minPrice) return false;
+          if (maxPrice !== undefined && pVal > maxPrice) return false;
+          return true;
+        };
+
+        const inPricePool = candidates.filter(matchesPrice);
+        if (inPricePool.length > 0) {
+          candidates = inPricePool;
+        } else {
+          // Nếu candidates từ keyword/vector không có chai nào trong tầm giá, query trực tiếp các sp active trong DB
+          try {
+            const fallbackPriceQuery: any = { status: 'active' };
+            const fallbackDocs = await Product.find(fallbackPriceQuery)
+              .sort({ soldCount: -1, createdAt: -1 })
+              .limit(limit * 3)
+              .populate('brandId', 'name')
+              .lean();
+            const matchingFallback = fallbackDocs.filter(matchesPrice);
+            if (matchingFallback.length > 0) {
+              candidates = matchingFallback;
+            }
+          } catch (_) {}
+        }
+      }
+
       // Đa dạng hóa kết quả: Nếu có nhiều sản phẩm phù hợp, chọn ngẫu nhiên trong nhóm top candidates
-      // để người dùng mỗi lần hỏi/gợi ý đều khám phá được nhiều mùi hương khác nhau
       let finalProducts = candidates;
       if (candidates.length > limit) {
         const topPool = candidates.slice(0, Math.min(candidates.length, limit + 6));

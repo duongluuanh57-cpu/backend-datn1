@@ -9,11 +9,6 @@
 import { streamText, generateText, embed } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
-// Tạo provider với API key từ env
-const provider = createGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-});
-
 const PRIMARY_MODEL = 'gemini-3.1-flash-lite-preview';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
@@ -31,6 +26,11 @@ function validateKey(): string {
   return key;
 }
 
+function getGoogleProvider() {
+  const apiKey = validateKey();
+  return createGoogleGenerativeAI({ apiKey });
+}
+
 // ── MAIN FUNCTIONS ───────────────────────────────────────────────────────
 
 /**
@@ -46,7 +46,7 @@ export async function createChatStream(
   systemPrompt?: string,
   image?: string
 ): Promise<Response> {
-  validateKey();
+  const provider = getGoogleProvider();
 
   // Map messages từ format cũ sang Vercel AI SDK format
   const vercelMessages = messages
@@ -107,7 +107,7 @@ export async function generateTextResponse(
   prompt: string,
   systemPrompt?: string
 ): Promise<string> {
-  validateKey();
+  const provider = getGoogleProvider();
 
   const result = await generateText({
     model: provider.interactions(PRIMARY_MODEL),
@@ -122,7 +122,7 @@ export async function generateTextResponse(
  * Generate embedding — dùng embed từ Vercel AI SDK
  */
 export async function generateEmbeddingVector(text: string): Promise<number[]> {
-  validateKey();
+  const provider = getGoogleProvider();
 
   const { embedding } = await embed({
     model: provider.embedding(EMBEDDING_MODEL),
@@ -137,7 +137,7 @@ export async function generateEmbeddingVector(text: string): Promise<number[]> {
  */
 export async function healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; details: any }> {
   try {
-    validateKey();
+    const provider = getGoogleProvider();
     const result = await generateText({
       model: provider.interactions(PRIMARY_MODEL),
       messages: [{ role: 'user', content: 'Test' }],
@@ -156,7 +156,7 @@ export async function healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; 
       status: 'unhealthy',
       details: {
         error: error.message,
-        apiKeyConfigured: !!process.env.GEMINI_API_KEY,
+        apiKeyConfigured: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY),
       },
     };
   }
