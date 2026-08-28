@@ -12,6 +12,8 @@ export interface VectorSearchResult {
   variants: any[];
   rating: number;
   soldCount: number;
+  discountPercentage?: number;
+  categories?: any[];
   vectorScore: number;
 }
 
@@ -57,6 +59,8 @@ export class VectorSearchService {
           variants: { $ifNull: ['$variants', []] },
           rating: { $ifNull: ['$rating', 0] },
           soldCount: { $ifNull: ['$soldCount', 0] },
+          discountPercentage: { $ifNull: ['$discountPercentage', 0] },
+          categories: { $ifNull: ['$categories', []] },
           vectorScore: 1,
         },
       },

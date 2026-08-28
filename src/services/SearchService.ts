@@ -68,7 +68,7 @@ async function runKeywordSearch(query: string, limit: number) {
     { $unwind: { path: '$brandData', preserveNullAndEmptyArrays: true } },
     { $match: { $or: [...nameConditions, { 'brandData.name': { $regex: brandPattern, $options: 'i' } }] } },
     { $limit: limit },
-    { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, variants: 1, rating: 1, soldCount: 1 } },
+    { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, variants: 1, rating: 1, soldCount: 1, discountPercentage: 1, categories: 1 } },
   ]).toArray().then((docs: any[]) => docs.map(d => ({ ...d, _source: 'regex' as const })));
 
   // ── Chạy song song ──
@@ -103,6 +103,8 @@ async function runKeywordSearch(query: string, limit: number) {
     variants: p.variants || [],
     rating: p.rating || 0,
     soldCount: p.soldCount || 0,
+    discountPercentage: p.discountPercentage || 0,
+    categories: p.categories || [],
   });
 
   const allResults = [

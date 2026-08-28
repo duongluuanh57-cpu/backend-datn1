@@ -132,6 +132,9 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     let productTag = (tagMap.get(pId) || []).join(', ') || (product as any).tag || '';
 
     const defaultVar = getDefaultVariant(productVariants);
+    const extraDiscount = (fsInfo && fsInfo.status === 'active') ? (fsInfo.extraDiscountPercentage || 0) : 0;
+    const baseDiscount = product.discountPercentage || product.discount || 0;
+    const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
 
     return {
       ...product,
@@ -141,10 +144,11 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
       size: productVariants.map((v: any) => `${v.size}:${v.price}`).join(', '),
       tag: productTag,
       categories: resolveCategoryNames(product, {} as Record<string, any[]>, oldCatMap.get((product as any).categoryId?.toString())),
-      price: getPriceFromVariants(product, productVariants, product.discountPercentage),
+      price: getPriceFromVariants(product, productVariants, totalDiscount),
       originalPrice: defaultVar?.price || 0,
       defaultVariantSize: defaultVar?.size || '50ml',
-      discount: product.discountPercentage || 0,
+      discount: totalDiscount,
+      discountPercentage: totalDiscount,
       quantityInStock: productVariants.length > 0
         ? productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0)
         : (product.quantityInStock ?? product.stock ?? 1),

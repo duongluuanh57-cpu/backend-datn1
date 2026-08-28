@@ -13,7 +13,13 @@ import { Product } from '../../models/Product.ts';
 
 function toCardMarkdown(products: any[]): string {
   return products
-    .map((p: any) => `- **${p.name}** (${p.brand}): ${p.price?.toLocaleString('vi-VN')}₫ [CARD:${p._id}]`)
+    .map((p: any) => {
+      const priceStr = p.price ? `${p.price.toLocaleString('vi-VN')}₫` : 'Liên hệ';
+      const origPriceStr = p.originalPrice && p.originalPrice > p.price
+        ? ` (Giá gốc: ${p.originalPrice.toLocaleString('vi-VN')}₫, Giảm: ${p.discount || p.discountPercentage}%)`
+        : (p.discountPercentage && p.discountPercentage > 0 ? ` (Giảm: ${p.discountPercentage}%)` : '');
+      return `- **${p.name}** (${p.brand}) - Giá: ${priceStr}${origPriceStr} [CARD:${p._id}]`;
+    })
     .join('\n');
 }
 
