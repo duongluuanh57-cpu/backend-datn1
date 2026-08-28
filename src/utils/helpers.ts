@@ -24,6 +24,7 @@ import { ShippingMethod } from '../models/ShippingMethod.ts';
 
 export const FREE_SHIP_THRESHOLD = 500_000;
 export const SHIPPING_FEE = 30_000;
+export const EXPRESS_SHIPPING_FEE = 30_000;
 
 /**
  * Tính phí vận chuyển dựa trên ShippingMethod từ DB.
@@ -37,7 +38,7 @@ export async function calculateShippingFee(totalAmount: number, shippingMethodCo
       const method = await ShippingMethod.findOne({ code, isActive: true }).lean();
       if (method) {
         if (code === 'express') {
-          const fee = Math.round(totalAmount * 0.05);
+          const fee = method.fee > 0 ? method.fee : EXPRESS_SHIPPING_FEE;
           return { fee, methodId: method._id.toString() };
         }
         const fee = (method.freeShipMinAmount > 0 && totalAmount >= method.freeShipMinAmount) ? 0 : method.fee;
@@ -48,7 +49,7 @@ export async function calculateShippingFee(totalAmount: number, shippingMethodCo
 
   // Fallback nếu chưa có dữ liệu trong DB hoặc DB chưa kết nối
   if (code === 'express') {
-    return { fee: Math.round(totalAmount * 0.05), methodId: null };
+    return { fee: EXPRESS_SHIPPING_FEE, methodId: null };
   }
   const fallbackFee = totalAmount >= FREE_SHIP_THRESHOLD ? 0 : SHIPPING_FEE;
   return { fee: fallbackFee, methodId: null };
