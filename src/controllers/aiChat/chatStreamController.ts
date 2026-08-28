@@ -11,6 +11,7 @@
  * 
  * Greeting/Confusion/Gibberish được xử lý trực tiếp, không gọi AI.
  */
+import { Readable } from 'node:stream';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { QueryRouterService } from '../../services/queryRouter/QueryRouterService.ts';
 import type { UserRole } from '../../services/queryRouter/queryRouterTypes.ts';
@@ -54,34 +55,14 @@ export async function chatStream(req: FastifyRequest, reply: FastifyReply) {
     }
 
     if (result.type === 'stream' && result.streamResponse) {
-      const origin = req.headers.origin || 'http://localhost:3000';
       const fb = result.streamResponse;
       if (!fb.body) throw new Error('No body from AI');
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
-        'X-Accel-Buffering': 'no',
-        'Cache-Control': 'no-cache, no-transform',
-        'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Credentials': 'true',
-      };
-
-      if (result.products && result.products.length > 0) {
-        headers['X-Products'] = encodeURIComponent(JSON.stringify(result.products));
-        headers['Access-Control-Expose-Headers'] = 'X-Products';
-      }
-
-      reply.raw.writeHead(200, headers);
-
-      const reader = fb.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        reply.raw.write(value);
-      }
-      reply.raw.end();
-      return reply;
+      return reply
+        .header('Content-Type', 'text/plain; charset=utf-8')
+        .header('Cache-Control', 'no-cache, no-transform')
+        .header('X-Accel-Buffering', 'no')
+        .send(Readable.fromWeb(fb.body as any));
     }
 
     // Fallback
@@ -108,22 +89,9 @@ async function handleImageStream(
   const fb = await AIService.createChatStream(messages, systemFallback, image);
   if (!fb.body) throw new Error('No body from AI');
 
-  const origin = req.headers.origin || 'http://localhost:3000';
-  reply.raw.writeHead(200, {
-    'Content-Type': 'text/plain; charset=utf-8',
-    'Transfer-Encoding': 'chunked',
-    'X-Accel-Buffering': 'no',
-    'Cache-Control': 'no-cache, no-transform',
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Credentials': 'true',
-  });
-
-  const reader = fb.body.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    reply.raw.write(value);
-  }
-  reply.raw.end();
-  return reply;
+  return reply
+    .header('Content-Type', 'text/plain; charset=utf-8')
+    .header('Cache-Control', 'no-cache, no-transform')
+    .header('X-Accel-Buffering', 'no')
+    .send(Readable.fromWeb(fb.body as any));
 }

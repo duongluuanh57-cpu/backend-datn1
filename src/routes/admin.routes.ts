@@ -47,14 +47,24 @@ export async function adminRoutes(app: FastifyInstance) {
     reply.raw.flushHeaders();
     reply.raw.write(': connected\n\n');
     addSseClient(clientId, reply);
-    const heartbeat = setInterval(() => {
-      try { reply.raw.write(': ping\n\n'); } catch { clearInterval(heartbeat); }
-    }, 25000);
-    request.raw.on('close', () => {
-      clearInterval(heartbeat);
-      removeSseClient(clientId);
+
+    return new Promise<void>((resolve) => {
+      const heartbeat = setInterval(() => {
+        try {
+          reply.raw.write(': ping\n\n');
+        } catch {
+          clearInterval(heartbeat);
+          removeSseClient(clientId);
+          resolve();
+        }
+      }, 25000);
+
+      request.raw.on('close', () => {
+        clearInterval(heartbeat);
+        removeSseClient(clientId);
+        resolve();
+      });
     });
-    await new Promise<void>(() => {});
   });
 
   // Dashboard Stats API

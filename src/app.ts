@@ -87,7 +87,8 @@ export function buildApp(): FastifyInstance {
     origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Products', 'X-Requested-With'],
+    exposedHeaders: ['X-Products'],
   });
 
   app.register(helmet, { contentSecurityPolicy: false });
