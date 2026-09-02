@@ -50,7 +50,12 @@ describe('AuthSessionController', () => {
 
       await AuthSessionController.login(req, reply);
       expect(sentBody.success).toBe(true);
-      expect(sentBody.data).toEqual(mockResult);
+      expect(sentBody.data).toEqual({
+        user: mockResult.user,
+        tokens: mockResult.tokens,
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
     });
 
     it('throws when AuthService.login fails', async () => {
@@ -63,8 +68,11 @@ describe('AuthSessionController', () => {
 
   describe('register', () => {
     it('returns 201 with user data on success', async () => {
-      const mockUser: any = { id: '123', username: 'newuser' };
-      vi.mocked(AuthService.register).mockResolvedValue(mockUser);
+      const mockResult: any = {
+        user: { id: '123', username: 'newuser' },
+        tokens: { accessToken: 'at', refreshToken: 'rt' },
+      };
+      vi.mocked(AuthService.register).mockResolvedValue(mockResult);
 
       const req = { body: { username: 'newuser', email: 'a@b.com', password: 'pwd' } } as any;
       let statusCode = 0, sentBody: any = {};
@@ -75,7 +83,12 @@ describe('AuthSessionController', () => {
       await AuthSessionController.register(req, reply);
       expect(statusCode).toBe(201);
       expect(sentBody.success).toBe(true);
-      expect(sentBody.data).toEqual(mockUser);
+      expect(sentBody.data).toEqual({
+        user: mockResult.user,
+        tokens: mockResult.tokens,
+        accessToken: 'at',
+        refreshToken: 'rt',
+      });
     });
   });
 

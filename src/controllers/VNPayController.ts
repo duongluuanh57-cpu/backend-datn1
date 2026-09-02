@@ -48,7 +48,7 @@ export class VNPayController {
 
       const ipAddr = getClientIp(req);
 
-      const { fullName, email, phone, address, note, items, isCartCheckout, shippingMethod } = req.body as {
+      const { fullName, email, phone, address, note, items, isCartCheckout, shippingMethod, voucherCode: payloadVoucherCode, freeshipVoucherCode: payloadFreeshipCode } = req.body as {
         fullName: string;
         email?: string;
         phone: string;
@@ -57,6 +57,8 @@ export class VNPayController {
         items?: Array<{ productId: string; quantity?: number; variantSize?: string }>;
         isCartCheckout?: boolean;
         shippingMethod?: 'standard' | 'express';
+        voucherCode?: string;
+        freeshipVoucherCode?: string;
       };
 
       if (!fullName || !phone || !address) {
@@ -79,7 +81,6 @@ export class VNPayController {
         cartItems = resolved.resolvedItems;
         totalAmount = resolved.totalAmount;
         clearsCart = !!isCartCheckout;
-        voucherDiscount = cart?.voucherDiscount || 0;
       } else {
         if (!cart) {
           return reply.status(400).send({ success: false, message: 'Giỏ hàng trống' });
@@ -95,7 +96,30 @@ export class VNPayController {
           brand: ci.brand || (ci.productId as any)?.brandId?.name || '',
         }));
         totalAmount = cart.totalAmount;
-        voucherDiscount = cart.voucherDiscount || 0;
+      }
+
+      // Xác định mã voucher
+      let appliedVoucherCode: string | null = null;
+      let appliedFreeshipCode: string | null = null;
+
+      if (items && items.length > 0 && !isCartCheckout) {
+        appliedVoucherCode = payloadVoucherCode || null;
+        appliedFreeshipCode = payloadFreeshipCode || null;
+      } else {
+        appliedVoucherCode = payloadVoucherCode !== undefined ? (payloadVoucherCode || null) : (cart?.voucherCode || null);
+        appliedFreeshipCode = payloadFreeshipCode !== undefined ? (payloadFreeshipCode || null) : (cart?.freeshipVoucherCode || null);
+      }
+
+      if (appliedVoucherCode) {
+        const user = await (await import('../models/User.ts')).User.findById(userId).select('memberTier').lean() as any;
+        const userTier = user?.memberTier || 'MEMBER';
+        const vResult = await VoucherService.validate(appliedVoucherCode, totalAmount, userTier, userId);
+        if (vResult.valid) {
+          voucherDiscount = vResult.discountAmount || 0;
+        } else {
+          appliedVoucherCode = null;
+          voucherDiscount = 0;
+        }
       }
 
       // Tính phí ship
@@ -103,7 +127,7 @@ export class VNPayController {
       const shippingFee = shippingResult.fee;
 
       // Hỗ trợ Voucher Freeship Hỏa Tốc
-      if (cart && cart.voucherCode && cart.voucherCode.startsWith('FSEXPRESS')) {
+      if (appliedVoucherCode && appliedVoucherCode.startsWith('FSEXPRESS')) {
         if (shippingMethod === 'express') {
           voucherDiscount = shippingFee;
         } else {
@@ -112,7 +136,7 @@ export class VNPayController {
       }
 
       let freeshipDiscount = 0;
-      if (cart && cart.freeshipVoucherCode) {
+      if (appliedFreeshipCode) {
         freeshipDiscount = shippingFee;
       }
 
@@ -127,7 +151,7 @@ export class VNPayController {
 
       // === Kiểm tra và áp dụng Voucher ===
       let voucherId = undefined;
-      const vCode = cart?.voucherCode;
+      const vCode = appliedVoucherCode;
       if (vCode) {
         const voucher = await Voucher.findOne({ code: vCode }).lean();
         if (voucher) {
@@ -143,7 +167,7 @@ export class VNPayController {
       }
 
       let freeshipVoucherId = undefined;
-      const fsCode = cart?.freeshipVoucherCode;
+      const fsCode = appliedFreeshipCode;
       if (fsCode) {
         const voucher = await Voucher.findOne({ code: fsCode }).lean();
         if (voucher) {
@@ -246,9 +270,9 @@ export class VNPayController {
           items: cartItems,
           totalAmount: totalAmount,
           totalItems: cartItems.reduce((sum: number, item: any) => sum + item.quantity, 0),
-          voucherCode: cart?.voucherCode || null,
+          voucherCode: appliedVoucherCode || null,
           voucherDiscount: voucherDiscount,
-          freeshipVoucherCode: cart?.freeshipVoucherCode || null,
+          freeshipVoucherCode: appliedFreeshipCode || null,
         },
         shippingFee,
         finalAmount,

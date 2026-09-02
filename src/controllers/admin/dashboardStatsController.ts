@@ -55,10 +55,12 @@ export class DashboardStatsController {
           {
             $group: {
               _id: null,
-              totalOrders: { $sum: 1 },
+              totalOrders: {
+                $sum: { $cond: [{ $ne: ['$status', 'cancelled'] }, 1, 0] }
+              },
               totalRevenue: {
                 $sum: {
-                  $cond: [{ $ne: ['$status', 'cancelled'] }, '$totalAmount', 0]
+                  $cond: [{ $eq: ['$status', 'delivered'] }, '$totalAmount', 0]
                 }
               }
             }
@@ -75,10 +77,12 @@ export class DashboardStatsController {
           {
             $group: {
               _id: null,
-              totalOrders: { $sum: 1 },
+              totalOrders: {
+                $sum: { $cond: [{ $ne: ['$status', 'cancelled'] }, 1, 0] }
+              },
               totalRevenue: {
                 $sum: {
-                  $cond: [{ $ne: ['$status', 'cancelled'] }, '$totalAmount', 0]
+                  $cond: [{ $eq: ['$status', 'delivered'] }, '$totalAmount', 0]
                 }
               }
             }

@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { VoucherController } from '../controllers/VoucherController.ts';
-import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware.ts';
 
 /**
  * /api/vouchers
  *
- * Public:
- *   GET   /api/vouchers                    — Lấy danh sách voucher active
- *   POST  /api/vouchers/validate           — Kiểm tra mã giảm giá
+ * Public / Optional Auth:
+ *   POST  /api/vouchers/validate           — Kiểm tra mã giảm giá (nhận diện user nếu có token)
  *
  * Auth:
  *   GET   /api/vouchers                    — Admin: tất cả, User: active
@@ -19,11 +18,11 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
  *   DELETE /api/vouchers/:id               — Xoá voucher
  */
 export async function voucherRoutes(app: FastifyInstance) {
-  // Public
-  app.post('/validate', VoucherController.validate);
+  // Public / Optional Auth
+  app.post('/validate', { preHandler: optionalAuthMiddleware }, VoucherController.validate);
+  app.get('/', { preHandler: optionalAuthMiddleware }, VoucherController.getAll);
 
   // Auth
-  app.get('/', { preHandler: authMiddleware }, VoucherController.getAll);
   app.get('/:id', { preHandler: authMiddleware }, VoucherController.getById);
 
   // Admin

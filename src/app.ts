@@ -35,6 +35,7 @@ import { contentRoutes } from './routes/content.routes.ts';
 import { funnelRoutes } from './routes/funnel.routes.ts';
 import { dailySummaryRoutes } from './routes/dailySummary.routes.ts';
 import { startDailySummaryCron } from './cron/dailySummary.ts';
+import { startNewsAutoPilotCron } from './cron/newsAutoPilotCron.ts';
 import { startFlashSaleCron } from './services/FlashSaleService.ts';
 import { favoriteRoutes } from './routes/favorite.routes.ts';
 import { cartRoutes } from './routes/cart.routes.ts';
@@ -42,6 +43,7 @@ import { adminRoutes } from './routes/admin.routes.ts';
 import { mediaRoutes } from './routes/media.routes.ts';
 import { reviewRoutes } from './routes/review.routes.ts';
 import { newsRoutes } from './routes/newsRoutes.ts';
+import { supportTicketRoutes } from './routes/supportTicket.routes.ts';
 import { AuthPageController } from './controllers/auth/authPageController.ts';
 
 import rawBody from 'fastify-raw-body';
@@ -170,10 +172,12 @@ export function buildApp(): FastifyInstance {
   app.register(mediaRoutes, { prefix: '/api/media' });
   app.register(reviewRoutes, { prefix: '/api/reviews' });
   app.register(newsRoutes, { prefix: '/api' });
+  app.register(supportTicketRoutes, { prefix: '/api/support-tickets' });
 
   // Start background cron jobs
   startDailySummaryCron();
   startFlashSaleCron();
+  startNewsAutoPilotCron();
 
   // Admin API & SSE — prefix /admin
   app.register(adminRoutes, { prefix: '/admin' });

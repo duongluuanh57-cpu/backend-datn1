@@ -32,6 +32,13 @@ vi.mock('../../services/ImageService.ts', () => ({
   ImageService: { deleteFromR2: vi.fn().mockResolvedValue(undefined) },
 }));
 
+vi.mock('../../config/redis.ts', () => ({
+  redis: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue('OK'),
+  },
+}));
+
 import { BrandService } from '../../services/BrandService.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Product } from '../../models/Product.ts';

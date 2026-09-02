@@ -174,6 +174,22 @@ export class NewsController {
   }
 
   /**
+   * GET /api/admin/news/:id — Get article detail for admin editing
+   */
+  static async getAdminArticleById(req: FastifyRequest, reply: FastifyReply) {
+    try {
+      const { id } = req.params as { id: string };
+      const article = await Article.findById(id).lean();
+      if (!article) {
+        return reply.status(404).send({ success: false, message: 'Không tìm thấy bài viết' });
+      }
+      return reply.send({ success: true, data: article });
+    } catch (err: any) {
+      return reply.status(500).send({ success: false, message: err.message });
+    }
+  }
+
+  /**
    * POST /api/admin/news — Create article
    */
   static async createArticle(req: FastifyRequest, reply: FastifyReply) {

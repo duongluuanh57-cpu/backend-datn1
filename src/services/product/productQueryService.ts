@@ -460,32 +460,29 @@ export class ProductQueryService {
     const cacheKey = `products:suggest:v3:${cleanQuery.toLowerCase()}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in suggestProducts:', err); }
 
-    // Tìm brand bằng text index + contains regex
+    // Tìm brand bằng regex (linh hoạt cho autocomplete, không phụ thuộc text index)
     const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const matchingBrands = await Brand.find(
-      { $or: [
-        { $text: { $search: cleanQuery } },
-        { name: { $regex: escaped, $options: 'i' } },
-      ]},
-      { score: { $meta: 'textScore' } }
-    ).sort({ score: { $meta: 'textScore' } }).limit(5).lean();
+    const regex = new RegExp(escaped, 'i');
+
+    const matchingBrands = await Brand.find({
+      status: 'active',
+      name: { $regex: regex }
+    }).limit(6).lean();
     const brandIds = matchingBrands.map(b => b._id);
 
-    // Tìm product bằng text index + brand match + contains search
-    const productsRaw = await Product.find(
-      {
-        status: 'active',
-        $or: [
-          { $text: { $search: cleanQuery } },
-          { name: { $regex: escaped, $options: 'i' } }, // contains match cho autocomplete
-          ...(brandIds.length > 0 ? [{ brandId: { $in: brandIds } }] : []),
-        ],
-      },
-      brandIds.length > 0 ? { score: { $meta: 'textScore' } } : {}
-    )
+    // Tìm product bằng tên sản phẩm HOẶC thuộc thương hiệu khớp
+    const productConditions: any[] = [
+      { name: { $regex: regex } }
+    ];
+    if (brandIds.length > 0) {
+      productConditions.push({ brandId: { $in: brandIds } });
+    }
+
+    const productsRaw = await Product.find({
+      status: 'active',
+      $or: productConditions,
+    })
       .populate('brandId', 'name')
-      
-      .sort(brandIds.length > 0 ? { score: { $meta: 'textScore' } } : {})
       .limit(limit)
       .lean();
 

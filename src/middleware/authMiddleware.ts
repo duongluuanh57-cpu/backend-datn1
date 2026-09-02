@@ -37,6 +37,22 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * OptionalAuthMiddleware — Xác minh JWT nếu có header Authorization, không throw nếu không có
+ */
+export async function optionalAuthMiddleware(req: FastifyRequest) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return;
+
+  const token = authHeader.substring(7);
+  try {
+    const decoded = verifyAccessToken(token);
+    req.user = { userId: decoded.userId, role: decoded.role };
+  } catch {
+    // Ignore error for optional auth
+  }
+}
+
+/**
  * RequireRole — Kiểm tra role (RBAC)
  * Dùng sau authMiddleware để giới hạn quyền truy cập theo role
  *

@@ -5,9 +5,9 @@ import mongoose from 'mongoose';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 import { connectDB } from '../config/database.ts';
-import { Article } from '../models/Article.ts';
+import { Article, type IArticle } from '../models/Article.ts';
 
-const SAMPLE_ARTICLES = [
+const SAMPLE_ARTICLES: Partial<IArticle>[] = [
   {
     title: 'Nghệ Thuật Lớp Hương (Fragrance Layering): Bí Quyết Tạo Dấu Ấn Riêng Biệt',
     slug: 'nghe-thuat-fragrance-layering-tao-dau-an-rieng',

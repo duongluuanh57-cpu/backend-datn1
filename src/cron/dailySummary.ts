@@ -22,11 +22,13 @@ async function aggregateDay(date: Date) {
       $group: {
         _id: null,
         totalRevenue: {
-          $sum: { $cond: [{ $ne: ['$status', 'cancelled'] }, '$totalAmount', 0] },
+          $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, '$totalAmount', 0] },
         },
-        totalOrders: { $sum: 1 },
-        completedOrders: {
+        totalOrders: {
           $sum: { $cond: [{ $ne: ['$status', 'cancelled'] }, 1, 0] },
+        },
+        completedOrders: {
+          $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] },
         },
         cancelledRevenue: {
           $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, '$totalAmount', 0] },
@@ -61,30 +63,18 @@ export function startDailySummaryCron() {
     await aggregateDay(yesterday);
   });
 
-  // Backfill: fill 90 ngày gần nhất khi server khởi động (chạy bất đồng bộ)
+  // Luôn làm mới dữ liệu 90 ngày gần nhất khi server khởi động
   setTimeout(async () => {
-    const now = new Date();
-    const existing = await DailySummaryReport.findOne().sort({ date: -1 }).lean();
-    const lastDate = existing?.date ? new Date(existing.date) : null;
-
-    if (!lastDate) {
-      // Chưa có dữ liệu → fill 90 ngày
+    try {
+      const now = new Date();
       for (let i = 90; i >= 0; i--) {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
         await aggregateDay(d);
       }
-      console.log('[DailySummary] Backfill completed (90 days)');
-    } else if (lastDate < new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)) {
-      // Còn thiếu vài ngày
-      const start = new Date(lastDate);
-      start.setDate(start.getDate() + 1);
-      const end = new Date(now);
-      end.setDate(end.getDate() - 1);
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        await aggregateDay(new Date(d));
-      }
-      console.log('[DailySummary] Gap filled');
+      console.log('[DailySummary] Backfill & refresh completed (90 days)');
+    } catch (err) {
+      console.error('[DailySummary] Backfill error:', err);
     }
-  }, 5000);
+  }, 2000);
 }

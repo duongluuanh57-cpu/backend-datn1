@@ -17,7 +17,7 @@ const VNPAY_URL = process.env.VNPAY_URL || 'https://sandbox.vnpayment.vn/payment
 const VNPAY_RETURN_URL = process.env.VNPAY_RETURN_URL || (process.env.FRONTEND_URL || 'https://lessence-livid.vercel.app') + '/payment/return';
 
 if (!VNPAY_HASH_SECRET) {
-  throw new Error('VNPAY_HASH_SECRET is not configured. Set it in .env or environment variables.');
+  console.warn('⚠️ [VNPay] VNPAY_HASH_SECRET is not configured. VNPay payment features will be disabled.');
 }
 
 export interface VNPayPaymentInput {
@@ -84,6 +84,9 @@ function createSecureHash(params: Record<string, string>, secretKey: string): st
  * Tạo URL thanh toán VNPAY
  */
 export function createPaymentUrl(input: VNPayPaymentInput, customReturnUrl?: string): string {
+  if (!VNPAY_HASH_SECRET) {
+    throw new Error('VNPAY_HASH_SECRET is not configured. Please set it in .env.');
+  }
   const { txnRef, amount, orderInfo, ipAddr, locale = 'vn', bankCode, orderType = 'other' } = input;
 
   const now = new Date();

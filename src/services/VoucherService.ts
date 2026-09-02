@@ -1,6 +1,7 @@
 import { Voucher, type VoucherType, type VoucherScope } from '../models/Voucher.ts';
 import { MiniGameSession } from '../models/MiniGameSession.ts';
 import { UserVoucher } from '../models/UserVoucher.ts';
+import { User } from '../models/User.ts';
 
 // Thứ tự hạng từ thấp đến cao
 export const TIER_ORDER: Record<string, number> = {
@@ -73,6 +74,25 @@ export class VoucherService {
       { $set: { voucherCategory: 'freeship' } }
     );
 
+    // Đảm bảo các voucher của minigame luôn active và không bao giờ hết hạn
+    await Voucher.updateMany(
+      { applicableTo: 'minigame' },
+      {
+        $set: {
+          status: 'active',
+          startDate: new Date('2020-01-01'),
+          endDate: new Date('2099-12-31'),
+          maxUsage: -1,
+        },
+      }
+    );
+
+    // Đảm bảo các voucher shop đang active không bị hết hạn ngoài ý muốn
+    await Voucher.updateMany(
+      { status: 'active', applicableTo: { $ne: 'minigame' }, endDate: { $lt: new Date('2026-12-31') } },
+      { $set: { endDate: new Date('2030-12-31') } }
+    );
+
     // Tự động tạo 5 voucher mặc định cho Vòng quay may mắn nếu chưa có đủ 5
     await this.ensureDefaultMinigameVouchers();
   }
@@ -93,7 +113,14 @@ export class VoucherService {
   static async getActive(userTier?: string | null, userId?: string | null) {
     await this.syncVouchersState();
     const now = new Date();
-    const userLevel = TIER_ORDER[userTier || 'MEMBER'] ?? 0;
+    let userLevel = TIER_ORDER[userTier || 'MEMBER'] ?? 0;
+
+    if (userId) {
+      const u = await User.findById(userId).select('memberTier').lean();
+      if (u?.memberTier) {
+        userLevel = TIER_ORDER[u.memberTier] ?? userLevel;
+      }
+    }
 
     // 1. Lấy voucher toàn sàn & membership công khai
     const publicVouchers = await Voucher.find({
@@ -124,11 +151,11 @@ export class VoucherService {
         .map((uv: any) => {
           const v = uv.voucherId;
           if (!v) return null;
-          // Đảm bảo voucher vẫn active và trong thời hạn
+          // Voucher minigame KHÔNG BAO GIỜ hết hạn; voucher khác kiểm tra hạn bình thường
+          const isMinigame = v.applicableTo === 'minigame' || uv.grantedReason === 'minigame';
           const isActive =
             v.status === 'active' &&
-            new Date(v.startDate) <= now &&
-            new Date(v.endDate) >= now;
+            (isMinigame || (new Date(v.startDate) <= now && new Date(v.endDate) >= now));
           if (!isActive) return null;
           if (v.minTier) {
             const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
@@ -268,11 +295,14 @@ export class VoucherService {
     }
 
     const now = new Date();
-    if (voucher.startDate > now) {
-      return { valid: false, message: 'Mã giảm giá chưa đến hạn sử dụng' };
-    }
-    if (voucher.endDate < now) {
-      return { valid: false, message: 'Mã giảm giá đã hết hạn' };
+    const isMinigame = voucher.applicableTo === 'minigame';
+    if (!isMinigame) {
+      if (voucher.startDate > now) {
+        return { valid: false, message: 'Mã giảm giá chưa đến hạn sử dụng' };
+      }
+      if (voucher.endDate < now) {
+        return { valid: false, message: 'Mã giảm giá đã hết hạn' };
+      }
     }
 
     // Nếu là voucher toàn sàn (hoặc chưa cấu hình scope), kiểm tra maxUsage chung (maxUsage > 0)

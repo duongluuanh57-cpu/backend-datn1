@@ -9,6 +9,7 @@ import { FlashSale } from '../../models/FlashSale.ts';
 import { Order } from '../../models/Order.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { Voucher } from '../../models/Voucher.ts';
+import { User } from '../../models/User.ts';
 import { UserVoucher } from '../../models/UserVoucher.ts';
 import mongoose from 'mongoose';
 import { calculateShippingFee } from '../../utils/helpers.ts';
@@ -23,6 +24,8 @@ export interface CheckoutPayload {
   shippingMethod?: 'standard' | 'express';
   items?: Array<{ productId: string; quantity?: number; variantSize?: string }>;
   isCartCheckout?: boolean;
+  voucherCode?: string;
+  freeshipVoucherCode?: string;
 }
 
 export class CheckoutService {
@@ -120,7 +123,7 @@ export class CheckoutService {
   }
 
   static async processCheckout(userId: string, payload: CheckoutPayload) {
-    const { customerName, customerEmail, customerPhone, customerAddress, paymentMethod, shippingMethod, items, isCartCheckout } = payload;
+    const { customerName, customerEmail, customerPhone, customerAddress, paymentMethod, shippingMethod, items, isCartCheckout, voucherCode: payloadVoucherCode, freeshipVoucherCode: payloadFreeshipCode } = payload;
 
     if (!customerName) {
       const err: any = new Error('Vui lòng nhập họ tên');
@@ -134,15 +137,14 @@ export class CheckoutService {
     let clearsCart = true;
     let cart: any = null;
 
+    cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
+
     if (items && items.length > 0) {
       const resolved = await CheckoutService.resolveBuyNowItems(items);
       orderItems = resolved.resolvedItems;
       totalAmount = resolved.totalAmount;
       clearsCart = !!isCartCheckout;
-      cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
-      voucherDiscount = cart?.voucherDiscount || 0;
     } else {
-      cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
       if (!cart) {
         const err: any = new Error('Giỏ hàng trống');
         err.statusCode = 400;
@@ -163,13 +165,39 @@ export class CheckoutService {
       }));
 
       totalAmount = cart.totalAmount;
-      voucherDiscount = cart.voucherDiscount || 0;
+    }
+
+    // Xác định mã voucher được áp dụng cho đơn hàng này
+    let appliedVoucherCode: string | null = null;
+    let appliedFreeshipCode: string | null = null;
+
+    if (items && items.length > 0 && !isCartCheckout) {
+      // Mua ngay: Chỉ áp dụng nếu client gửi voucherCode lên
+      appliedVoucherCode = payloadVoucherCode || null;
+      appliedFreeshipCode = payloadFreeshipCode || null;
+    } else {
+      // Mua từ giỏ hàng: Lấy từ payload hoặc từ giỏ hàng hiện tại
+      appliedVoucherCode = payloadVoucherCode !== undefined ? (payloadVoucherCode || null) : (cart?.voucherCode || null);
+      appliedFreeshipCode = payloadFreeshipCode !== undefined ? (payloadFreeshipCode || null) : (cart?.freeshipVoucherCode || null);
+    }
+
+    // Tính toán lại mức giảm giá của voucher dựa trên totalAmount thực tế của đơn hàng
+    if (appliedVoucherCode) {
+      const user = await User.findById(userId).select('memberTier').lean() as any;
+      const userTier = user?.memberTier || 'MEMBER';
+      const vResult = await VoucherService.validate(appliedVoucherCode, totalAmount, userTier, userId);
+      if (vResult.valid) {
+        voucherDiscount = vResult.discountAmount || 0;
+      } else {
+        appliedVoucherCode = null;
+        voucherDiscount = 0;
+      }
     }
 
     const shippingResult = await calculateShippingFee(totalAmount, shippingMethod || 'standard');
     const shippingFee = shippingResult.fee;
 
-    if (cart && cart.voucherCode && cart.voucherCode.startsWith('FSEXPRESS')) {
+    if (appliedVoucherCode && appliedVoucherCode.startsWith('FSEXPRESS')) {
       if (shippingMethod === 'express') {
         voucherDiscount = shippingFee;
       } else {
@@ -178,15 +206,15 @@ export class CheckoutService {
     }
 
     let freeshipDiscount = 0;
-    if (cart && cart.freeshipVoucherCode) {
+    if (appliedFreeshipCode) {
       freeshipDiscount = shippingFee;
     }
 
     const finalAmount = totalAmount + shippingFee - voucherDiscount - freeshipDiscount;
 
     let voucherId = undefined;
-    if (cart && cart.voucherCode) {
-      const voucher = await Voucher.findOne({ code: cart.voucherCode }).lean();
+    if (appliedVoucherCode) {
+      const voucher = await Voucher.findOne({ code: appliedVoucherCode }).lean();
       if (voucher) {
         voucherId = voucher._id;
         if (voucher.applicableTo !== 'all') {
@@ -200,8 +228,8 @@ export class CheckoutService {
     }
 
     let freeshipVoucherId = undefined;
-    if (cart && cart.freeshipVoucherCode) {
-      const voucher = await Voucher.findOne({ code: cart.freeshipVoucherCode }).lean();
+    if (appliedFreeshipCode) {
+      const voucher = await Voucher.findOne({ code: appliedFreeshipCode }).lean();
       if (voucher) {
         freeshipVoucherId = voucher._id;
         if (voucher.applicableTo !== 'all') {
@@ -230,10 +258,10 @@ export class CheckoutService {
       paymentMethod: paymentMethod || 'cod',
       paymentStatus: 'unpaid',
       voucherId,
-      voucherCode: (cart && cart.voucherCode) || undefined,
+      voucherCode: appliedVoucherCode || undefined,
       voucherDiscount: voucherDiscount || 0,
       freeshipVoucherId,
-      freeshipVoucherCode: (cart && cart.freeshipVoucherCode) || undefined,
+      freeshipVoucherCode: appliedFreeshipCode || undefined,
       freeshipDiscount: freeshipDiscount || 0,
     });
 
@@ -264,30 +292,37 @@ export class CheckoutService {
       });
     } catch { /* silent */ }
 
-    if (clearsCart) {
-      const cartToClean = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });
-      if (cartToClean) {
+    if (cart) {
+      if (clearsCart) {
         if (items && items.length > 0) {
           for (const item of items) {
             await CartItem.deleteOne({
-              cartId: cartToClean._id,
+              cartId: cart._id,
               productId: new mongoose.Types.ObjectId(item.productId),
               variantSize: item.variantSize || '50ml',
             });
           }
-          const remainingItems = await CartItem.find({ cartId: cartToClean._id }).lean();
-          cartToClean.totalAmount = remainingItems.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0);
-          cartToClean.voucherCode = null as any;
-          cartToClean.voucherDiscount = 0;
-          cartToClean.freeshipVoucherCode = null as any;
-          await cartToClean.save();
+          const remainingItems = await CartItem.find({ cartId: cart._id }).lean();
+          cart.totalAmount = remainingItems.reduce((sum: number, i: any) => sum + i.price * i.quantity, 0);
+          cart.voucherCode = null as any;
+          cart.voucherDiscount = 0;
+          cart.freeshipVoucherCode = null as any;
+          await cart.save();
         } else {
-          await CartItem.deleteMany({ cartId: cartToClean._id });
-          cartToClean.totalAmount = 0;
-          cartToClean.voucherCode = null as any;
-          cartToClean.voucherDiscount = 0;
-          cartToClean.freeshipVoucherCode = null as any;
-          await cartToClean.save();
+          await CartItem.deleteMany({ cartId: cart._id });
+          cart.totalAmount = 0;
+          cart.voucherCode = null as any;
+          cart.voucherDiscount = 0;
+          cart.freeshipVoucherCode = null as any;
+          await cart.save();
+        }
+      } else {
+        // Mua ngay: nếu có dùng voucher, xóa voucher khỏi cart để không lưu dính sang các lần mua sau
+        if (appliedVoucherCode || appliedFreeshipCode) {
+          cart.voucherCode = null as any;
+          cart.voucherDiscount = 0;
+          cart.freeshipVoucherCode = null as any;
+          await cart.save();
         }
       }
     }
