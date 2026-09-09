@@ -32,7 +32,7 @@ export class VoucherController {
         }
         if (search) {
           const s = search.toLowerCase().trim();
-          list = list.filter((v: any) => (v.code && v.code.toLowerCase().includes(s)) || (v.description && v.description.toLowerCase().includes(s)));
+          list = list.filter((v: any) => v.code && v.code.toLowerCase().includes(s));
         }
         if (sortBy === 'outOfUsage') {
           list = list.filter((v: any) => v.applicableTo !== 'minigame' && (v.maxUsage ?? 0) <= (v.usedCount || 0));
@@ -43,7 +43,9 @@ export class VoucherController {
         }
         const enriched = list.map((v: any) => ({
           ...v,
-          remaining: v.applicableTo === 'minigame' ? 'Không giới hạn' : Math.max(0, (v.maxUsage ?? 0) - (v.usedCount || 0)),
+          remaining: v.applicableTo === 'minigame' || !v.maxUsage || v.maxUsage <= 0
+            ? 'Không giới hạn'
+            : Math.max(0, v.maxUsage - (v.usedCount || 0)),
         }));
         return reply.send({ success: true, data: enriched });
       }
@@ -59,7 +61,9 @@ export class VoucherController {
       const enriched = list.map((v: any) => {
         const item: any = {
           ...v,
-          remaining: v.applicableTo === 'minigame' ? 'Không giới hạn' : Math.max(0, (v.maxUsage ?? 0) - (v.usedCount || 0)),
+          remaining: v.applicableTo === 'minigame' || !v.maxUsage || v.maxUsage <= 0
+            ? 'Không giới hạn'
+            : Math.max(0, v.maxUsage - (v.usedCount || 0)),
         };
         if (hasOrderAmount) {
           item.eligible = totalAmount >= (v.minOrderAmount || 0);
@@ -116,11 +120,14 @@ export class VoucherController {
       if (!body.type || !['percentage', 'fixed'].includes(body.type)) {
         return reply.status(400).send({ success: false, message: 'type phải là percentage hoặc fixed' });
       }
-      if (!body.value || body.value <= 0) {
+      if (body.voucherCategory !== 'freeship' && (!body.value || body.value <= 0)) {
         return reply.status(400).send({ success: false, message: 'value phải lớn hơn 0' });
       }
       if (!body.startDate || !body.endDate) {
         return reply.status(400).send({ success: false, message: 'startDate và endDate là bắt buộc' });
+      }
+      if (body.applicableTo !== 'minigame' && new Date(body.startDate) >= new Date(body.endDate)) {
+        return reply.status(400).send({ success: false, message: 'Ngày kết thúc phải lớn hơn ngày bắt đầu' });
       }
 
       const item = await VoucherService.create(body);
@@ -140,6 +147,13 @@ export class VoucherController {
 
       const { id } = req.params as { id: string };
       const body = req.body as any;
+
+      if (body.applicableTo !== 'minigame' && body.startDate && body.endDate) {
+        if (new Date(body.startDate) >= new Date(body.endDate)) {
+          return reply.status(400).send({ success: false, message: 'Ngày kết thúc phải lớn hơn ngày bắt đầu' });
+        }
+      }
+
       const item = await VoucherService.update(id, body);
       if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy voucher' });
       return reply.send({ success: true, data: item });

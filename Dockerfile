@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-# Copy source code and build
+# Copy source code and build bundle
 COPY . .
 RUN npm run build
 
@@ -22,8 +22,10 @@ ENV HOST=0.0.0.0
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built bundle from builder
-COPY --from=builder /app/dist ./dist
+# Copy built bundle and scripts/configs for database migrations & seeds
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/src ./src
+COPY --from=builder --chown=node:node /app/tsconfig.json ./tsconfig.json
 
 # Non-root user for security
 USER node

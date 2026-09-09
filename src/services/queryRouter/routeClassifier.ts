@@ -174,7 +174,14 @@ export async function classifyRoute(input: RouteInput): Promise<RouteClassificat
     }
   }
 
-  // ── LLM-based classification ──
+  // ── Fast path 5: Khách hàng storefront trên trang chủ ──
+  // Đối với người dùng thông thường, mọi câu hỏi tư vấn/tìm kiếm đều dùng vector_search.
+  // Không cần gọi thêm 1 lượt LLM classification tốn 2-4 giây!
+  if (userRole !== 'ADMIN') {
+    return { route: 'vector_search', confidence: 0.95 };
+  }
+
+  // ── LLM-based classification (chỉ dành cho ADMIN khi không rõ ý định) ──
   const search = await SearchService.hybridSearch(message, 1);
   const searchMode = search.mode;
 

@@ -14,6 +14,8 @@ import { UserVoucher } from '../../models/UserVoucher.ts';
 import mongoose from 'mongoose';
 import { calculateShippingFee } from '../../utils/helpers.ts';
 import { emitNewOrder } from '../../utils/adminSseEmitter.ts';
+import { markSoldCounted } from '../../controllers/order/orderHelpers.ts';
+import { getEffectiveProductDiscount } from '../product/productFormatterService.ts';
 
 export interface CheckoutPayload {
   customerName: string;
@@ -75,22 +77,7 @@ export class CheckoutService {
       const variantPrice = variantDoc.price || 0;
       const usedSize = variantDoc.size || sizeToFind;
 
-      let discountPct = product.discountPercentage || 0;
-      const activeFS = await FlashSale.findOne({
-        status: { $in: ['active', 'scheduled'] },
-        'items.productId': new mongoose.Types.ObjectId(entry.productId),
-      }).lean();
-
-      if (activeFS) {
-        const fsItem = (activeFS.items || []).find((it: any) => it.productId?.toString() === entry.productId.toString());
-        if (fsItem) {
-          const isFSExhausted = fsItem.stockLimit > 0 && (fsItem.soldCount || 0) >= fsItem.stockLimit;
-          if (!isFSExhausted) {
-            discountPct = Math.min(100, discountPct + (fsItem.extraDiscountPercentage || 0));
-          }
-        }
-      }
-
+      const discountPct = await getEffectiveProductDiscount(entry.productId);
       let finalPrice = variantPrice;
       if (discountPct > 0) {
         finalPrice = Math.round(variantPrice * (1 - discountPct / 100));
@@ -277,6 +264,13 @@ export class CheckoutService {
         brand: item.brand || '',
       }))
     );
+
+    // Tăng soldCount ngay lập tức khi user mua hàng thành công và kích hoạt leo top thời gian thực
+    try {
+      await markSoldCounted(order._id);
+    } catch (e) {
+      console.warn('⚠️ [CheckoutService] markSoldCounted error:', e);
+    }
 
     const purchases = orderItems.map((item: any) => ({
       productId: item.productId?.toString ? item.productId.toString() : String(item.productId),

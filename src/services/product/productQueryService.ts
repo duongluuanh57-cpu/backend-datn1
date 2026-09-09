@@ -9,7 +9,8 @@ import { Category } from '../../models/Category.ts';
 import { Review } from '../../models/Review.ts';
 import { ProductImage } from '../../models/ProductImage.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
-import { formatMultipleProducts } from './productFormatterService.ts';
+import { formatMultipleProducts, getDefaultVariant } from './productFormatterService.ts';
+import { DiscountLifecycleService } from './discountLifecycleService.ts';
 import { resolveCategoryNames } from './productHelpers.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
@@ -42,6 +43,10 @@ export class ProductQueryService {
         if (!this.tagCache.has(slug)) {
           this.tagCache.set(slug, tag._id);
         }
+        if (tag.name.toLowerCase() === 'sản phẩm mới') {
+          this.tagCache.set('san-pham-moi', tag._id);
+          this.tagCache.set('new', tag._id);
+        }
       }
       for (const slug of misses) {
         const id = this.tagCache.get(slug.toLowerCase());
@@ -61,57 +66,347 @@ export class ProductQueryService {
     return links.map(l => l.productId);
   }
 
-  static async getNewProducts(): Promise<any[]> {
-    const cacheKey = `products:new:tag:v5`;
-    try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
-    const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-    const productIds = await this.getProductIdsByTagSlugs(['new', 'san-pham-moi']);
-    const select = 'name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status';
-    const baseFilter: any = { status: 'active' };
-    if (fsProductIds.length > 0) baseFilter._id = { $nin: fsProductIds };
-    let productsRaw;
-    if (productIds.length > 0) {
-      const filteredProductIds = productIds.filter(id => !fsProductIds.some(fsId => fsId.equals(id)));
-      productsRaw = await Product.find({ _id: { $in: filteredProductIds }, status: 'active' }).select(select).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
-    } else {
-      productsRaw = await Product.find(baseFilter).select(select).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+  private static lastSyncNewArrivalTime = 0;
+
+  /**
+   * Đồng bộ quy tắc Tag New (Sản phẩm mới) — CHỈ lo tag, không đụng discount.
+   * Discount do DiscountLifecycleService (mô hình trung tâm) đảm nhận.
+   * - Sản phẩm trong vòng 31 ngày (createdAt <= 31 ngày) -> Gán Tag New, isNewArrival = true.
+   * - Quá 31 ngày -> Gỡ Tag New, isNewArrival = false.
+   */
+  static async syncNewArrivalTags(): Promise<void> {
+    const now = Date.now();
+    // Giới hạn đồng bộ tối đa 1 lần mỗi 10 phút để tránh quét/ghi DB mỗi lượt mở trang chủ
+    if (now - this.lastSyncNewArrivalTime < 600_000) return;
+    this.lastSyncNewArrivalTime = now;
+
+    try {
+      const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+      const newTag = await Tag.findOne({
+        status: 'active',
+        $or: [{ slug: /^new$/i }, { name: /^sản phẩm mới$/i }],
+      }).lean();
+
+      if (!newTag) return;
+
+      const standardTag = await Tag.findOne({
+        status: 'active',
+        $or: [{ slug: /^standard$/i }, { name: /^tiêu chuẩn$/i }],
+      }).lean();
+
+      // 1. Sản phẩm quá 31 ngày -> Gỡ Tag New
+      const newTagLinks = await ProductTag.find({ tagId: newTag._id }).lean();
+      const newLinkedProdIds = newTagLinks.map(l => l.productId);
+      const expiredProducts = await Product.find({
+        _id: { $in: newLinkedProdIds },
+        createdAt: { $lt: thirtyOneDaysAgo },
+      }).select('_id').lean();
+
+      if (expiredProducts.length > 0) {
+        const expiredIds = expiredProducts.map(p => p._id);
+        await ProductTag.deleteMany({
+          productId: { $in: expiredIds },
+          tagId: newTag._id,
+        });
+        await Product.updateMany(
+          { _id: { $in: expiredIds } },
+          { $set: { isNewArrival: false } }
+        );
+        if (standardTag) {
+          for (const pId of expiredIds) {
+            const hasStandard = await ProductTag.exists({ productId: pId, tagId: standardTag._id });
+            if (!hasStandard) {
+              await ProductTag.create({ productId: pId, tagId: standardTag._id });
+            }
+          }
+        }
+      }
+
+      // 2. Sản phẩm trong vòng 31 ngày -> Gán Tag New, isNewArrival = true
+      const recentProducts = await Product.find({
+        status: 'active',
+        createdAt: { $gte: thirtyOneDaysAgo },
+      }).select('_id').lean();
+
+      if (recentProducts.length > 0) {
+        const recentIds = recentProducts.map(p => p._id);
+        for (const pId of recentIds) {
+          const hasNew = await ProductTag.exists({ productId: pId, tagId: newTag._id });
+          if (!hasNew) {
+            await ProductTag.create({ productId: pId, tagId: newTag._id });
+          }
+        }
+        await Product.updateMany(
+          { _id: { $in: recentIds } },
+          { $set: { isNewArrival: true } }
+        );
+
+        // Luật loại trừ: hàng New không mang Standard (New = hàng mới, Standard = hàng cũ).
+        // Gỡ Standard của đúng nhóm vừa gán New để vòng quét tự chữa lành mỗi chu kỳ.
+        if (standardTag && recentIds.length > 0) {
+          await ProductTag.deleteMany({ productId: { $in: recentIds }, tagId: standardTag._id });
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ [syncNewArrivalTags] Error:', err);
     }
-    const products = await formatMultipleProducts(productsRaw);
+  }
+
+  static async getNewProducts(limit?: number): Promise<any[]> {
+    const cacheKey = `products:new:tag:all:v2:${limit || 'unlimited'}`;
+    try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
+
+    // Đồng bộ quy tắc Tag New + vòng đời discount trung tâm, ngầm không chặn luồng API
+    this.syncNewArrivalTags().catch(err => console.warn('syncNewArrivalTags error:', err));
+    DiscountLifecycleService.syncAutoDiscounts().catch(err => console.warn('syncAutoDiscounts error:', err));
+
+    const newTag = await Tag.findOne({
+      status: 'active',
+      $or: [{ slug: /^new$/i }, { name: /^sản phẩm mới$/i }],
+    }).lean();
+
+    if (!newTag) return [];
+
+    // Chỉ lấy các sản phẩm có Tag New trong ProductTag
+    const newLinks = await ProductTag.find({ tagId: newTag._id }).lean();
+    const productIds = newLinks.map(l => l.productId);
+
+    if (productIds.length === 0) return [];
+
+    const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
+    const limitedProductIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
+    const excludedIds = [...fsProductIds, ...limitedProductIds];
+
+    const select = 'name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status isNewArrival';
+    const baseFilter: any = {
+      _id: { $in: productIds, $nin: excludedIds },
+      status: 'active',
+    };
+
+    let query = Product.find(baseFilter)
+      .select(select)
+      .populate('brandId')
+      .populate('categories')
+      .sort({ createdAt: -1 });
+
+    if (limit && limit > 0) {
+      query = query.limit(limit);
+    }
+
+    const productsRaw = await query.lean();
+    const formatted = await formatMultipleProducts(productsRaw);
+
+    // QUY TẮC: Sản phẩm trong Session "Sản Phẩm Mới Về" nếu có % giảm giá > 5% thì tự động chỉ hiện là 5%
+    const products = formatted.map((p: any) => {
+      const currentDiscount = p.discountPercentage || p.discount || 0;
+      if (currentDiscount > 5) {
+        const origPrice = p.originalPrice || p.price || 0;
+        const newPrice = origPrice > 0 ? Math.round(origPrice * (1 - 5 / 100)) : p.price;
+        return {
+          ...p,
+          discount: 5,
+          discountPercentage: 5,
+          price: newPrice,
+        };
+      }
+      return p;
+    });
+
+    // Sắp xếp sản phẩm mới theo lượt bán từ Thấp -> Cao
+    products.sort((a: any, b: any) => {
+      const soldDiff = (a.soldCount || 0) - (b.soldCount || 0);
+      if (soldDiff !== 0) return soldDiff;
+      return (new Date(b.createdAt || 0).getTime()) - (new Date(a.createdAt || 0).getTime());
+    });
+
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) {} }
     return products;
+  }
+
+  private static lastSyncTrendingTime = 0;
+
+  static async syncTrendingTags(): Promise<void> {
+    const now = Date.now();
+    // Giới hạn đồng bộ Tag Trending tối đa 1 lần mỗi 10 phút để giải phóng tải DB
+    if (now - this.lastSyncTrendingTime < 600_000) return;
+    this.lastSyncTrendingTime = now;
+
+    try {
+      const trendingTag = await Tag.findOne({
+        status: 'active',
+        $or: [{ slug: /^trending$/i }, { name: /^trending$/i }, { name: /^thịnh hành$/i }],
+      }).lean();
+
+      if (!trendingTag) return;
+
+      const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+
+      // Lấy đúng TOP 16 sản phẩm CÒN HÀNG có lượt bán cao nhất toàn sàn
+      const top16Products = await Product.find({
+        status: 'active',
+        _id: { $in: inStockProductIds },
+      })
+        .sort({ soldCount: -1, createdAt: -1 })
+        .limit(16)
+        .select('_id tag')
+        .lean();
+
+      const top16Ids = top16Products.map(p => p._id);
+
+      // Xóa liên kết Tag Trending của các sản phẩm nằm ngoài Top 16
+      await ProductTag.deleteMany({
+        tagId: trendingTag._id,
+        productId: { $nin: top16Ids },
+      });
+
+      // Tối ưu: Lấy danh sách đã tồn tại bằng 1 query duy nhất thay vì lặp 16 lần
+      const existingTags = await ProductTag.find({
+        tagId: trendingTag._id,
+        productId: { $in: top16Ids },
+      }).select('productId').lean();
+
+      const existingSet = new Set(existingTags.map(t => t.productId.toString()));
+      const toInsert = top16Ids
+        .filter(pId => !existingSet.has(pId.toString()))
+        .map(pId => ({ productId: pId, tagId: trendingTag._id }));
+
+      if (toInsert.length > 0) {
+        await ProductTag.insertMany(toInsert, { ordered: false }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('⚠️ [syncTrendingTags] Error:', err);
+    }
+  }
+
+  private static lastSyncLimitedTime = 0;
+
+  static async syncLimitedTags(): Promise<void> {
+    const now = Date.now();
+    // Giới hạn đồng bộ Tag Limited tối đa 1 lần mỗi 10 phút để giải phóng tải DB
+    if (now - this.lastSyncLimitedTime < 600_000) return;
+    this.lastSyncLimitedTime = now;
+
+    try {
+      let limitedTag = await Tag.findOne({
+        status: 'active',
+        $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
+      }).lean();
+
+      if (!limitedTag) {
+        limitedTag = await Tag.create({
+          name: 'Limited',
+          slug: 'limited',
+          description: 'Phiên bản giới hạn số lượng độc quyền do section Sản phẩm giới hạn gán',
+          status: 'active',
+        });
+      }
+
+      const newTag = await Tag.findOne({
+        status: 'active',
+        $or: [{ slug: /^new$/i }, { name: /^sản phẩm mới$/i }],
+      }).lean();
+
+      const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
+
+      // Kiểm tra các sản phẩm đã có tag Limited
+      const existingLimitedLinks = await ProductTag.find({ tagId: limitedTag._id }).lean();
+      let limitedProductIds = existingLimitedLinks.map(l => l.productId);
+
+      if (limitedProductIds.length === 0) {
+        // Section Sản phẩm giới hạn tự động chọn Top 16 sản phẩm đắt giá nhất còn hàng (dòng xa xỉ độc quyền)
+        const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+        const topProducts = await Product.find({
+          status: 'active',
+          _id: { $in: inStockProductIds, $nin: fsProductIds },
+        })
+          .sort({ price: -1, createdAt: -1 })
+          .limit(16)
+          .select('_id')
+          .lean();
+
+        const topIds = topProducts.map(p => p._id);
+        if (topIds.length > 0) {
+          await ProductTag.insertMany(
+            topIds.map(pId => ({ productId: pId, tagId: limitedTag!._id })),
+            { ordered: false }
+          ).catch(() => {});
+          limitedProductIds = topIds;
+        }
+      }
+
+      // Đảm bảo mọi sản phẩm mang tag Limited KHÔNG bao giờ có tag New
+      if (newTag && limitedProductIds.length > 0) {
+        await ProductTag.deleteMany({
+          productId: { $in: limitedProductIds },
+          tagId: newTag._id,
+        });
+        await Product.updateMany(
+          { _id: { $in: limitedProductIds } },
+          { $set: { isNewArrival: false } }
+        );
+      }
+    } catch (err) {
+      console.warn('⚠️ [syncLimitedTags] Error:', err);
+    }
   }
 
   static async getLimitedProducts(): Promise<any[]> {
-    const cacheKey = `products:limited:tag:v4`;
+    const cacheKey = `products:limited:tag:v6`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
+    
+    // Tự động đồng bộ Tag Limited do section Sản phẩm giới hạn gán ngầm không chặn luồng API
+    this.syncLimitedTags().catch(err => console.warn('syncLimitedTags error:', err));
+
     const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
     const productIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
-    let productsRaw;
+    let productsRaw: any[] = [];
     if (productIds.length > 0) {
       const filteredProductIds = productIds.filter(id => !fsProductIds.some(fsId => fsId.equals(id)));
-      productsRaw = await Product.find({ _id: { $in: filteredProductIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
-    } else {
-      productsRaw = await Product.find({ status: 'active', _id: { $nin: fsProductIds } }).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
+      productsRaw = await Product.find({ _id: { $in: filteredProductIds }, status: 'active' })
+        .populate('brandId')
+        .populate('categories')
+        .sort({ price: -1, createdAt: -1 })
+        .limit(16)
+        .lean();
     }
     const products = await formatMultipleProducts(productsRaw);
+    products.sort((a, b) => (b.price || b.originalPrice || 0) - (a.price || a.originalPrice || 0));
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) {} }
     return products;
   }
 
-  static async getTrendingProducts(): Promise<any[]> {
-    const cacheKey = `products:trending:tag:v5`;
+  static async getTrendingProducts(limit: number = 16): Promise<any[]> {
+    const effectiveLimit = Math.min(16, limit > 0 ? limit : 16);
+    const cacheKey = `products:trending:v11:${effectiveLimit}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
+    
+    // Tự động đồng bộ Tag Trending ngầm không chặn luồng trả lời API
+    this.syncTrendingTags().catch(err => console.warn('syncTrendingTags error:', err));
+
     const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-    const productIds = await this.getProductIdsByTagSlugs(['trending', 'thinh-hanh', 'ban-chay', 'hot']);
-    let productsRaw;
-    if (productIds.length > 0) {
-      const filteredProductIds = productIds.filter(id => !fsProductIds.some(fsId => fsId.equals(id)));
-      productsRaw = await Product.find({ _id: { $in: filteredProductIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).limit(15).lean();
-    } else {
-      productsRaw = await Product.find({ status: 'active', _id: { $nin: fsProductIds } }).populate('brandId').populate('categories').sort({ soldCount: -1, createdAt: -1 }).limit(15).lean();
+    // Lọc chỉ lấy các sản phẩm CÒN HÀNG (tồn tại ít nhất 1 variant có quantityInStock > 0)
+    const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+
+    // Lấy top 16 sản phẩm bán chạy nhất còn hàng (sắp xếp giảm dần theo lượt bán).
+    // Nếu sản phẩm nào trong top hết hàng, các sản phẩm tiếp theo còn hàng sẽ tự động cộng dồn lên thay thế vị trí đủ top 16.
+    const baseFilter: any = {
+      status: 'active',
+      _id: { $in: inStockProductIds },
+    };
+    if (fsProductIds.length > 0) {
+      baseFilter._id = { $in: inStockProductIds, $nin: fsProductIds };
     }
+
+    const query = Product.find(baseFilter)
+      .populate('brandId')
+      .populate('categories')
+      .sort({ soldCount: -1, createdAt: -1 })
+      .limit(effectiveLimit);
+
+    const productsRaw = await query.lean();
+
     const products = await formatMultipleProducts(productsRaw);
-    if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', this.CACHE_TTL); } catch (err) {} }
+    if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', 300); } catch (err) {} }
     return products;
   }
 
@@ -126,11 +421,37 @@ export class ProductQueryService {
     if (!slugs || slugs.length === 0) return [];
     const cachePayload = { brand, capacity, priceRange, minPrice, maxPrice, sortBy, limit, filterTag };
     const cacheHash = crypto.createHash('md5').update(JSON.stringify(cachePayload)).digest('hex');
-    const cacheKey = `products:public:${type}:${cacheHash}`;
+    const cacheKey = `products:public:v3:${type}:${cacheHash}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getPublicProducts:', err); }
-    const productIds = await this.getProductIdsByTagSlugs(slugs);
-    if (productIds.length === 0) return [];
-    const productsRaw = await Product.find({ _id: { $in: productIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
+    let productsRaw;
+    if (type === 'trending') {
+      const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
+      const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+      const filter: any = {
+        status: 'active',
+        _id: { $in: inStockProductIds },
+      };
+      if (fsProductIds.length > 0) {
+        filter._id = { $in: inStockProductIds, $nin: fsProductIds };
+      }
+      let query = Product.find(filter)
+        .populate('brandId')
+        .populate('categories')
+        .sort({ soldCount: -1, createdAt: -1 });
+      if (limit && limit > 0) {
+        query = query.limit(Math.min(16, limit));
+      }
+      productsRaw = await query.lean();
+    } else {
+      let productIds = await this.getProductIdsByTagSlugs(slugs);
+      if (type === 'new') {
+        const newArrivals = await Product.find({ isNewArrival: true, status: 'active' }).select('_id').lean();
+        const allIds = new Set([...productIds.map(id => id.toString()), ...newArrivals.map(p => p._id.toString())]);
+        productIds = Array.from(allIds).map(id => new mongoose.Types.ObjectId(id));
+      }
+      if (productIds.length === 0) return [];
+      productsRaw = await Product.find({ _id: { $in: productIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
+    }
     const products = await formatMultipleProducts(productsRaw);
     const getActualPrice = (product: any) => { const p = product.price ?? 0; if (!p) return 0; let active = product.discountPercentage && product.discountPercentage > 0; if (active) { const now = new Date(); if (product.discountStartDate && new Date(product.discountStartDate) > now) active = false; if (product.discountEndDate && new Date(product.discountEndDate) < now) active = false; } return active ? Math.round(p * (1 - product.discountPercentage / 100)) : p; };
     const filtered = products.filter((product: any) => {
@@ -150,7 +471,7 @@ export class ProductQueryService {
   }
 
   static async getSaleProducts(): Promise<any[]> {
-    const cacheKey = `products:sale:tag:v2`;
+    const cacheKey = `products:sale:tag:v3`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getSaleProducts:', err); }
 
     let flashSaleProducts: any[] = [];
@@ -208,6 +529,38 @@ export class ProductQueryService {
       try { await redis.set(cacheKey, JSON.stringify(finalProducts), 'EX', this.CACHE_TTL); } catch (err) { console.warn('Redis set error:', err); }
     }
     return finalProducts;
+  }
+
+  static async getSeasonalProducts(limit: number = 200): Promise<any[]> {
+    const effectiveLimit = Math.min(200, limit > 0 ? limit : 200);
+    const cacheKey = `products:seasonal:v7:${effectiveLimit}`;
+    try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
+
+    // Lọc các sản phẩm CÒN HÀNG và có thông tin mùa của toàn bộ các Tag (New, Limited, Trending, Standard...)
+    // Tương tự như HOT TREND: Sử dụng dữ liệu gốc của sản phẩm, không ép/sửa đổi dữ liệu, chỉ lọc theo Season
+    const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+
+    const baseFilter: any = {
+      status: 'active',
+      _id: { $in: inStockProductIds },
+      $or: [
+        { 'specifications.season': { $exists: true, $ne: '' } },
+        { season: { $exists: true, $ne: '' } },
+      ],
+    };
+
+    const productsRaw = await Product.find(baseFilter)
+      .populate('brandId')
+      .populate('categories')
+      .sort({ soldCount: -1, createdAt: -1 })
+      .limit(effectiveLimit)
+      .lean();
+
+    const products = await formatMultipleProducts(productsRaw);
+    if (products.length > 0) {
+      try { await redis.set(cacheKey, JSON.stringify(products), 'EX', 300); } catch (err) {}
+    }
+    return products;
   }
 
   static async getAllProducts(options: any = {}): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
@@ -283,18 +636,41 @@ export class ProductQueryService {
         query._id = { $in: stockProductIds };
       }
     }
+    let isTrending = false;
     if (tag && tag !== 'all') {
       const isSaleTag = ['sale', 'flash-sale', 'giam-gia'].includes(tag.toLowerCase());
+      const isNewTag = ['new', 'san-pham-moi', 'moi'].includes(tag.toLowerCase());
+      const isTrendingTag = ['trending', 'thinh-hanh', 'ban-chay', 'hot'].includes(tag.toLowerCase());
+      isTrending = isTrendingTag;
       let productIds: mongoose.Types.ObjectId[] = [];
 
       if (isSaleTag) {
         // Chỉ lấy các sản phẩm được gán trực tiếp vào sự kiện Flash Sale đang diễn ra (Active)
         productIds = await FlashSaleService.getActiveFlashSaleProductIds();
+      } else if (isNewTag) {
+        // Sản phẩm mới: chỉ lấy các sản phẩm tạo trong vòng 31 ngày gần nhất
+        const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+        const newProducts = await Product.find({
+          status: 'active',
+          createdAt: { $gte: thirtyOneDaysAgo },
+        }).select('_id').lean();
+        productIds = newProducts.map(p => p._id);
+      } else if (isTrendingTag) {
+        // Trending: Lấy các sản phẩm còn hàng có lượt mua cao nhất giảm dần
+        const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+        const trendingProds = await Product.find({
+          status: 'active',
+          _id: { $in: inStockProductIds },
+        })
+          .sort({ soldCount: -1, createdAt: -1 })
+          .select('_id')
+          .lean();
+        productIds = trendingProds.map(p => p._id);
       } else {
         const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const orConditions: any[] = [
           { slug: { $regex: `^${escapedTag}$`, $options: 'i' } },
-          { name: { $regex: `^${escapedTag}$`, $options: 'i' } }
+          { name: { $regex: `^${escapedTag}$`, $options: 'i' } },
         ];
         if (mongoose.Types.ObjectId.isValid(tag)) {
           orConditions.push({ _id: new mongoose.Types.ObjectId(tag) });
@@ -358,7 +734,7 @@ export class ProductQueryService {
         return { items: [], total: 0, page, totalPages: 0 };
       }
     }
-    let sort: any = { createdAt: -1 };
+    let sort: any = (isTrending && !sortBy) ? { soldCount: -1, createdAt: -1 } : { createdAt: -1 };
     let stockSortNeeded = false;
     let stockSortAsc = true;
     let priceSortNeeded = false;
@@ -388,7 +764,7 @@ export class ProductQueryService {
     if (minPrice || maxPrice) {
       // Price filter: fetch matching documents, format once, filter by price and slice page items
       const all = await Product.find(query)
-        .select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status')
+        .select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status season specifications')
         .populate('brandId')
         .populate('categories')
         .sort(sort)
@@ -405,7 +781,7 @@ export class ProductQueryService {
     } else {
       try {
         total = await Product.countDocuments(query);
-        products = await Product.find(query).select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean();
+        products = await Product.find(query).select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status season specifications').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean();
       } catch (err) {
         console.error('Product query error:', err, 'query:', JSON.stringify(query));
         throw new Error('Lỗi truy vấn sản phẩm: ' + (err as any).message);
@@ -530,22 +906,19 @@ export class ProductQueryService {
       ]),
     ]);
 
-    const tagSlugs = tagLinks
+    const rawTagSlugs = tagLinks
       .filter(l => (l.tagId as any)?.status === 'active')
       .map(l => (l.tagId as any)?.slug)
       .filter(Boolean);
+
+    const productTag = rawTagSlugs.join(', ') || (product as any).tag || '';
 
     const oldCatName = catDoc ? catDoc.name : '';
     const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
     const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
 
-    const variant50mlInStock = variants.find((v: any) => v.size === '50ml' && (v.quantityInStock === undefined || v.quantityInStock > 0));
-    const defaultVariant = variant50mlInStock
-      || variants.find((v: any) => v.quantityInStock === undefined || v.quantityInStock > 0)
-      || variants.find((v: any) => v.size === '50ml')
-      || variants[0];
+    const defaultVariant = getDefaultVariant(variants) || variants[0];
     const rawVariantPrice = defaultVariant?.price || (product as any).price || (product as any).originalPrice || 0;
-    let baseDiscount = (product as any).discountPercentage || 0;
 
     let extraDiscount = 0;
     let fsStockLimit = 0;
@@ -562,6 +935,11 @@ export class ProductQueryService {
       }
     }
 
+    const quantityInStock = variants.length > 0
+      ? variants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0)
+      : ((product as any).quantityInStock ?? (product as any).stock ?? 1);
+
+    const baseDiscount = (product as any).discountPercentage || (product as any).discount || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
     let computedPrice = rawVariantPrice;
     if (computedPrice > 0 && totalDiscount > 0) {
@@ -578,24 +956,32 @@ export class ProductQueryService {
       discount: totalDiscount,
       discountPercentage: totalDiscount,
       stockLimit: fsStockLimit,
-      soldCount: fsSoldCount,
+      soldCount: isFS ? fsSoldCount : ((product as any).soldCount || 0),
       isFlashSale: isFS,
       brand: (product.brandId as any)?.name || '',
       categories: catArr,
       image: images[0]?.url || '',
       images: images.slice(1).map(img => img.url),
-      variants: variants.map(v => ({
-        _id: v._id,
-        size: v.size,
-        price: v.price,
-        originalPrice: v.price,
-        quantityInStock: v.quantityInStock,
-        sku: v.sku,
-        isDefault: v.isDefault,
-      })),
+      variants: variants.map(v => {
+        const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
+        const vType = (v as any).type === 'decant' || (v as any).type === 'fullbox'
+          ? (v as any).type
+          : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+        return {
+          _id: v._id,
+          size: v.size,
+          type: vType,
+          price: v.price,
+          originalPrice: v.price,
+          quantityInStock: v.quantityInStock,
+          sku: v.sku,
+          isDefault: v.isDefault,
+        };
+      }),
+      defaultVariantSize: defaultVariant?.size || '100ml',
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
-      tag: tagSlugs.join(', '),
-      quantityInStock: variants.reduce((sum, v) => sum + (v.quantityInStock || 0), 0),
+      tag: productTag,
+      quantityInStock,
       reviewsCount,
       avgRating,
       rating: avgRating,

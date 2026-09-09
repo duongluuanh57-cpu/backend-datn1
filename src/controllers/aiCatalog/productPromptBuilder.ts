@@ -8,39 +8,50 @@ export interface PromptInput {
   availableTags: string[];
   sizesJson: string;
   preFilled: Record<string, any>;
+  webSnippets?: string[];
 }
 
 export function buildProductPrompt(input: PromptInput): string {
-  const { name, availableBrands, availableCategories, availableTags, sizesJson, preFilled } = input;
-
-  const finalTagsForPrompt = availableTags.filter((t: string) => t.toLowerCase() !== 'standard');
+  const { name, availableBrands, availableCategories, availableTags, sizesJson, preFilled, webSnippets } = input;
 
   return `
 Bạn là AI chuyên gia thẩm định và quản lý danh mục nước hoa cao cấp.
-Nhiệm vụ của bạn là phân tích và thẩm định tên sản phẩm "${name}".
+Nhiệm vụ của bạn là phân tích, tra cứu và thẩm định sản phẩm "${name}".
 
 QUY TẮC THẨM ĐỊNH NƯỚC HOA (BẮT BUỘC & TIÊN QUYẾT):
 1. Bạn PHẢI xác định xem "${name}" CÓ THỰC SỰ LÀ NƯỚC HOA, dầu thơm, tinh dầu nước hoa, body mist, xịt thơm cơ thể hoặc nến thơm cao cấp hay không.
-2. NẾU "${name}" là BẤT KỲ MẶT HÀNG NÀO KHÁC (ví dụ: đồ điện tử, điện thoại, máy tính, phụ kiện, quần áo, giày dép, túi xách không phải nước hoa, thực phẩm, đồ uống, thuốc, đồ gia dụng, xe cộ, cây cối, động vật, địa danh, tên người thông thường, chuỗi ký tự ngẫu nhiên hoặc bất kỳ thứ gì không phải sản phẩm mùi hương nước hoa), bạn TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ BỊA ĐẶT THÔNG SỐ NƯỚC HOA. Thay vào đó, bạn PHẢI trả về ĐÚNG cấu trúc JSON sau:
+2. NẾU "${name}" là BẤT KỲ MẶT HÀNG NÀO KHÁC (ví dụ: đồ điện tử, điện thoại, máy tính, phụ kiện, quần áo, thực phẩm, xe cộ, chuỗi ký tự ngẫu nhiên...), bạn TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ BỊA ĐẶT THÔNG SỐ. Trả về đúng cấu trúc JSON sau:
 {
   "isPerfume": false,
   "errorMessage": "Tên sản phẩm không phải là nước hoa!"
 }
-3. CHỈ KHI VÀ CHỈ KHI "${name}" là nước hoa hoặc sản phẩm hương thơm hợp lệ, bạn mới tiến hành tạo hồ sơ JSON chi tiết bên dưới.
+3. CHỈ KHI "${name}" là nước hoa hoặc sản phẩm hương thơm hợp lệ, bạn mới tạo hồ sơ JSON chi tiết bên dưới.
 
-DANH SÁCH GIÁ TRỊ TRONG DATABASE (CHỈ được chọn từ đây nếu là nước hoa hợp lệ — không ngoại lệ):
+DANH SÁCH GIÁ TRỊ TRONG DATABASE:
 - Hãng: ${JSON.stringify(availableBrands)}
 - Dung tích: ${sizesJson}
 - Danh mục (CHỈ chọn ĐÚNG 1 danh mục từ danh sách này): ${JSON.stringify(availableCategories)}
-- Tags (CHỈ chọn ĐÚNG 1 tag phụ từ danh sách này, KHÔNG chọn "Standard" — tag Standard tự động thêm ở backend): ${JSON.stringify(finalTagsForPrompt)}
+
+QUY TẮC KIỂM TRA PHIÊN BẢN GIỚI HẠN (LIMITED EDITION) QUA THÔNG TIN TÌM KIẾM TRÊN MẠNG:
+Dưới đây là thông tin thực tế được tra cứu trực tiếp từ Internet về "${name}":
+${webSnippets && webSnippets.length > 0 ? webSnippets.map((s, idx) => `[Kết quả ${idx + 1}]: ${s}`).join('\n') : '(Không có snippet trực tiếp, hãy dùng kiến thức thẩm định nước hoa chuẩn xác của bạn)'}
+
+Dựa vào thông tin trên mạng và kiến thức thực tế về chai nước hoa này:
+- NẾU ĐÚNG LÀ PHIÊN BẢN GIỚI HẠN (Limited Edition, Special Edition, Collector's Edition, Holiday/Seasonal Edition, phiên bản giới hạn phát hành theo đợt):
+  -> "isLimited": true
+  -> "tag": "Limited"
+- NẾU LÀ PHIÊN BẢN THƯỜNG / ĐẠI TRÀ (Standard / Mainstream / Regular production line):
+  -> "isLimited": false
+  -> "tag": "" (BẮT BUỘC để chuỗi rỗng "", TUYỆT ĐỐI KHÔNG gán bất kỳ tag nào như Standard, Trending, New, Sale).
 
 QUY TẮC DÀNH CHO NƯỚC HOA HỢP LỆ:
 1. Hãng (brand): PHẢI chọn CHÍNH XÁC 1 hãng từ danh sách Hãng. Nếu không chắc, chọn hãng gần nhất.
-2. Tag: PHẢI chọn ĐÚNG 1 tag phụ từ danh sách Tags trên (không chọn "Standard"). Tag "Standard" sẽ tự động được thêm để tạo thành đúng 2 tags cho sản phẩm. Tag "Sale" CHỈ chọn khi discountPercentage > 10 VÀ có discountEndDate. Nếu không đủ điều kiện, KHÔNG chọn "Sale".
-3. Danh mục (category): PHẢI chọn ĐÚNG 1 danh mục duy nhất từ danh sách Danh mục.
-4. Tên sản phẩm: AI tự suy luận tên sản phẩm từ hãng và phân khúc. VD: hãng "Chanel" → "Chanel Coco Mademoiselle", hãng "Dior" → "Dior Sauvage Elixir".
-5. Dung tích (size): CHỈ được chọn từ danh sách 7 loại dung tích: ["5ml", "10ml", "20ml", "50ml", "100ml", "150ml", "200ml"]. BẮT BUỘC tạo TỐI THIỂU 4 loại dung tích khác nhau (trong đó BẮT BUỘC phải có "50ml", 3 hoặc nhiều loại còn lại chọn trong 6 loại: 5ml, 10ml, 20ml, 100ml, 150ml, 200ml). Sắp xếp dung tích tăng dần (ví dụ: "10ml:450000, 20ml:850000, 50ml:1950000, 100ml:3200000"). Format: "size:price" cách nhau bởi dấu phẩy. Giá tham khảo thị trường Việt Nam (VND), dung tích càng lớn giá càng cao tương xứng.
-6. Price: LUÔN để 0 — sẽ tự lấy từ giá 50ml.
+2. Danh mục (category): PHẢI chọn ĐÚNG 1 danh mục duy nhất từ danh sách Danh mục.
+3. Tên sản phẩm: AI tự suy luận tên sản phẩm từ hãng và phân khúc. VD: hãng "Chanel" → "Chanel Coco Mademoiselle", hãng "Dior" → "Dior Sauvage Elixir".
+5. Dung tích (size):
+   - ĐỐI VỚI PHIÊN BẢN GIỚI HẠN (isLimited = true): CHỈ TẠO DUY NHẤT 1 DUNG TÍCH LÀ "100ml" (ví dụ: "100ml:4500000"). TUYỆT ĐỐI KHÔNG tạo các dung tích khác như 5ml, 10ml, 20ml, 50ml.
+   - ĐỐI VỚI SẢN PHẨM THƯỜNG (isLimited = false): BẮT BUỘC tạo TỐI THIỂU 4 loại dung tích từ 7 loại: ["5ml", "10ml", "20ml", "50ml", "100ml", "150ml", "200ml"] (trong đó BẮT BUỘC phải có "50ml"). Sắp xếp dung tích tăng dần (ví dụ: "10ml:450000, 20ml:850000, 50ml:1950000, 100ml:3200000"). Format: "size:price" cách nhau bởi dấu phẩy.
+6. Price: LUÔN để 0 — sẽ tự lấy từ giá 100ml (nếu là Limited) hoặc giá 50ml (nếu là bản thường).
 7. Mô tả (description): BẮT BUỘC viết bài viết chi tiết, dài, chuẩn SEO chuyên sâu về nước hoa theo định dạng HTML (dùng thẻ <h2>, <h3>, <p>, <strong>, <a>). Bố cục bài viết gồm 5 phần lớn như mẫu sau:
    - Phần 1: Giới thiệu tổng quan về sản phẩm, định vị thương hiệu và cảm hứng hương thơm (khoảng 2 đoạn văn <p>).
    - Phần 2: Tiêu đề <h2>Hương thơm của [Tên đầy đủ sản phẩm]</h2> kèm đoạn văn dẫn dắt <p>.
@@ -79,6 +90,16 @@ QUY TẮC DÀNH CHO NƯỚC HOA HỢP LỆ:
    Nếu > 10 → PHẢI điền discountStartDate & discountEndDate. Ưu tiên ngày đẹp: 7/7, 8/8, 9/9 hoặc tuần cuối tháng trong năm 2026.
 10. Từ khóa (keywords): Sinh ĐÚNG 5 keywords tiếng Việt để tìm kiếm embedding.
 11. Giữ nguyên pre-filled fields từ user, không thay đổi.
+12. Quy tắc điền Mùa (season) - BẮT BUỘC TUÂN THỦ TỈ LỆ 70/20/10:
+    - Nước hoa phải thể hiện rõ bản sắc mùi hương theo mùa. Tối đa chỉ 3 mùa và chiếm tỉ lệ rất ít. TUYỆT ĐỐI KHÔNG điền 4 mùa hoặc "Bốn mùa".
+    - Tỉ lệ phân bổ khi sinh:
+      * 70% trường hợp: CHỈ ĐIỀN ĐÚNG 1 MÙA DUY NHẤT phù hợp nhất với nhóm hương:
+        + Hương aquatic biển cả / cam chanh citrus / tươi mát / thể thao -> "Mùa Hạ"
+        + Hương hoa tươi / blossom / ngọt thanh / sương sớm -> "Mùa Xuân"
+        + Hương gỗ tuyết tùng / trà thơm / xạ hương / hổ phách dịu -> "Mùa Thu"
+        + Hương da thuộc / trầm hương oud / hổ phách nồng / cay ấm -> "Mùa Đông"
+      * 20% trường hợp: ĐIỀN 2 MÙA liền kề phù hợp (ví dụ: "Mùa Thu, Mùa Đông" hoặc "Mùa Xuân, Mùa Hạ").
+      * 10% trường hợp: ĐIỀN 3 MÙA (tối đa) cho các dòng hương đa dụng (ví dụ: "Mùa Xuân, Mùa Thu, Mùa Đông" hoặc "Mùa Xuân, Mùa Hạ, Mùa Thu").
 
 PRE-FILLED FIELDS (giữ nguyên): ${JSON.stringify(Object.keys(preFilled).length > 0 ? preFilled : '(không có)')}
 
@@ -86,9 +107,10 @@ CHỈ trả về JSON object thuần. Không markdown, không code block.
 
 {
   "brand": "tên hãng từ danh sách",
-  "tag": "tên tag từ danh sách",
+  "isLimited": true / false,
+  "tag": "Limited" (nếu isLimited là true) hoặc "" (nếu isLimited là false),
   "category": "tên danh mục duy nhất từ danh sách",
-  "size": "50ml:giá_tiền, size2:giá_tiền, size3:giá_tiền, size4:giá_tiền (TỐI THIỂU 4 dung tích từ 7 loại: 5ml, 10ml, 20ml, 50ml, 100ml, 150ml, 200ml, BẮT BUỘC có 50ml)",
+  "size": "nếu isLimited=true thì CHỈ '100ml:giá_tiền', nếu isLimited=false thì '50ml:giá, 10ml:giá, 20ml:giá, 100ml:giá'",
   "description": "Bài viết mô tả chi tiết bằng HTML gồm <h2>, <h3>, <p>, <strong>",
   "discountPercentage": number,
   "discountStartDate": "ISO date string hoặc null (VD: 2026-07-07T00:00:00.000Z)",
@@ -96,7 +118,7 @@ CHỈ trả về JSON object thuần. Không markdown, không code block.
   "longevity": "Thời gian lưu hương (VD: 7 - 9 giờ)",
   "sillage": "Độ tỏa hương (VD: 1m)",
   "scentTrail": "Vệt hương (VD: Mịn, rõ nét, sạch sẽ)",
-  "season": "Mùa phù hợp, cách nhau dấu ,",
+  "season": "Theo tỉ lệ 70/20/10: 70% là 1 mùa duy nhất ('Mùa Hạ', 'Mùa Thu', 'Mùa Xuân', hoặc 'Mùa Đông'), 20% là 2 mùa (VD: 'Mùa Thu, Mùa Đông'), 10% là 3 mùa (VD: 'Mùa Xuân, Mùa Thu, Mùa Đông')",
   "time": "Thời gian phù hợp, cách nhau dấu ,",
   "style": "Phong cách (VD: Lịch lãm, hiện đại)",
   "suitableFor": "Đối tượng, cách nhau dấu | (VD: văn phòng | hẹn hò)",

@@ -7,7 +7,7 @@ import { generateBrand } from '../controllers/aiCatalog/generateBrandController.
 import { generateUser, createUserFromAI } from '../controllers/aiCatalog/generateUserController.ts';
 import { generateCategory, createCategoryFromAI } from '../controllers/aiCatalog/generateCategoryController.ts';
 import { generateTag, createTagFromAI } from '../controllers/aiCatalog/generateTagController.ts';
-import { generateVoucher, createVoucherFromAI } from '../controllers/aiCatalog/generateVoucherController.ts';
+import { generateVoucher, createVoucherFromAI, suggestVoucherIdeas, suggestCodeExpansions } from '../controllers/aiCatalog/generateVoucherController.ts';
 import { suggestPrice } from '../controllers/aiCatalog/suggestPriceController.ts';
 import { productFillMissing } from '../controllers/aiCatalog/productFillMissingController.ts';
 import { generateProduct } from '../controllers/aiCatalog/generateProductController.ts';
@@ -53,6 +53,19 @@ export async function aiRoutes(app: FastifyInstance) {
   // POST /api/ai/generate-voucher - AI tạo voucher
   server.post('/generate-voucher', {
     handler: generateVoucher,
+  });
+
+  // POST /api/ai/suggest-voucher-ideas - AI gợi ý danh sách ý tưởng mã giảm giá cho admin
+  server.post('/suggest-voucher-ideas', {
+    handler: suggestVoucherIdeas,
+  });
+  server.get('/suggest-voucher-ideas', {
+    handler: suggestVoucherIdeas,
+  });
+
+  // POST /api/ai/suggest-code-expansions - AI mở rộng tên mã dựa trên những gì admin đang gõ
+  server.post('/suggest-code-expansions', {
+    handler: suggestCodeExpansions,
   });
 
   // POST /api/ai/create-user - Tạo user từ dữ liệu AI

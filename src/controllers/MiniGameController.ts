@@ -117,6 +117,7 @@ export class MiniGameController {
           discountType: reward.discountType,
           discountAmount: reward.discountAmount,
           segmentIndex: reward.segmentIndex, // Trả thêm index của ô dừng về cho client
+          expiresAt: (session as any).expiresAt,
           message: won
             ? `Chúc mừng! Bạn đã trúng thưởng ${reward.label}!`
             : 'Chúc bạn may mắn lần sau!',

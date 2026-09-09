@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import './Tag.ts';
 /**
  * ProductTag — bảng TRUNG GIAN liên kết Product ↔ Tag (nhiều-nhiều)
  *
@@ -35,6 +36,7 @@ const ProductTagSchema = new Schema<IProductTag>(
 
 // Một sản phẩm không thể gán cùng một tag hai lần
 ProductTagSchema.index({ productId: 1, tagId: 1 }, { unique: true });
+ProductTagSchema.index({ tagId: 1, productId: 1 });
 
 export const ProductTag =
   mongoose.models.ProductTag ||

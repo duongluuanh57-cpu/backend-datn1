@@ -35,6 +35,7 @@ import { contentRoutes } from './routes/content.routes.ts';
 import { funnelRoutes } from './routes/funnel.routes.ts';
 import { dailySummaryRoutes } from './routes/dailySummary.routes.ts';
 import { startDailySummaryCron } from './cron/dailySummary.ts';
+import { startDiscountLifecycleCron } from './cron/discountLifecycleCron.ts';
 import { startNewsAutoPilotCron } from './cron/newsAutoPilotCron.ts';
 import { startFlashSaleCron } from './services/FlashSaleService.ts';
 import { favoriteRoutes } from './routes/favorite.routes.ts';
@@ -176,6 +177,7 @@ export function buildApp(): FastifyInstance {
 
   // Start background cron jobs
   startDailySummaryCron();
+  startDiscountLifecycleCron();
   startFlashSaleCron();
   startNewsAutoPilotCron();
 

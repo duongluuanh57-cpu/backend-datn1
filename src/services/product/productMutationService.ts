@@ -9,6 +9,7 @@ import { ProductImage } from '../../models/ProductImage.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { ImageService } from '../ImageService.ts';
 import { FuzzyMatchCache } from '../FuzzyMatchCache.ts';
+import { NEW_AUTO_DISCOUNT_PERCENT, computeLimitedDiscount } from './discountLifecycleService.ts';
 import { parseSizes, slugify } from './productHelpers.ts';
 
 export class ProductMutationService {
@@ -24,7 +25,6 @@ export class ProductMutationService {
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.reviewsCount !== undefined) updateData.reviewsCount = data.reviewsCount;
-    if (data.discountPercentage !== undefined) updateData.discountPercentage = data.discountPercentage;
     if (data.status !== undefined) updateData.status = data.status;
 
     // Specifications sub-document update
@@ -70,13 +70,29 @@ export class ProductMutationService {
     // Tags mapping — ghi vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
     if (data.tag !== undefined) {
       const tagSlugs = (data.tag as string).split(',').map((s: string) => s.trim()).filter(Boolean);
-      const tagDocs = await Tag.find({ slug: { $in: tagSlugs } }).lean();
-      const foundSlugs = new Set(tagDocs.map(t => t.slug));
-      const skipped = tagSlugs.filter(s => !foundSlugs.has(s));
-      if (skipped.length > 0) {
-        console.warn(`⚠️ [Tag] Skipping ${skipped.length} tag(s) not found in DB: ${skipped.join(', ')} — will NOT auto-create`);
+      const allActiveTags = await Tag.find({ status: 'active' }).lean();
+      let tagIds: mongoose.Types.ObjectId[] = [];
+      for (const slug of tagSlugs) {
+        const matched = allActiveTags.find(
+          t => t.slug.toLowerCase() === slug.toLowerCase() || t.name.toLowerCase() === slug.toLowerCase()
+        );
+        if (matched && !tagIds.some(id => id.equals(matched._id))) {
+          tagIds.push(matched._id);
+        }
       }
-      const tagIds = tagDocs.map(t => t._id);
+      // Luật loại trừ: New và Standard không đứng chung (New = hàng mới, Standard = hàng cũ).
+      // Tập cuối có New thì loại Standard trước khi ghi.
+      const isNewTag = (t: any) =>
+        /^new$/i.test(t.slug || '') || /^san-pham-moi$/i.test(t.slug || '') ||
+        /^sản phẩm mới$/i.test(t.name || '');
+      const isStandardTag = (t: any) =>
+        /^standard$/i.test(t.slug || '') || /^tiêu chuẩn$/i.test(t.name || '');
+      if (tagIds.some(id => { const t = allActiveTags.find(x => x._id.equals(id)); return t && isNewTag(t); })) {
+        tagIds = tagIds.filter(id => {
+          const t = allActiveTags.find(x => x._id.equals(id));
+          return !t || !isStandardTag(t);
+        });
+      }
       // Xóa tags cũ rồi insert lại
       await ProductTag.deleteMany({ productId: id });
       if (tagIds.length > 0) {
@@ -149,14 +165,23 @@ export class ProductMutationService {
           fs.appendFileSync('variants_debug.log', `[Variants Debug] productId=${id} has50ml=${has50ml} defaultIndex=${defaultIndex}\nInput variants: ${JSON.stringify(data.variants)}\n\n`);
         } catch (e) {}
 
-        const variantsToInsert = data.variants.map((v: any, index: number) => ({
-          productId: id,
-          size: v.size || '50ml',
-          price: Number(v.price) || 0,
-          quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
-          isDefault: index === defaultIndex,
-          sortOrder: index,
-        }));
+        const variantsToInsert = data.variants.map((v: any, index: number) => {
+          const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
+          const variantType = v.type === 'decant' || v.type === 'fullbox'
+            ? v.type
+            : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+
+          return {
+            productId: id,
+            size: v.size || '50ml',
+            type: variantType,
+            price: Number(v.price) || 0,
+            quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+            sku: v.sku || '',
+            isDefault: index === defaultIndex,
+            sortOrder: index,
+          };
+        });
         const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
         const newVariantIds = insertedVariants.map(v => v._id);
         await Product.findOneAndUpdate({ _id: id }, { $set: { variants: newVariantIds } });
@@ -174,14 +199,18 @@ export class ProductMutationService {
             defaultIndex = 0;
           }
 
-          const variantsToInsert = parsed.map((item, index) => ({
-            productId: id,
-            size: item.size,
-            price: item.price,
-            quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
-            isDefault: index === defaultIndex,
-            sortOrder: index
-          }));
+          const variantsToInsert = parsed.map((item, index) => {
+            const num = parseInt(String(item.size || '').replace(/\D/g, ''), 10) || 0;
+            return {
+              productId: id,
+              size: item.size,
+              type: num > 0 && num < 50 ? 'decant' : 'fullbox',
+              price: item.price,
+              quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
+              isDefault: index === defaultIndex,
+              sortOrder: index
+            };
+          });
           const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
           const newVariantIds = insertedVariants.map(v => v._id);
           await Product.findOneAndUpdate(
@@ -341,6 +370,7 @@ export class ProductMutationService {
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
     if (data.image !== undefined) productData.image = data.image;
     if (data.status !== undefined) productData.status = data.status;
+    productData.isNewArrival = true;
 
     productData.specifications = {
       longevity: data.longevity || data.specifications?.longevity || '',
@@ -416,6 +446,28 @@ export class ProductMutationService {
       }))).filter(Boolean);
       if (catIds.length > 0) productData.categories = catIds;
     }
+
+    // Vòng đời discount trung tâm: đặt sẵn % theo tag để badge hiện ngay.
+    // - Hàng mới KHÔNG PHẢI Limited (sẽ mang Tag New) mà chưa có giảm giá -> 5%.
+    // - Hàng Limited mà chưa có giảm giá -> mức khan hiếm tính từ tồn kho nhập vào.
+    // Giảm giá sẵn có không đụng tới.
+    const isLimitedInput = pendingTagSlugs.length > 0 && pendingTagSlugs.some(s => s.toLowerCase().includes('limited'));
+    const inputDiscount = Number(data.discountPercentage ?? 0);
+    if (!(inputDiscount > 0)) {
+      if (!isLimitedInput && NEW_AUTO_DISCOUNT_PERCENT > 0) {
+        productData.discountPercentage = NEW_AUTO_DISCOUNT_PERCENT;
+        productData.autoDiscount = true;
+      } else if (isLimitedInput && Array.isArray(data.variants) && data.variants.length > 0) {
+        const inputStock = data.variants.reduce(
+          (sum: number, v: any) => sum + (Number(v.quantityInStock ?? v.quantity) || 0), 0
+        );
+        const limitedLevel = computeLimitedDiscount(inputStock);
+        if (limitedLevel > 0) {
+          productData.discountPercentage = limitedLevel;
+          productData.autoDiscount = true;
+        }
+      }
+    }
     const product = new Product(productData);
     const saved = await product.save();
 
@@ -423,17 +475,40 @@ export class ProductMutationService {
     ]);
 
     // Ghi tag links vào bảng trung gian ProductTag (CHỈ dùng tag đã tồn tại trong DB)
-    if (pendingTagSlugs.length > 0) {
-      const tagDocs = await Tag.find({ slug: { $in: pendingTagSlugs } }).lean();
-      const foundSlugs = new Set(tagDocs.map(t => t.slug));
-      const skipped = pendingTagSlugs.filter(s => !foundSlugs.has(s));
-      if (skipped.length > 0) {
-        console.warn(`⚠️ [Tag] Skipping ${skipped.length} tag(s) not found in DB: ${skipped.join(', ')} — will NOT auto-create`);
+    // Tự động gán tag "New" cho bất kỳ sản phẩm nào vừa được thêm vào (thay vì bắt buộc phải gán mặc định tag)
+    const allActiveTags = await Tag.find({ status: 'active' }).lean();
+    const tagIdsToLink: mongoose.Types.ObjectId[] = [];
+
+    // 1. Kiểm tra nếu Admin chọn tag "Limited"
+    const hasLimited = pendingTagSlugs.length > 0 && pendingTagSlugs.some(s => s.toLowerCase().includes('limited'));
+    
+    if (hasLimited) {
+      // Sản phẩm Limited là dòng xa xỉ độc quyền: TÁCH HẲN RA, không gán Tag New
+      const limitedTagDoc = allActiveTags.find(
+        t => t.slug.toLowerCase() === 'limited' || t.name.toLowerCase() === 'limited'
+      );
+      if (limitedTagDoc) {
+        tagIdsToLink.push(limitedTagDoc._id);
       }
-      const tagIds = tagDocs.map(t => t._id);
-      if (tagIds.length > 0) {
-        await ProductTag.insertMany(tagIds.map(tagId => ({ productId: saved._id, tagId })));
+      // Gán tag Standard (vì chỉ sản phẩm New mới không có Standard)
+      const standardTagDoc = allActiveTags.find(
+        t => t.slug.toLowerCase() === 'standard' || t.name.toLowerCase() === 'standard'
+      );
+      if (standardTagDoc && !tagIdsToLink.some(id => id.equals(standardTagDoc._id))) {
+        tagIdsToLink.push(standardTagDoc._id);
       }
+    } else {
+      // 2. Nếu KHÔNG PHẢI Limited -> Tự động đưa sản phẩm vừa thêm vào danh mục "New" / "Sản phẩm mới"
+      const newTagDoc = allActiveTags.find(
+        t => t.slug.toLowerCase() === 'new' || t.name.toLowerCase() === 'sản phẩm mới'
+      );
+      if (newTagDoc) {
+        tagIdsToLink.push(newTagDoc._id);
+      }
+    }
+
+    if (tagIdsToLink.length > 0) {
+      await ProductTag.insertMany(tagIdsToLink.map(tagId => ({ productId: saved._id, tagId })));
     }
 
     // Size / Variants mapping
@@ -449,14 +524,23 @@ export class ProductMutationService {
         }
       }
 
-      const variantsToInsert = data.variants.map((v: any, index: number) => ({
-        productId: saved._id,
-        size: v.size || '50ml',
-        price: Number(v.price) || 0,
-        quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
-        isDefault: index === defaultIndex,
-        sortOrder: index,
-      }));
+      const variantsToInsert = data.variants.map((v: any, index: number) => {
+        const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
+        const variantType = v.type === 'decant' || v.type === 'fullbox'
+          ? v.type
+          : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+
+        return {
+          productId: saved._id,
+          size: v.size || '50ml',
+          type: variantType,
+          price: Number(v.price) || 0,
+          quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+          sku: v.sku || '',
+          isDefault: index === defaultIndex,
+          sortOrder: index,
+        };
+      });
       const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
       const variantIds = insertedVariants.map(v => v._id);
       await Product.findOneAndUpdate({ _id: saved._id }, { $set: { variants: variantIds } });
@@ -471,14 +555,18 @@ export class ProductMutationService {
           defaultIndex = 0;
         }
 
-        const variantsToInsert = parsed.map((item, index) => ({
-          productId: saved._id,
-          size: item.size,
-          price: item.price,
-          quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
-          isDefault: index === defaultIndex,
-          sortOrder: index
-        }));
+        const variantsToInsert = parsed.map((item, index) => {
+          const num = parseInt(String(item.size || '').replace(/\D/g, ''), 10) || 0;
+          return {
+            productId: saved._id,
+            size: item.size,
+            type: num > 0 && num < 50 ? 'decant' : 'fullbox',
+            price: item.price,
+            quantityInStock: item.quantityInStock !== undefined ? item.quantityInStock : (index === 0 ? (data.quantityInStock || 0) : 0),
+            isDefault: index === defaultIndex,
+            sortOrder: index
+          };
+        });
         const insertedVariants = await ProductVariant.insertMany(variantsToInsert);
         const variantIds = insertedVariants.map(v => v._id);
         await Product.findOneAndUpdate(
@@ -563,11 +651,20 @@ export class ProductMutationService {
  */
 export async function clearProductCache(productId?: string): Promise<void> {
   try {
-    const keysToDelete: string[] = [];
+    const keysToDelete: string[] = [
+      'homepage:v7',
+      'products:new:tag:v5',
+      'products:new:tag:v6',
+      'products:new:v6:15',
+      'products:limited:tag:v4',
+      'products:trending:tag:v5',
+      'products:trending:v6:15',
+    ];
     if (productId) {
       keysToDelete.push(`product:detail:${productId}`, `products:${productId}`);
     }
     const patterns = [
+      'homepage:*',
       'products:new:*',
       'products:limited:*',
       'products:trending:*',
@@ -588,6 +685,11 @@ export async function clearProductCache(productId?: string): Promise<void> {
     if (uniqueKeys.length > 0) {
       await redis.del(...uniqueKeys);
     }
+    // Xóa in-memory cache trang chủ nếu có
+    try {
+      const { invalidateHomepageCache } = await import('../../graphql/schema.ts');
+      invalidateHomepageCache();
+    } catch (_) {}
   } catch (err) {
     console.warn('Failed to clear product caches:', err);
   }

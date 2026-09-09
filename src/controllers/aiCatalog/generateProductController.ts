@@ -7,6 +7,7 @@ import { FuzzyMatchCache } from '../../services/FuzzyMatchCache.ts';
 import { extractAndFixJson } from './sanitizeJson.ts';
 import { buildProductPrompt } from './productPromptBuilder.ts';
 import { resolveTags, resolveBrand, resolveCategories, type TaxonomyContext } from './productTaxonomyResolver.ts';
+import { searchWebForProduct } from '../../services/ai/webSearchHelper.ts';
 
 /**
  * Generate product info using AI (single-stage Gemini)
@@ -112,6 +113,11 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
           .filter((t: any) => t.name.toLowerCase() !== 'standard')
           .map((t: any) => t.name);
 
+    // ── Web Search for Limited edition info ──
+    console.log(`🌐 [AI generateProduct] Tra cứu thông tin trên Internet cho: ${name}`);
+    const webSnippets = await searchWebForProduct(name);
+    console.log(`🌐 [AI generateProduct] Tìm thấy ${webSnippets.length} kết quả trên mạng`);
+
     // ── Build prompt & call AI ──
     console.log(`🧠 [AI generateProduct] Single-stage generation with Gemini 3.1 Flash Lite for: ${name}`);
 
@@ -122,6 +128,7 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       availableTags: finalTagsForPrompt,
       sizesJson,
       preFilled,
+      webSnippets,
     });
 
     let jsonString = '';
@@ -158,7 +165,7 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       });
     }
 
-    // ── Price từ size 50ml ──
+    // ── Price từ size (100ml nếu Limited, 50ml nếu bản thường) ──
     let priceFromSize = 0;
     const sizeStr = String(productInfo.size || '');
     sizeStr.split(',').forEach((s: string) => {
@@ -167,21 +174,26 @@ export async function generateProduct(req: FastifyRequest, reply: FastifyReply) 
       const label = parts[0].toLowerCase().replace(/\s/g, '');
       const val = Number(parts[1]) || 0;
       if (!priceFromSize) priceFromSize = val;
-      if (label === '50ml' || label === '50' || /^50/.test(label)) priceFromSize = val;
+      if (productInfo.isLimited && (label === '100ml' || label === '100' || /^100/.test(label))) {
+        priceFromSize = val;
+      } else if (!productInfo.isLimited && (label === '50ml' || label === '50' || /^50/.test(label))) {
+        priceFromSize = val;
+      }
     });
     console.log(`[AI Price] size="${sizeStr}" → priceFromSize=${priceFromSize}`);
     productInfo.price = priceFromSize;
 
     // ── Resolve taxonomy (tag, brand, category) ──
-    const hasValidSale = (productInfo.discountPercentage > 10 && productInfo.discountEndDate);
-
-    // Tags
-    const { tagIds, tagNames } = resolveTags(productInfo.tag, hasValidSale, taxonomyCtx);
+    // Tags: Chỉ kiểm tra Limited hay không. Nếu Limited -> gán Limited, nếu không -> không gán tag nào
+    const { tagIds, tagNames } = resolveTags(productInfo.tag, productInfo.isLimited, taxonomyCtx);
     if (tagIds.length > 0) {
       productInfo.tags = tagIds;
       productInfo.tag = tagNames.join(',');
+      productInfo.isLimited = true;
     } else {
-      delete productInfo.tag;
+      productInfo.tags = [];
+      productInfo.tag = '';
+      productInfo.isLimited = false;
     }
 
     // Brand

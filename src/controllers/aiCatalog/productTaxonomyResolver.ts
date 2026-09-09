@@ -13,63 +13,29 @@ export interface TaxonomyContext {
  * Resolve tags từ AI output: Standard + 1 tag do AI chọn (hoặc random nếu thiếu)
  */
 /**
- * Resolve tags từ AI output: Bắt buộc có Standard và tối đa đúng 2 tags
+ * Resolve tags từ AI output:
+ * - Nếu sản phẩm được xác định là Limited (isLimited = true hoặc aiTag chứa "limited") -> Gán duy nhất Tag Limited
+ * - Nếu không phải Limited -> KHÔNG GÁN BẤT KỲ TAG NÀO (rỗng)
  */
 export function resolveTags(
   aiTag: string | undefined,
-  hasValidSale: boolean,
+  isLimited: boolean | undefined,
   ctx: TaxonomyContext
 ): { tagIds: any[]; tagNames: string[] } {
-  const tagIds: any[] = [];
-  const tagNames: string[] = [];
-  const standardTag = ctx.allTags.lookup.get('standard');
-  const saleTagEntry = ctx.allTags.lookup.get('sale');
+  const isLimitedProduct = isLimited === true || (typeof aiTag === 'string' && aiTag.trim().toLowerCase().includes('limited'));
 
-  // 1. Standard tag bắt buộc phải có
-  if (standardTag) {
-    tagIds.push(standardTag._id);
-    tagNames.push(standardTag.name);
-    console.log(`✅ Standard tag auto-added: ${standardTag.name}`);
-  }
-
-  // 2. Xác định tag thứ 2 (chỉ lấy đúng 1 tag thứ hai để tối đa là 2)
-  let secondTag: any = null;
-
-  if (hasValidSale && saleTagEntry) {
-    secondTag = saleTagEntry;
-    console.log(`✅ Sale tag selected due to valid sale`);
-  } else if (aiTag) {
-    const matched = FuzzyMatchCache.fuzzyFind(aiTag, ctx.allTags.lookup, (t: any) => t.name);
-    if (matched && FuzzyMatchCache.normalize(matched.name) !== 'standard') {
-      const isSale = FuzzyMatchCache.normalize(matched.name) === 'sale';
-      if (isSale) {
-        if (hasValidSale && saleTagEntry) {
-          secondTag = saleTagEntry;
-        }
-      } else {
-        secondTag = matched;
-      }
+  if (isLimitedProduct) {
+    const limitedTag = Array.from(ctx.allTags.lookup.values()).find(
+      (t: any) => t.slug?.toLowerCase() === 'limited' || t.name?.toLowerCase() === 'limited'
+    );
+    if (limitedTag) {
+      console.log(`✅ [AI Tag] Sản phẩm được thẩm định là Limited Edition → Gán Tag: ${limitedTag.name}`);
+      return { tagIds: [limitedTag._id], tagNames: [limitedTag.name] };
     }
   }
 
-  // 3. Fallback: Nếu chưa tìm được tag thứ 2, chọn tag đầu tiên khác standard/sale
-  if (!secondTag) {
-    for (const [norm, tag] of ctx.allTags.lookup) {
-      if (norm === 'standard' || norm === 'sale') continue;
-      secondTag = tag;
-      console.log(`✅ Extra tag auto-added (fallback): ${tag.name}`);
-      break;
-    }
-  }
-
-  // Thêm tag thứ 2 vào mảng trả về
-  if (secondTag) {
-    tagIds.push(secondTag._id);
-    tagNames.push(secondTag.name);
-    console.log(`✅ Second tag resolved: ${secondTag.name}`);
-  }
-
-  return { tagIds, tagNames };
+  console.log(`ℹ️ [AI Tag] Sản phẩm là bản thông thường (không phải Limited) → Không gán tag gì hết`);
+  return { tagIds: [], tagNames: [] };
 }
 
 /**

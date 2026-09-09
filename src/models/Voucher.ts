@@ -15,8 +15,8 @@ export interface IVoucher extends Document {
   usedCount: number;         // Số lần đã sử dụng
   startDate: Date;
   endDate: Date;
+  validityDays?: number;     // Số ngày có hiệu lực kể từ khi nhận (0/null = dùng startDate/endDate cố định)
   status: 'active' | 'inactive';
-  description?: string;      // Mô tả điều kiện sử dụng
   isPublic?: boolean;        // true = hiển thị công khai ở trang voucher
   createdAt: Date;
   updatedAt: Date;
@@ -52,13 +52,13 @@ const VoucherSchema = new Schema<IVoucher>(
     usedCount: { type: Number, default: 0 },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    validityDays: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
       index: true,
     },
-    description: { type: String, default: '', trim: true },
     isPublic: { type: Boolean, default: true, index: true },
   },
   {

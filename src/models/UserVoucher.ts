@@ -4,6 +4,8 @@ export interface IUserVoucher extends Document {
   userId: mongoose.Types.ObjectId;
   voucherId: mongoose.Types.ObjectId;
   code: string;
+  startDate?: Date;
+  expiresAt?: Date;
   isUsed: boolean;
   usedAt?: Date;
   grantedReason: 'membership' | 'minigame';
@@ -16,6 +18,8 @@ const UserVoucherSchema = new Schema<IUserVoucher>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     voucherId: { type: Schema.Types.ObjectId, ref: 'Voucher', required: true, index: true },
     code: { type: String, required: true },
+    startDate: { type: Date, default: Date.now },
+    expiresAt: { type: Date, index: true },
     isUsed: { type: Boolean, default: false, index: true },
     usedAt: { type: Date },
     grantedReason: { type: String, enum: ['membership', 'minigame'], required: true },
@@ -29,6 +33,7 @@ const UserVoucherSchema = new Schema<IUserVoucher>(
 // Indexes
 UserVoucherSchema.index({ userId: 1, voucherId: 1 });
 UserVoucherSchema.index({ userId: 1, isUsed: 1 });
+UserVoucherSchema.index({ userId: 1, expiresAt: 1, isUsed: 1 });
 
 export const UserVoucher =
   mongoose.models.UserVoucher ||

@@ -5,7 +5,7 @@ vi.mock('../../models/User.ts', () => ({
 }));
 
 vi.mock('../../models/MiniGameSession.ts', () => ({
-  MiniGameSession: { create: vi.fn(), find: vi.fn() },
+  MiniGameSession: { create: vi.fn(), find: vi.fn(), countDocuments: vi.fn() },
   GameType: {},
 }));
 
@@ -53,10 +53,10 @@ describe('MiniGameService', () => {
     });
 
     it('allows play when spin turns available', async () => {
-      (User.findById as any).mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 3 }) });
+      (User.findById as any).mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 1 }) });
       const result = await MiniGameService.canPlay('user1');
       expect(result.allowed).toBe(true);
-      expect(result.spinTurns).toBe(3);
+      expect(result.spinTurns).toBe(1);
     });
   });
 
@@ -67,18 +67,71 @@ describe('MiniGameService', () => {
 
     it('returns remaining spin turns', async () => {
       (User.findById as any).mockReturnValue({
-        select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 2 }) }),
+        select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 1 }) }),
       });
-      expect(await MiniGameService.getRemainingPlays('u1')).toBe(2);
+      expect(await MiniGameService.getRemainingPlays('u1')).toBe(1);
+    });
+  });
+
+  describe('syncUserSpinTurns', () => {
+    it('grants 1 turn if user has not played today', async () => {
+      const user = {
+        _id: 'user1',
+        spinTurns: 0,
+        lastDailySpinGrantedAt: null,
+        save: vi.fn().mockResolvedValue(true),
+      };
+      (User.findById as any).mockResolvedValue(user);
+      (MiniGameSession.countDocuments as any).mockResolvedValue(0);
+
+      const turns = await MiniGameService.syncUserSpinTurns('user1');
+      expect(turns).toBe(1);
+      expect(user.spinTurns).toBe(1);
+      expect(user.save).toHaveBeenCalled();
+    });
+
+    it('sets 0 turns if user already played today', async () => {
+      const user = {
+        _id: 'user1',
+        spinTurns: 1,
+        lastDailySpinGrantedAt: new Date(),
+        save: vi.fn().mockResolvedValue(true),
+      };
+      (User.findById as any).mockResolvedValue(user);
+      (MiniGameSession.countDocuments as any).mockResolvedValue(1);
+
+      const turns = await MiniGameService.syncUserSpinTurns('user1');
+      expect(turns).toBe(0);
+      expect(user.spinTurns).toBe(0);
+      expect(user.save).toHaveBeenCalled();
+    });
+
+    it('resets accumulated turns (e.g. 11 turns) down to 1 if not played today', async () => {
+      const user = {
+        _id: 'user1',
+        spinTurns: 11,
+        save: vi.fn().mockResolvedValue(true),
+      };
+      (User.findById as any).mockResolvedValue(user);
+      (MiniGameSession.countDocuments as any).mockResolvedValue(0);
+
+      const turns = await MiniGameService.syncUserSpinTurns('user1');
+      expect(turns).toBe(1);
+      expect(user.spinTurns).toBe(1);
+      expect(user.save).toHaveBeenCalled();
     });
   });
 
   describe('saveResult', () => {
-    const mockUser = {
-      _id: 'user1',
-      spinTurns: 2,
-      save: vi.fn().mockResolvedValue(true),
-    };
+    let mockUser: any;
+
+    beforeEach(() => {
+      mockUser = {
+        _id: 'user1',
+        spinTurns: 1,
+        save: vi.fn().mockResolvedValue(true),
+      };
+    });
 
     it('throws for guests', async () => {
       await expect(MiniGameService.saveResult({ gameType: 'scratch' as any, won: false }, 'guest'))
@@ -106,6 +159,7 @@ describe('MiniGameService', () => {
       expect(MiniGameSession.create).toHaveBeenCalled();
       expect(UserVoucher.create).not.toHaveBeenCalled();
       expect(result.status).toBe('lost');
+      expect(mockUser.spinTurns).toBe(0);
       expect(mockUser.save).toHaveBeenCalled();
     });
 
@@ -134,6 +188,10 @@ describe('MiniGameService', () => {
       const voucherArg = (UserVoucher.create as any).mock.calls[0][0];
       expect(voucherArg.code).toBe('MG-ABC123');
       expect(voucherArg.grantedReason).toBe('minigame');
+      expect(voucherArg.startDate).toBeInstanceOf(Date);
+      expect(voucherArg.expiresAt).toBeInstanceOf(Date);
+      expect(voucherArg.expiresAt.getTime()).toBeGreaterThan(voucherArg.startDate.getTime());
+      expect(mockUser.spinTurns).toBe(0);
       expect(result.status).toBe('won');
     });
   });

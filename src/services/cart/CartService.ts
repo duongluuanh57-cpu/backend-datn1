@@ -7,15 +7,16 @@ import { VoucherService } from '../VoucherService.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
 import { User } from '../../models/User.ts';
 import { redis } from '../../config/redis.ts';
+import { getEffectiveProductDiscount, getEffectiveProductDiscounts } from '../product/productFormatterService.ts';
 import mongoose from 'mongoose';
 
 export class CartService {
   static async enrichItemsWithVariants(items: any[]) {
     if (!items || items.length === 0) return [];
     const productIds = items.map(item => item.productId).filter(Boolean);
-    const [allVariants, allProductImages, allProducts] = await Promise.all([
+    const [allVariants, allProductImages, allProducts, discountMap] = await Promise.all([
       ProductVariant.find({ productId: { $in: productIds } })
-        .select('productId size price quantityInStock isDefault sortOrder')
+        .select('productId size price quantityInStock isDefault sortOrder type')
         .sort({ sortOrder: 1 })
         .lean(),
       ProductImage.find({ productId: { $in: productIds } })
@@ -26,6 +27,7 @@ export class CartService {
         .select('image brandId')
         .populate('brandId', 'logo')
         .lean(),
+      getEffectiveProductDiscounts(productIds),
     ]);
 
     const variantMap: Record<string, any[]> = {};
@@ -46,7 +48,9 @@ export class CartService {
       prodMap[String(p._id)] = p;
     });
 
-    return items.map(item => {
+    const dbUpdates: Promise<any>[] = [];
+
+    const enriched = items.map(item => {
       const pid = String(item.productId);
       const variants = variantMap[pid] || [];
       const prod = prodMap[pid];
@@ -55,11 +59,29 @@ export class CartService {
       if (brandLogo && finalImg === brandLogo) {
         finalImg = imgMap[pid] || undefined;
       }
+
+      const currentDiscount = discountMap.get(pid) || 0;
+      const currentVariant = variants.find((v: any) => v.size === (item.variantSize || '50ml')) || variants[0];
+      const variantBasePrice = currentVariant?.price ?? item.price;
+      const expectedUnitPrice = currentDiscount > 0 ? Math.round(variantBasePrice * (1 - currentDiscount / 100)) : variantBasePrice;
+
+      if (item._id && (item.discount !== currentDiscount || item.price !== expectedUnitPrice)) {
+        dbUpdates.push(
+          CartItem.updateOne(
+            { _id: item._id },
+            { $set: { discount: currentDiscount, price: expectedUnitPrice } }
+          ).exec()
+        );
+      }
+
       return {
         ...item,
+        price: expectedUnitPrice,
+        discount: currentDiscount,
         image: finalImg,
         availableVariants: variants.map((v: any) => ({
           size: v.size,
+          type: v.type,
           price: v.price,
           quantityInStock: v.quantityInStock ?? 0,
           inStock: (v.quantityInStock ?? 0) > 0,
@@ -67,14 +89,25 @@ export class CartService {
         })),
       };
     });
+
+    if (dbUpdates.length > 0) {
+      Promise.all(dbUpdates).catch(err => console.warn('Error syncing cart items discount/price:', err));
+    }
+
+    return enriched;
   }
 
   static async formatCart(cart: any, items: any[]) {
     const enrichedItems = await CartService.enrichItemsWithVariants(items);
+    const updatedTotalAmount = enrichedItems.reduce((sum: number, item: any) => sum + item.price * (item.quantity || 1), 0);
+    if (cart._id && cart.totalAmount !== updatedTotalAmount) {
+      cart.totalAmount = updatedTotalAmount;
+      Cart.updateOne({ _id: cart._id }, { $set: { totalAmount: updatedTotalAmount } }).exec().catch(() => {});
+    }
     return {
       _id: cart._id,
       items: enrichedItems,
-      totalAmount: cart.totalAmount,
+      totalAmount: updatedTotalAmount,
       totalItems: items.reduce((sum: number, item: any) => sum + item.quantity, 0),
       voucherCode: cart.voucherCode || null,
       voucherDiscount: cart.voucherDiscount || 0,
@@ -113,19 +146,25 @@ export class CartService {
     }
     const brandName = (product.brandId as any)?.name || product.brand || '';
 
-    const sizeToFind = variantSize || '50ml';
-    let variantDoc: any = await ProductVariant.findOne({ productId: new mongoose.Types.ObjectId(productId), size: sizeToFind }).lean();
-
-    if (variantDoc && variantDoc.quantityInStock !== undefined && variantDoc.quantityInStock <= 0) {
-      const inStockVariant = await ProductVariant.findOne({
-        productId: new mongoose.Types.ObjectId(productId),
-        quantityInStock: { $gt: 0 },
-      }).sort({ sortOrder: 1 }).lean();
-      if (inStockVariant) variantDoc = inStockVariant;
+    let variantDoc: any = null;
+    if (variantSize) {
+      variantDoc = await ProductVariant.findOne({ productId: new mongoose.Types.ObjectId(productId), size: variantSize }).lean();
     }
 
-    if (!variantDoc) {
-      variantDoc = await ProductVariant.findOne({ productId: new mongoose.Types.ObjectId(productId) }).sort({ sortOrder: 1 }).lean();
+    // Nếu không chỉ định variantSize hoặc variant chỉ định đã hết hàng/không tìm thấy:
+    // Tự động chọn biến thể có dung tích lớn nhất còn hàng của sản phẩm (thay vì mặc định 50ml hoặc dung tích thấp nhất)
+    if (!variantDoc || (variantDoc.quantityInStock !== undefined && variantDoc.quantityInStock <= 0)) {
+      const allVariants = await ProductVariant.find({ productId: new mongoose.Types.ObjectId(productId) }).lean();
+      if (allVariants.length > 0) {
+        const sorted = [...allVariants].sort((a: any, b: any) => {
+          const capA = parseInt(String(a.size || '').replace(/\D/g, ''), 10) || 0;
+          const capB = parseInt(String(b.size || '').replace(/\D/g, ''), 10) || 0;
+          if (capA !== capB) return capB - capA;
+          return (b.sortOrder ?? 0) - (a.sortOrder ?? 0);
+        });
+        const inStockVariant = sorted.find((v: any) => v.quantityInStock === undefined || v.quantityInStock > 0);
+        variantDoc = inStockVariant || sorted[0];
+      }
     }
 
     if (variantDoc && variantDoc.quantityInStock !== undefined && variantDoc.quantityInStock <= 0) {
@@ -135,24 +174,9 @@ export class CartService {
     }
 
     const variantPrice = variantDoc?.price || 0;
-    const usedSize = variantDoc?.size || sizeToFind;
+    const usedSize = variantDoc?.size || variantSize || '100ml';
 
-    let discountPct = product.discountPercentage || 0;
-    const activeFS = await FlashSale.findOne({
-      status: { $in: ['active', 'scheduled'] },
-      'items.productId': new mongoose.Types.ObjectId(productId),
-    }).lean();
-
-    if (activeFS) {
-      const fsItem = (activeFS.items || []).find((it: any) => it.productId?.toString() === productId.toString());
-      if (fsItem) {
-        const isFSExhausted = fsItem.stockLimit > 0 && (fsItem.soldCount || 0) >= fsItem.stockLimit;
-        if (!isFSExhausted) {
-          discountPct = Math.min(100, discountPct + (fsItem.extraDiscountPercentage || 0));
-        }
-      }
-    }
-
+    const discountPct = await getEffectiveProductDiscount(productId);
     let finalPrice = variantPrice;
     if (discountPct > 0) {
       finalPrice = Math.round(variantPrice * (1 - discountPct / 100));
@@ -184,6 +208,8 @@ export class CartService {
 
     if (existingItem) {
       existingItem.quantity += quantity;
+      existingItem.price = finalPrice;
+      existingItem.discount = discountPct;
       await existingItem.save();
     } else {
       await CartItem.create({
@@ -324,13 +350,10 @@ export class CartService {
       _id: { $ne: item._id },
     });
 
-    const product = await Product.findById(productId).select('discountPercentage discountStartDate discountEndDate').lean() as any;
+    const discountPct = await getEffectiveProductDiscount(productId);
     let finalPrice = variantDoc.price;
-    if (product?.discountPercentage) {
-      const now = new Date();
-      const startOk = !product.discountStartDate || new Date(product.discountStartDate) <= now;
-      const endOk = !product.discountEndDate || new Date(product.discountEndDate) >= now;
-      if (startOk && endOk) finalPrice = Math.round(variantDoc.price * (1 - product.discountPercentage / 100));
+    if (discountPct > 0) {
+      finalPrice = Math.round(variantDoc.price * (1 - discountPct / 100));
     }
 
     const newStock = variantDoc.quantityInStock !== undefined ? variantDoc.quantityInStock : 999;
@@ -341,12 +364,14 @@ export class CartService {
       const combinedQuantity = Math.min(existingWithNewVariant.quantity + adjustedQuantity, newStock);
       existingWithNewVariant.quantity = combinedQuantity;
       existingWithNewVariant.price = finalPrice;
+      existingWithNewVariant.discount = discountPct;
       await existingWithNewVariant.save();
       await CartItem.deleteOne({ _id: item._id });
     } else {
       if (!item.userId) item.userId = new mongoose.Types.ObjectId(userId);
       item.variantSize = newVariantSize;
       item.price = finalPrice;
+      item.discount = discountPct;
       item.quantity = adjustedQuantity;
       await item.save();
     }

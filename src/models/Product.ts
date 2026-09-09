@@ -31,6 +31,10 @@ export interface IProduct extends Document {
   isNewArrival?: boolean;
   isBestSeller?: boolean;
 
+  // ── Vòng đời discount tự động: true = discountPercentage hiện tại do hệ thống
+  // tự gán cho hàng Tag New (5%), để lúc hết New không xóa nhầm giảm giá admin đặt tay
+  autoDiscount?: boolean;
+
   // ── AI Metadata (Vector Embedding + Supplement Workflow) ──
   aiData?: {
     embedding?: number[];
@@ -61,6 +65,7 @@ const ProductSchema = new Schema<IProduct>(
     isFeatured: { type: Boolean, default: false, index: true },
     isNewArrival: { type: Boolean, default: false, index: true },
     isBestSeller: { type: Boolean, default: false, index: true },
+    autoDiscount: { type: Boolean, default: false, index: true },
 
     specifications: {
       type: {
@@ -140,6 +145,7 @@ ProductSchema.post('save', function(doc) {
 ProductSchema.index({ name: 'text', description: 'text' });
 ProductSchema.index({ status: 1, createdAt: -1 });
 ProductSchema.index({ status: 1, soldCount: -1 });
+ProductSchema.index({ status: 1, soldCount: -1, createdAt: -1 });
 ProductSchema.index({ status: 1, discountPercentage: -1 });
 ProductSchema.index({ status: 1, isFeatured: 1, createdAt: -1 });
 ProductSchema.index({ categories: 1, status: 1 });

@@ -14,46 +14,85 @@ import type { RouteContext } from './queryRouterTypes.ts';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
 
-/** Build context từ search results */
-async function buildContext(
-  message: string,
-  userRole?: string
-): Promise<RouteContext> {
-  let products: any[] = [];
-  let mode: string = '';
-  let documents: any[] = [];
+let cachedStoreOverview: { data: string; expiresAt: number } | null = null;
 
-  try {
-    const [searchResult, contentResult] = await Promise.all([
-      SearchService.hybridSearch(message, 4),
-      ContentSearchService.search(message, 3).catch(() => []),
-    ]);
-    const rawProducts = searchResult.products || [];
-    if (rawProducts.length > 0) {
-      products = await formatMultipleProducts(rawProducts);
-    } else {
-      products = [];
-    }
-    mode = searchResult.mode;
-    documents = contentResult;
-  } catch (err) {
-    console.error('❌ [RouteExecutors] Search Error:', err);
+async function getStoreOverview(): Promise<string> {
+  const now = Date.now();
+  if (cachedStoreOverview && now < cachedStoreOverview.expiresAt) {
+    return cachedStoreOverview.data;
   }
-
-  let storeOverview = '';
   try {
     const [allBrands, allTags, productCount] = await Promise.all([
       Brand.find({ status: 'active' }).select('name origin').lean(),
       Tag.find({ status: 'active' }).select('name').lean(),
       Product.countDocuments({ status: 'active' }),
     ]);
-    storeOverview = `TỔNG QUAN CỬA HÀNG:
+    const overview = `TỔNG QUAN CỬA HÀNG:
 - Danh sách thương hiệu và xuất xứ hiện có trong shop:
 ${allBrands.map((b: any) => `  + ${b.name}${b.origin ? ` (Xuất xứ: ${b.origin})` : ''}`).join('\n')}
 - Tags: ${allTags.map((t: any) => t.name).join(', ')}
 - Tổng số sản phẩm: ${productCount}`;
+    cachedStoreOverview = { data: overview, expiresAt: now + 300_000 };
+    return overview;
   } catch (dbErr) {
     console.error('Error fetching store overview:', dbErr);
+    return cachedStoreOverview?.data || '';
+  }
+}
+
+/** Build context từ search results */
+async function buildContext(
+  message: string,
+  history: any[] = [],
+  userRole?: string
+): Promise<RouteContext> {
+  let products: any[] = [];
+  let mode: string = '';
+  let documents: any[] = [];
+  let storeOverview: string = '';
+
+  try {
+    const [searchResult, contentResult, overview] = await Promise.all([
+      SearchService.hybridSearch(message, 4),
+      ContentSearchService.search(message, 2).catch(() => []),
+      getStoreOverview(),
+    ]);
+
+    storeOverview = overview;
+    mode = searchResult.mode;
+    documents = contentResult;
+
+    const rawProducts = searchResult.products || [];
+    if (rawProducts.length > 0) {
+      products = await formatMultipleProducts(rawProducts);
+    }
+
+    // Nếu search theo nội dung câu ngắn (như "thêm sản phẩm vào giỏ hàng") không khớp sản phẩm,
+    // hãy trích xuất sản phẩm từ các card trong tin nhắn gần nhất của lịch sử trò chuyện
+    if (products.length === 0 && history && history.length > 0) {
+      const recentCardIds: string[] = [];
+      for (let i = history.length - 1; i >= Math.max(0, history.length - 4); i--) {
+        const itemContent = String(history[i]?.content || '');
+        const matches = Array.from(itemContent.matchAll(/\[CARD:\s*([a-f\d]{24})\s*\]/gi));
+        for (const m of matches) {
+          if (m[1] && !recentCardIds.includes(m[1])) {
+            recentCardIds.push(m[1]);
+          }
+        }
+      }
+
+      if (recentCardIds.length > 0) {
+        const fallbackDocs = await Product.find({ _id: { $in: recentCardIds }, status: 'active' })
+          .populate('brandId')
+          .populate('categories')
+          .lean();
+        if (fallbackDocs.length > 0) {
+          products = await formatMultipleProducts(fallbackDocs);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('❌ [RouteExecutors] Search Error:', err);
   }
 
   return {
@@ -77,7 +116,10 @@ KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ th
 
 QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.
 
-QUY TẮC THÊM VÀO GIỎ HÀNG: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó (ví dụ "tôi muốn mua chai này", "thêm vào giỏ hàng chai Chloe", "đặt mua chai Boss", "lấy chai 1", "cho vào giỏ hàng", v.v.), bạn BẮT BUỘC phải chèn cú pháp [ADD_TO_CART:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời, đồng thời xác nhận vui vẻ rằng bạn đã thêm sản phẩm đó vào giỏ hàng giúp họ (ví dụ: "Mình đã thêm chai **Boss The Scent** vào giỏ hàng cho bạn rồi nè! Bạn có thể vào giỏ hàng để kiểm tra và thanh toán bất kỳ lúc nào nhé :3 [ADD_TO_CART:id_sản_phẩm] [CARD:id_sản_phẩm]").
+QUY TẮC MUA HÀNG & CHỌN LOẠI SẢN PHẨM: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó (ví dụ "tôi muốn mua sản phẩm này", "tôi muốn mua chai này", "thêm vào giỏ hàng chai Chloe", "đặt mua chai Boss", "lấy chai 1", "cho vào giỏ hàng", v.v.):
+- BẮT BUỘC chèn cú pháp [BUY_FLOW:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời.
+- Bạn PHẢI hỏi trước khách hàng muốn chọn loại sản phẩm như thế nào: "Dạ bạn muốn chọn loại sản phẩm nào cho chai **[Tên sản phẩm]** ạ? :3 Cửa hàng mình có sẵn bản **Chiết chai** (nhỏ gọn, tiện lợi) và bản **Fullbox** (nguyên seal chính hãng cao cấp). Bạn bấm chọn ở nút bên dưới giúp mình nhé! [BUY_FLOW:id_sản_phẩm] [CARD:id_sản_phẩm]".
+- TUYỆT ĐỐI KHÔNG tự ý thêm bừa vào giỏ hàng với dung tích mặc định, vì khách hàng cần bấm chọn Loại (Chiết / Fullbox) và Dung tích mong muốn trên nút bấm trước!
 
 QUY TẮC ĐỊNH DẠNG TIN NHẮN:
 - Khi nhắc đến hoặc giới thiệu sản phẩm/thương hiệu, hãy in đậm tên bằng cú pháp **Tên Sản Phẩm** (ví dụ: **YSL MYSLF**, **Chanel Bleu**).
@@ -152,7 +194,7 @@ export async function executeVectorSearch(
   history: any[],
   userRole?: string
 ): Promise<{ stream: Response; products: any[] }> {
-  const ctx = await buildContext(message, userRole);
+  const ctx = await buildContext(message, history, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
   const chatMessages = [...history];
@@ -178,7 +220,7 @@ export async function executeSqlSearch(
   history: any[],
   userRole?: string
 ): Promise<{ stream: Response; products: any[] }> {
-  const ctx = await buildContext(message, userRole);
+  const ctx = await buildContext(message, history, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
   const chatMessages = [...history];
@@ -236,7 +278,7 @@ export async function executeGraphSearch(
   history: any[],
   userRole?: string
 ): Promise<{ stream: Response; products: any[] }> {
-  const ctx = await buildContext(message, userRole);
+  const ctx = await buildContext(message, history, userRole);
 
   // Thêm context về related products nếu có sản phẩm
   let graphContext = '';

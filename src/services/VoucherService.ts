@@ -41,11 +41,11 @@ export class VoucherService {
     const minigameVouchers = await Voucher.find({ applicableTo: 'minigame' }).lean();
     if (minigameVouchers.length < 5) {
       const defaults = [
-        { code: 'GAME-FS1', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, description: 'Freeship Hỏa Tốc từ Vòng quay may mắn', applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-DISC5', type: 'percentage' as const, value: 5, voucherCategory: 'discount' as const, maxDiscount: 100000, description: 'Voucher Giảm 5% từ Vòng quay may mắn', applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-FS2', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, description: 'Freeship Hỏa Tốc từ Vòng quay may mắn', applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-FS3', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, description: 'Freeship Hỏa Tốc từ Vòng quay may mắn', applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-DISC10', type: 'percentage' as const, value: 10, voucherCategory: 'discount' as const, maxDiscount: 100000, description: 'Voucher Giảm 10% từ Vòng quay may mắn', applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), maxUsage: -1, minOrderAmount: 0 },
+        { code: 'GAME-FS1', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
+        { code: 'GAME-DISC5', type: 'percentage' as const, value: 5, voucherCategory: 'discount' as const, maxDiscount: 100000, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
+        { code: 'GAME-FS2', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
+        { code: 'GAME-FS3', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
+        { code: 'GAME-DISC10', type: 'percentage' as const, value: 10, voucherCategory: 'discount' as const, maxDiscount: 100000, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
       ];
 
       for (let i = minigameVouchers.length; i < 5; i++) {
@@ -74,7 +74,13 @@ export class VoucherService {
       { $set: { voucherCategory: 'freeship' } }
     );
 
-    // Đảm bảo các voucher của minigame luôn active và không bao giờ hết hạn
+    // Đảm bảo các voucher của minigame có validityDays mặc định là 7 nếu chưa đặt
+    await Voucher.updateMany(
+      { applicableTo: 'minigame', $or: [{ validityDays: { $exists: false } }, { validityDays: 0 }, { validityDays: null }] },
+      { $set: { validityDays: 7 } }
+    );
+
+    // Đảm bảo các voucher của minigame luôn active và khuôn mẫu không bao giờ hết hạn
     await Voucher.updateMany(
       { applicableTo: 'minigame' },
       {
@@ -85,12 +91,6 @@ export class VoucherService {
           maxUsage: -1,
         },
       }
-    );
-
-    // Đảm bảo các voucher shop đang active không bị hết hạn ngoài ý muốn
-    await Voucher.updateMany(
-      { status: 'active', applicableTo: { $ne: 'minigame' }, endDate: { $lt: new Date('2026-12-31') } },
-      { $set: { endDate: new Date('2030-12-31') } }
     );
 
     // Tự động tạo 5 voucher mặc định cho Vòng quay may mắn nếu chưa có đủ 5
@@ -151,18 +151,30 @@ export class VoucherService {
         .map((uv: any) => {
           const v = uv.voucherId;
           if (!v) return null;
-          // Voucher minigame KHÔNG BAO GIỜ hết hạn; voucher khác kiểm tra hạn bình thường
-          const isMinigame = v.applicableTo === 'minigame' || uv.grantedReason === 'minigame';
-          const isActive =
-            v.status === 'active' &&
-            (isMinigame || (new Date(v.startDate) <= now && new Date(v.endDate) >= now));
-          if (!isActive) return null;
+          if (v.status !== 'active') return null;
+
+          // Kiểm tra hạn sử dụng cá nhân hóa (đếm ngược từ lúc nhận)
+          if (uv.expiresAt && new Date(uv.expiresAt) < now) {
+            return null; // Đã quá hạn đếm ngược của user này
+          }
+          // Nếu chưa đến ngày kích hoạt (startDate trong tương lai)
+          if (uv.startDate && new Date(uv.startDate) > now) {
+            return null;
+          }
+          // Fallback cho voucher cũ không có expiresAt riêng: kiểm tra theo endDate của voucher
+          if (!uv.expiresAt && v.applicableTo !== 'minigame') {
+            if (new Date(v.startDate) > now || new Date(v.endDate) < now) return null;
+          }
+
           if (v.minTier) {
             const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
             if (userLevel < requiredLevel) return null;
           }
           return {
             ...v,
+            startDate: uv.startDate || v.startDate,
+            endDate: uv.expiresAt || v.endDate,
+            expiresAt: uv.expiresAt,
             userVoucherId: uv._id, // Lưu ID của UserVoucher để tham chiếu nếu cần
           };
         })
@@ -195,6 +207,7 @@ export class VoucherService {
     maxUsage?: number;
     startDate: string;
     endDate: string;
+    validityDays?: number;
     status?: 'active' | 'inactive';
   }) {
     if (data.applicableTo === 'minigame') {
@@ -205,9 +218,12 @@ export class VoucherService {
     }
     const maxUsage = data.maxUsage ?? (data.applicableTo === 'minigame' ? -1 : 0);
     const status = data.status || 'active';
+    const validityDays = data.validityDays !== undefined ? Number(data.validityDays) || 0 : (data.applicableTo === 'minigame' ? 7 : (data.applicableTo === 'membership' ? 30 : 0));
+
     return Voucher.create({
       ...data,
       maxUsage,
+      validityDays,
       code: data.code.toUpperCase(),
       status,
     });
@@ -225,6 +241,7 @@ export class VoucherService {
     maxUsage: number;
     startDate: string;
     endDate: string;
+    validityDays: number;
     status: 'active' | 'inactive';
   }>) {
     const existing = await Voucher.findById(id);
@@ -248,6 +265,7 @@ export class VoucherService {
     if (data.maxDiscount !== undefined) updateData.maxDiscount = data.maxDiscount;
     if (data.startDate !== undefined) updateData.startDate = data.startDate;
     if (data.endDate !== undefined) updateData.endDate = data.endDate;
+    if (data.validityDays !== undefined) updateData.validityDays = Number(data.validityDays) || 0;
 
     if (existing) {
       const maxUsage = data.maxUsage !== undefined ? data.maxUsage : existing.maxUsage;
@@ -324,6 +342,14 @@ export class VoucherService {
       if (!uv) {
         return { valid: false, message: 'Bạn không sở hữu mã giảm giá này hoặc đã sử dụng rồi' };
       }
+
+      // Kiểm tra thời hạn sử dụng cá nhân hóa của user (đếm ngược từ ngày nhận)
+      if (uv.expiresAt && new Date(uv.expiresAt) < now) {
+        return { valid: false, message: 'Mã giảm giá này của bạn đã hết hạn sử dụng' };
+      }
+      if (uv.startDate && new Date(uv.startDate) > now) {
+        return { valid: false, message: 'Mã giảm giá này của bạn chưa đến thời gian kích hoạt' };
+      }
     }
 
     // Kiểm tra hạng user nếu là voucher membership trực tiếp (để chắc chắn)
@@ -396,14 +422,22 @@ export class VoucherService {
       }).lean();
 
       if (!existing) {
+        const validityDays =
+          typeof v.validityDays === 'number' && v.validityDays > 0
+            ? v.validityDays
+            : 30; // Mặc định 30 ngày cho voucher thứ hạng
+        const expiresAt = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+
         await UserVoucher.create({
           userId,
           voucherId: v._id,
           code: v.code,
+          startDate: now,
+          expiresAt,
           isUsed: false,
           grantedReason: 'membership',
         });
-        console.log(`🎁 [Voucher Grant] Granted membership voucher ${v.code} to user ${userId}`);
+        console.log(`🎁 [Voucher Grant] Granted membership voucher ${v.code} (hết hạn sau ${validityDays} ngày: ${expiresAt.toISOString()}) to user ${userId}`);
       }
     }
   }

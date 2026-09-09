@@ -30,6 +30,7 @@ const typeDefs = `#graphql
     defaultVariantSize: String
     isFlashSale: Boolean
     stockLimit: Int
+    season: String
   }
 
   type Brand {
@@ -46,6 +47,7 @@ const typeDefs = `#graphql
     quantityInStock: Int
     sku: String
     isDefault: Boolean
+    type: String
   }
 
   type BrandInfo {
@@ -98,6 +100,7 @@ const typeDefs = `#graphql
     hot: [Product!]
     limited: [Product!]
     standard: [Product!]
+    seasonal: [Product!]
     brands: [Brand!]
   }
 
@@ -157,6 +160,29 @@ const typeDefs = `#graphql
   }
 `;
 
+function parseCapacity(size: string | undefined): number {
+  if (!size) return 0;
+  return parseInt(String(size).replace(/\D/g, ''), 10) || 0;
+}
+
+function resolveLargestVariantSize(p: any): string {
+  const variants = p.availableVariants || p.variants;
+  if (Array.isArray(variants) && variants.length > 0) {
+    const sorted = [...variants].sort((a: any, b: any) => parseCapacity(b.size) - parseCapacity(a.size));
+    const inStock = sorted.find((v: any) => v.quantityInStock === undefined || v.quantityInStock > 0);
+    return (inStock || sorted[0])?.size || '100ml';
+  }
+  if (typeof p.size === 'string' && p.size) {
+    const tokens = p.size.split(',').map((s: string) => s.split(':')[0].trim()).filter(Boolean);
+    if (tokens.length > 0) {
+      tokens.sort((a: string, b: string) => parseCapacity(b) - parseCapacity(a));
+      return tokens[0];
+    }
+  }
+  if (p.defaultVariantSize) return p.defaultVariantSize;
+  return '100ml';
+}
+
 function mapProduct(p: any) {
   return {
     _id: p._id?.toString() || p.id || '',
@@ -181,7 +207,8 @@ function mapProduct(p: any) {
     isBestSeller: p.isBestSeller ?? false,
     stockLimit: p.stockLimit ?? null,
     isFlashSale: p.isFlashSale ?? false,
-    defaultVariantSize: p.defaultVariantSize || '50ml',
+    defaultVariantSize: resolveLargestVariantSize(p),
+    season: p.season || p.specifications?.season || '',
   };
 }
 
@@ -221,14 +248,21 @@ function mapProductDetail(p: any) {
       : Array.isArray(p.categories)
         ? p.categories
         : [],
-    variants: (p.variants || []).map((v: any) => ({
-      _id: v._id?.toString() || '',
-      size: v.size || '',
-      price: v.price ?? 0,
-      quantityInStock: v.quantityInStock ?? 0,
-      sku: v.sku || '',
-      isDefault: v.isDefault ?? false,
-    })),
+    variants: (p.variants || []).map((v: any) => {
+      const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
+      const vType = v.type === 'decant' || v.type === 'fullbox'
+        ? v.type
+        : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+      return {
+        _id: v._id?.toString() || '',
+        size: v.size || '',
+        price: v.price ?? 0,
+        quantityInStock: v.quantityInStock ?? 0,
+        sku: v.sku || '',
+        isDefault: v.isDefault ?? false,
+        type: vType,
+      };
+    }),
     size: p.size || '',
     quantityInStock: p.quantityInStock ?? 0,
     longevity: p.specifications?.longevity || p.longevity || '',
@@ -247,47 +281,111 @@ const EMPTY_CART_AND_FAVORITES = {
   favoriteIds: [],
 };
 
+interface HomepageCacheEntry {
+  data: any;
+  cachedAt: number;
+}
+
+const HOMEPAGE_STALE_MS = 180_000; // 3 phút: sau 3 phút thì dữ liệu coi là stale, revalidate ngầm
+const HOMEPAGE_EXPIRE_MS = 600_000; // 10 phút: tối đa lưu trong memory
+const HOMEPAGE_CACHE_KEY = 'homepage:v18';
+
+let memHomepageCache: HomepageCacheEntry | null = null;
+let singleFlightHomepagePromise: Promise<any> | null = null;
+
+export function invalidateHomepageCache(): void {
+  memHomepageCache = null;
+}
+
+async function buildHomepageData(): Promise<any> {
+  console.log('[Homepage Worker] Bắt đầu tổng hợp dữ liệu trang chủ...');
+  const [activeFlashSaleEvents, sale, newProducts, hot, limited, standardRaw, brands] = await Promise.race([
+    Promise.all([
+      FlashSaleService.getActiveFlashSales(3).catch(() => []),
+      ProductService.getSaleProducts().catch(() => []),
+      ProductService.getNewProducts().catch(() => []),
+      ProductService.getTrendingProducts(16).catch(() => []),
+      ProductService.getLimitedProducts().catch(() => []),
+      ProductService.getSeasonalProducts(200).catch(() => []),
+      BrandService.getAllBrands().catch(() => []),
+    ]),
+    new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], [], [], []]), 20_000)),
+  ]);
+
+  const formattedFlashSales = (activeFlashSaleEvents || []).map((ev: any) => ({
+    _id: ev._id,
+    name: ev.name,
+    endDate: ev.endDate ? new Date(ev.endDate).toISOString() : null,
+    products: (ev.items || []).slice(0, 20).map(mapProduct),
+  }));
+
+  const seasonalFormatted = (standardRaw || []).slice(0, 200).map(mapProduct);
+
+  const result = {
+    flashSales: formattedFlashSales,
+    sale: (sale || []).slice(0, 20).map(mapProduct),
+    new: (newProducts || []).map(mapProduct),
+    hot: (hot || []).slice(0, 16).map(mapProduct),
+    limited: (limited || []).slice(0, 16).map(mapProduct),
+    standard: seasonalFormatted,
+    seasonal: seasonalFormatted,
+    brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
+  };
+
+  if (result.hot.length > 0 || result.new.length > 0) {
+    memHomepageCache = { data: result, cachedAt: Date.now() };
+    await safeRedisSet(HOMEPAGE_CACHE_KEY, JSON.stringify(result), 'EX', 600);
+  }
+
+  console.log('[Homepage Worker] Đã cập nhật cache trang chủ thành công');
+  return result;
+}
+
+function triggerBackgroundRevalidation() {
+  if (singleFlightHomepagePromise) return; // Đang có worker chạy ngầm, không tạo worker mới
+  singleFlightHomepagePromise = buildHomepageData().finally(() => {
+    singleFlightHomepagePromise = null;
+  });
+}
+
 const resolvers = {
   Query: {
     homepage: async () => {
-      const cacheKey = 'homepage:v7';
-      const cached = await safeRedisGet(cacheKey);
-      if (cached) {
-        console.log('[Cache HIT] Homepage');
-        return JSON.parse(cached);
-      }
-      console.log('[Cache MISS] Homepage');
-      const [activeFlashSaleEvents, sale, newProducts, hot, limited, standardResult, brands] = await Promise.race([
-        Promise.all([
-          FlashSaleService.getActiveFlashSales(3),
-          ProductService.getSaleProducts(),
-          ProductService.getNewProducts(),
-          ProductService.getTrendingProducts(),
-          ProductService.getLimitedProducts(),
-          ProductService.getAllProducts({ limit: 20, sortBy: 'newest', status: 'active' }),
-          BrandService.getAllBrands(),
-        ]),
-        new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], [], { items: [] }, []]), 10_000)),
-      ]);
-      const standard = standardResult.items || [];
-      const formattedFlashSales = (activeFlashSaleEvents || []).map((ev: any) => ({
-        _id: ev._id,
-        name: ev.name,
-        endDate: ev.endDate ? new Date(ev.endDate).toISOString() : null,
-        products: (ev.items || []).slice(0, 20).map(mapProduct),
-      }));
+      const now = Date.now();
 
-      const result = {
-        flashSales: formattedFlashSales,
-        sale: (sale || []).slice(0, 20).map(mapProduct),
-        new: (newProducts || []).slice(0, 15).map(mapProduct),
-        hot: (hot || []).slice(0, 15).map(mapProduct),
-        limited: (limited || []).slice(0, 15).map(mapProduct),
-        standard: (standard || []).slice(0, 10).map(mapProduct),
-        brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
-      };
-      await safeRedisSet(cacheKey, JSON.stringify(result), 'EX', 300);
-      return result;
+      // 1. In-Memory Cache: Nếu còn mới (< 3 phút) -> Phản hồi lập tức (< 1ms)
+      if (memHomepageCache && (now - memHomepageCache.cachedAt < HOMEPAGE_STALE_MS)) {
+        return memHomepageCache.data;
+      }
+
+      // 2. In-Memory Cache: Nếu nằm trong khoảng stale (3 - 10 phút) -> Phản hồi lập tức & revalidate ngầm (SWR)
+      if (memHomepageCache && (now - memHomepageCache.cachedAt < HOMEPAGE_EXPIRE_MS)) {
+        triggerBackgroundRevalidation();
+        return memHomepageCache.data;
+      }
+
+      // 3. Redis Cache Check (nếu memory bị cold do restart server)
+      const cachedRedis = await safeRedisGet(HOMEPAGE_CACHE_KEY);
+      if (cachedRedis) {
+        try {
+          const parsed = JSON.parse(cachedRedis);
+          memHomepageCache = { data: parsed, cachedAt: now };
+          return parsed;
+        } catch {
+          /* parse error, fallback to rebuild */
+        }
+      }
+
+      // 4. Cold Start Cache Miss: Dùng Single-Flight Lock để chỉ duy nhất 1 request đi vào DB
+      if (singleFlightHomepagePromise) {
+        return await singleFlightHomepagePromise;
+      }
+
+      singleFlightHomepagePromise = buildHomepageData().finally(() => {
+        singleFlightHomepagePromise = null;
+      });
+
+      return await singleFlightHomepagePromise;
     },
 
     productDetail: async (_: any, args: { id: string }) => {
@@ -339,7 +437,7 @@ const resolvers = {
     trendingProducts: async (_: any, args: { limit: number }) => {
       const limit = args.limit || 8;
       try {
-        const products = await ProductService.getTrendingProducts();
+        const products = await ProductService.getTrendingProducts(limit);
         return (products || []).slice(0, limit).map(mapProduct);
       } catch (err) {
         console.error('[GraphQL] trendingProducts error:', err);
@@ -355,9 +453,9 @@ const resolvers = {
         case 'new': products = await ProductService.getNewProducts(); break;
         case 'hot': products = await ProductService.getTrendingProducts(); break;
         case 'limited': products = await ProductService.getLimitedProducts(); break;
-        case 'standard': {
-          const result = await ProductService.getAllProducts({ limit: 20, sortBy: 'newest', status: 'active' });
-          products = result.items || [];
+        case 'standard':
+        case 'seasonal': {
+          products = await ProductService.getSeasonalProducts(limit || 100);
           break;
         }
         default: products = [];

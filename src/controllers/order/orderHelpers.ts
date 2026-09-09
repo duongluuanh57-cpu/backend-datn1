@@ -136,6 +136,19 @@ export async function adjustTotalSold(items: any[], delta: number): Promise<void
       );
     })
   );
+
+  // Xóa cache Redis của Top Trending và Homepage để cập nhật bảng xếp hạng tức thì (Real-time)
+  try {
+    const { redis } = await import('../../config/redis.ts');
+    const trendingKeys = await redis.keys('products:trending:*');
+    const homepageKeys = await redis.keys('homepage:*');
+    const allKeys = [...trendingKeys, ...homepageKeys];
+    if (allKeys.length > 0) {
+      await redis.del(...allKeys);
+    }
+  } catch {
+    /* Redis optional */
+  }
 }
 
 /**

@@ -134,7 +134,8 @@ YÊU CẦU:
 
 - longevity, sillage: ví dụ "6-8 tiếng", "Toả hương mạnh"
 - scentTrail: mô tả hương đặc trưng
-- style, suitableFor, occasion, season, time: chuỗi ngắn gọn
+- style, suitableFor, occasion, time: chuỗi ngắn gọn
+- season: Theo tỉ lệ chuẩn 70/20/10 (70% là 1 mùa duy nhất như 'Mùa Thu', 20% là 2 mùa như 'Mùa Thu, Mùa Đông', 10% là 3 mùa như 'Mùa Xuân, Mùa Thu, Mùa Đông', tối đa 3 mùa)
 
 VÍ DỤ JSON OUTPUT:
 ${JSON.stringify({

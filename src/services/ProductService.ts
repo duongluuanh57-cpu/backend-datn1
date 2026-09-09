@@ -23,14 +23,14 @@ export class ProductService {
   static async getProductIdsByTagSlugs(slugs: string[]) {
     return _ProductQueryService.getProductIdsByTagSlugs(slugs);
   }
-  static async getNewProducts() {
-    return _ProductQueryService.getNewProducts();
+  static async getNewProducts(limit?: number) {
+    return _ProductQueryService.getNewProducts(limit);
   }
   static async getLimitedProducts() {
     return _ProductQueryService.getLimitedProducts();
   }
-  static async getTrendingProducts() {
-    return _ProductQueryService.getTrendingProducts();
+  static async getTrendingProducts(limit?: number) {
+    return _ProductQueryService.getTrendingProducts(limit);
   }
   static async getSaleProducts() {
     return _ProductQueryService.getSaleProducts();
@@ -40,6 +40,9 @@ export class ProductService {
   }
   static async getAllProducts(options: any = {}) {
     return _ProductQueryService.getAllProducts(options);
+  }
+  static async getSeasonalProducts(limit?: number) {
+    return _ProductQueryService.getSeasonalProducts(limit);
   }
   static async getBulkProducts(ids: string[]) {
     return _ProductQueryService.getBulkProducts(ids);

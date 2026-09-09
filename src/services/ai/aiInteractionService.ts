@@ -10,6 +10,7 @@ import { streamText, generateText, embed } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
 const PRIMARY_MODEL = 'gemini-3.1-flash-lite-preview';
+const FALLBACK_MODEL = 'gemini-2.5-flash';
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
@@ -26,7 +27,7 @@ function validateKey(): string {
   return key;
 }
 
-function getGoogleProvider() {
+export function getGoogleProvider() {
   const apiKey = validateKey();
   return createGoogleGenerativeAI({ apiKey });
 }
@@ -35,11 +36,7 @@ function getGoogleProvider() {
 
 /**
  * Stream chat — dùng streamText + google.interactions() (Interactions API)
- * 
- * Interactions API là endpoint mới nhất của Google Gemini:
- * POST /v1beta/interactions
- * 
- * Tương thích hoàn toàn với Response stream mà frontend đang xài
+ * Kèm fallback sang model ổn định khi model preview bị bận/lỗi
  */
 export async function createChatStream(
   messages: { role: string; content: string }[],
@@ -70,17 +67,41 @@ export async function createChatStream(
     }
   }
 
-  // Dùng Interactions API qua google.interactions()
-  const result = streamText({
-    model: provider.interactions(PRIMARY_MODEL),
-    system: systemPrompt || undefined,
-    messages: vercelMessages,
-  });
-
-  // Chuyển đổi stream về Response dạng ReadableStream (tương thích frontend)
-  const textStream = result.textStream;
   const encoder = new TextEncoder();
+  let textStream: any;
 
+  try {
+    const result = streamText({
+      model: provider.interactions(PRIMARY_MODEL),
+      system: systemPrompt || undefined,
+      messages: vercelMessages,
+    });
+    textStream = result.textStream;
+  } catch (primaryErr) {
+    console.warn(`⚠️ [createChatStream] Primary model ${PRIMARY_MODEL} lỗi, chuyển sang ${FALLBACK_MODEL}:`, primaryErr);
+    try {
+      const fallbackResult = streamText({
+        model: provider(FALLBACK_MODEL),
+        system: systemPrompt || undefined,
+        messages: vercelMessages,
+      });
+      textStream = fallbackResult.textStream;
+    } catch (fallbackErr) {
+      console.error('❌ [createChatStream] Toàn bộ AI models không phản hồi:', fallbackErr);
+      const fallbackMsg = "Dạ hiện tại hệ thống AI đang quá tải một chút, bạn vui lòng đợi trong giây lát rồi nhắn lại giúp mình nhé! Cảm ơn bạn :3";
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(fallbackMsg));
+            controller.close();
+          },
+        }),
+        { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+      );
+    }
+  }
+
+  // Chuyển đổi stream về Response dạng ReadableStream với cơ chế bọc lỗi an toàn
   const readable = new ReadableStream({
     async start(controller) {
       try {
@@ -88,8 +109,10 @@ export async function createChatStream(
           if (chunk) controller.enqueue(encoder.encode(chunk));
         }
         controller.close();
-      } catch (e: any) {
-        controller.error(e);
+      } catch (streamErr: any) {
+        console.warn('⚠️ [createChatStream] Lỗi stream chunk:', streamErr?.message || streamErr);
+        controller.enqueue(encoder.encode("\n\n*(Kết nối gặp chút gián đoạn, bạn có thể nhắn lại để mình tư vấn chi tiết hơn nhé :3)*"));
+        controller.close();
       }
     },
   });

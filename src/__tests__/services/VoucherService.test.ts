@@ -22,8 +22,20 @@ vi.mock('../../models/Voucher.ts', () => {
   };
 });
 
+vi.mock('../../models/UserVoucher.ts', () => ({
+  UserVoucher: {
+    find: vi.fn().mockReturnThis(),
+    findOne: vi.fn().mockReturnThis(),
+    create: vi.fn().mockResolvedValue({}),
+    lean: vi.fn().mockImplementation(function (this: any) {
+      return Promise.resolve(this._result ?? null);
+    }),
+  },
+}));
+
 import { VoucherService } from '../../services/VoucherService.ts';
 import { Voucher } from '../../models/Voucher.ts';
+import { UserVoucher } from '../../models/UserVoucher.ts';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -100,13 +112,84 @@ describe('VoucherService', () => {
       expect(result.valid).toBe(true);
       expect(result.discountAmount).toBe(20_000);
     });
+
+    it('rejects user voucher when personalized expiresAt has passed', async () => {
+      (Voucher.findOne as any).mockReturnValue({
+        lean: () => Promise.resolve({
+          _id: 'v123',
+          code: 'GAME-FS1',
+          status: 'active',
+          applicableTo: 'minigame',
+          startDate: new Date('2020-01-01'),
+          endDate: new Date('2030-01-01'),
+          type: 'fixed',
+          value: 0,
+          minOrderAmount: 0,
+        }),
+      });
+      // Mock UserVoucher that expired yesterday
+      (UserVoucher.findOne as any).mockReturnValue({
+        lean: () => Promise.resolve({
+          userId: 'u1',
+          voucherId: 'v123',
+          isUsed: false,
+          expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        }),
+      });
+
+      const result = await VoucherService.validate('GAME-FS1', 100_000, 'MEMBER', 'u1');
+      expect(result.valid).toBe(false);
+      expect(result.message).toContain('hết hạn');
+    });
+
+    it('accepts user voucher when personalized expiresAt is in the future', async () => {
+      (Voucher.findOne as any).mockReturnValue({
+        lean: () => Promise.resolve({
+          _id: 'v123',
+          code: 'GAME-FS1',
+          status: 'active',
+          applicableTo: 'minigame',
+          startDate: new Date('2020-01-01'),
+          endDate: new Date('2030-01-01'),
+          type: 'fixed',
+          value: 30000,
+          minOrderAmount: 0,
+        }),
+      });
+      // Mock UserVoucher that expires in 5 days
+      (UserVoucher.findOne as any).mockReturnValue({
+        lean: () => Promise.resolve({
+          userId: 'u1',
+          voucherId: 'v123',
+          isUsed: false,
+          expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        }),
+      });
+
+      const result = await VoucherService.validate('GAME-FS1', 100_000, 'MEMBER', 'u1');
+      expect(result.valid).toBe(true);
+      expect(result.discountAmount).toBe(30000);
+    });
   });
 
   describe('create', () => {
-    it('uppercases code', async () => {
+    it('uppercases code and preserves validityDays', async () => {
       (Voucher.create as any).mockResolvedValue({ code: 'MYCODE' });
-      await VoucherService.create({ code: 'mycode', type: 'fixed', value: 10000, startDate: '2025-01-01', endDate: '2025-12-31' });
-      expect(Voucher.create).toHaveBeenCalledWith(expect.objectContaining({ code: 'MYCODE' }));
+      await VoucherService.create({
+        code: 'mycode',
+        type: 'fixed',
+        value: 10000,
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        applicableTo: 'minigame',
+        validityDays: 14,
+      });
+      expect(Voucher.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'MYCODE',
+          validityDays: 14,
+        })
+      );
     });
   });
 

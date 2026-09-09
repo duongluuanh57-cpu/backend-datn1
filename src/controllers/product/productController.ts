@@ -10,7 +10,9 @@ export class ProductController {
    */
   static async getNewProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const products = await ProductService.getNewProducts();
+      const { limit } = (req.query as any) || {};
+      const limitNum = Number(limit) || 15;
+      const products = await ProductService.getNewProducts(limitNum);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -34,7 +36,9 @@ export class ProductController {
    */
   static async getTrendingProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const products = await ProductService.getTrendingProducts();
+      const { limit } = (req.query as any) || {};
+      const limitNum = Math.min(16, Number(limit) || 16);
+      const products = await ProductService.getTrendingProducts(limitNum);
       return reply.status(200).send({ success: true, data: products });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
