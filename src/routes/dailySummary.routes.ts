@@ -5,7 +5,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware.ts';
 import { DashboardStatsController } from '../controllers/admin/dashboardStatsController.ts';
 
 export async function dailySummaryRoutes(fastify: FastifyInstance) {
-  fastify.get('/dashboard-stats', DashboardStatsController.getSummaryStats);
+  fastify.get('/dashboard-stats', { preHandler: adminAuthMiddleware }, DashboardStatsController.getSummaryStats);
   fastify.get('/daily-summary', { preHandler: adminAuthMiddleware }, async (request, _reply) => {
     try {
       const { days: daysStr, startDate: startStr, endDate: endStr } = request.query as { days?: string; startDate?: string; endDate?: string };

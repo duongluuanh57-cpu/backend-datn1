@@ -1,33 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { adminAuthMiddleware } from '../../middleware/adminAuthMiddleware.ts';
+import { UnauthorizedError, ForbiddenError } from '../../utils/errors.ts';
 
 vi.mock('../../utils/auth.ts', () => ({
   verifyAccessToken: vi.fn(),
-  generateTokens: vi.fn().mockReturnValue({ accessToken: 'default-token' }),
 }));
 
-import { verifyAccessToken, generateTokens } from '../../utils/auth.ts';
+import { verifyAccessToken } from '../../utils/auth.ts';
 
 describe('adminAuthMiddleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('assigns default admin when no cookie or Authorization header', async () => {
-    const req = { headers: {} } as any;
-    const reply = {} as any;
-    await adminAuthMiddleware(req, reply);
-    expect(req.user.role).toBe('ADMIN');
-    expect(req.token).toBe('default-token');
-  });
-
-  it('reads token from admin_token cookie', async () => {
+  it('reads token from admin_token cookie and attaches ADMIN user', async () => {
     vi.mocked(verifyAccessToken).mockReturnValue({ userId: '123', role: 'ADMIN' } as any);
     const req = { headers: { cookie: 'admin_token=valid-jwt-token; other=value' } } as any;
     const reply = {} as any;
     await adminAuthMiddleware(req, reply);
     expect(verifyAccessToken).toHaveBeenCalledWith('valid-jwt-token');
-    expect((req as any).token).toBe('valid-jwt-token');
+    expect(req.user).toEqual({ userId: '123', role: 'ADMIN' });
+    expect(req.token).toBe('valid-jwt-token');
   });
 
   it('falls back to Authorization Bearer header', async () => {
@@ -36,25 +29,27 @@ describe('adminAuthMiddleware', () => {
     const reply = {} as any;
     await adminAuthMiddleware(req, reply);
     expect(verifyAccessToken).toHaveBeenCalledWith('bearer-token-xyz');
-    expect((req as any).token).toBe('bearer-token-xyz');
+    expect(req.token).toBe('bearer-token-xyz');
   });
 
-  it('attaches decoded user and token to request on success', async () => {
-    const decoded = { userId: '789', role: 'ADMIN', iat: 123, exp: 456 };
-    vi.mocked(verifyAccessToken).mockReturnValue(decoded as any);
-    const req = { headers: { cookie: 'admin_token=my-token' } } as any;
+  it('throws UnauthorizedError when no token provided', async () => {
+    const req = { headers: {} } as any;
     const reply = {} as any;
-    await adminAuthMiddleware(req, reply);
-    expect((req as any).user).toEqual({ ...decoded, role: 'ADMIN' });
-    expect((req as any).token).toBe('my-token');
+    await expect(adminAuthMiddleware(req, reply)).rejects.toThrow(UnauthorizedError);
+    expect(verifyAccessToken).not.toHaveBeenCalled();
   });
 
-  it('falls back to default admin when token is invalid', async () => {
+  it('throws UnauthorizedError when token is invalid', async () => {
     vi.mocked(verifyAccessToken).mockImplementation(() => { throw new Error('jwt malformed'); });
     const req = { headers: { cookie: 'admin_token=bad-token' } } as any;
     const reply = {} as any;
-    await adminAuthMiddleware(req, reply);
-    expect(req.user.role).toBe('ADMIN');
-    expect(req.token).toBe('default-token');
+    await expect(adminAuthMiddleware(req, reply)).rejects.toThrow(UnauthorizedError);
+  });
+
+  it('throws ForbiddenError when role is not ADMIN', async () => {
+    vi.mocked(verifyAccessToken).mockReturnValue({ userId: '789', role: 'USER' } as any);
+    const req = { headers: { cookie: 'admin_token=user-token' } } as any;
+    const reply = {} as any;
+    await expect(adminAuthMiddleware(req, reply)).rejects.toThrow(ForbiddenError);
   });
 });

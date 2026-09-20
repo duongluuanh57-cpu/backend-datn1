@@ -51,8 +51,6 @@ async function seedAccounts() {
             memberTier: acc.memberTier,
             fullName: acc.fullName,
             status: 'active',
-            failedLoginAttempts: 0,
-            lockUntil: null,
           }
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }

@@ -620,6 +620,9 @@ export class VNPayController {
       if (elapsed > 15 * 60 * 1000) {
         order.status = 'cancelled';
         await order.save();
+        // Hoàn kho + voucher cho đơn vừa bị hủy quá hạn
+        const { StockService } = await import('../services/cart/StockService.ts');
+        await StockService.restoreOrderResources(order._id);
         return reply.status(400).send({ success: false, message: 'Đơn hàng đã quá hạn 15 phút thanh toán và đã bị hủy' });
       }
 

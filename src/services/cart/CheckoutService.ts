@@ -13,8 +13,8 @@ import { User } from '../../models/User.ts';
 import { UserVoucher } from '../../models/UserVoucher.ts';
 import mongoose from 'mongoose';
 import { calculateShippingFee } from '../../utils/helpers.ts';
-import { emitNewOrder } from '../../utils/adminSseEmitter.ts';
 import { markSoldCounted } from '../../controllers/order/orderHelpers.ts';
+import { StockService } from './StockService.ts';
 import { getEffectiveProductDiscount } from '../product/productFormatterService.ts';
 
 export interface CheckoutPayload {
@@ -181,6 +181,32 @@ export class CheckoutService {
       }
     }
 
+    // ── Trừ tồn kho ATOMIC trước khi tạo đơn — chặn bán vượt tồn ──
+    // resolveBuyNowItems đã kiểm productId hợp lệ; variantSize chuẩn hóa '50ml' ở dưới.
+    // Nếu thiếu hàng: các variant đã trừ được trừ trước đó sẽ được hoàn lại (bailing all-or-nothing).
+    const itemsToDeduct = orderItems.map((item: any) => ({
+      productId: item.productId?.toString ? item.productId.toString() : String(item.productId),
+      variantSize: item.variantSize || '50ml',
+      quantity: item.quantity || 1,
+    }));
+    const stockFailures = await StockService.deductStock(itemsToDeduct);
+    if (stockFailures.length > 0) {
+      // hoàn lại phần đã trừ của các item trước đó trong loop
+      for (const ok of itemsToDeduct) {
+        const failed = stockFailures.some((f) => f.productId === ok.productId && ok.variantSize === f.variantSize);
+        if (!failed) {
+          await ProductVariant.updateOne(
+            { productId: new mongoose.Types.ObjectId(ok.productId), size: ok.variantSize },
+            { $inc: { quantityInStock: ok.quantity } }
+          );
+        }
+      }
+      const first = stockFailures[0];
+      const err: any = new Error(`Sản phẩm ${first.productId} (${first.variantSize}) chỉ còn ${first.available} — bạn đặt ${first.requested}`);
+      err.statusCode = 409;
+      throw err;
+    }
+
     const shippingResult = await calculateShippingFee(totalAmount, shippingMethod || 'standard');
     const shippingFee = shippingResult.fee;
 
@@ -277,14 +303,6 @@ export class CheckoutService {
       quantity: item.quantity || 1,
     }));
     await FlashSaleService.recordFlashSalePurchases(purchases);
-
-    try {
-      emitNewOrder({
-        orderId: order._id.toString(),
-        username: customerName,
-        amount: order.totalAmount,
-      });
-    } catch { /* silent */ }
 
     if (cart) {
       if (clearsCart) {

@@ -1,97 +1,120 @@
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import type { LoginInput } from '../../types/user.types.ts';
-import { comparePassword, generateTokens } from '../../utils/auth.ts';
+import {
+  comparePassword,
+  generateTokens,
+  toPublicUser,
+  verifyRefreshToken,
+  refreshTokenBlacklistKey,
+  REFRESH_TOKEN_TTL_SECONDS,
+} from '../../utils/auth.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { AuditLog } from '../../models/AuditLog.ts';
 import { redis } from '../../config/redis.ts';
 
+// ── Cấu hình khóa tài khoản (lockout) ──
+const MAX_FAILED_ATTEMPTS = 5;    // Sai quá 5 lần liên tiếp
+const LOCK_MINUTES = 15;          // → khóa 15 phút
+
+/** Chuẩn hóa identifier: trim + lowercase (email và username lưu lowercase từ khi tạo) */
+const normalizeIdentifier = (raw: string) => (raw || '').trim().toLowerCase();
+
 export class AuthSessionService {
-  static async login(data: LoginInput & { rememberMe?: boolean }, metadata: { ip: string, userAgent: string }) {
-    // 1. Tìm user theo email hoặc tên đăng nhập
-    const identifier = (data.email || '').trim();
+  static async login(data: LoginInput, metadata: { ip: string, userAgent: string }) {
+    const identifier = normalizeIdentifier(data.email);
+
     const isEmail = identifier.includes('@');
+
     const user = isEmail
       ? await UserRepository.findByEmail(identifier)
       : await UserRepository.findByUsername(identifier);
+
     if (!user) throw new UnauthorizedError('Email, tên đăng nhập hoặc mật khẩu không chính xác');
 
-    // Kiểm tra trạng thái tài khoản (Bảo mật 2026)
     if (user.status === 'suspended') {
       throw new UnauthorizedError('Tài khoản của bạn đã bị tạm khóa. Vui lòng liên hệ quản trị viên.');
     }
+
     if (user.status === 'inactive') {
       throw new UnauthorizedError('Tài khoản của bạn chưa được kích hoạt.');
     }
 
-    // 2. Đối chiếu mật khẩu
+    // ── Khóa tài khoản tạm thời khi sai mật khẩu nhiều lần (lockout) ──
+    const lockUntil = (user as any).lockUntil ? new Date((user as any).lockUntil) : null;
+    if (lockUntil && lockUntil.getTime() > Date.now()) {
+      const minutes = Math.ceil((lockUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedError(
+        `Tài khoản tạm khóa do nhập sai mật khẩu quá ${MAX_FAILED_ATTEMPTS} lần. Thử lại sau ${minutes} phút.`
+      );
+    }
+
     const isMatch = await comparePassword(data.password, user.passwordHash);
     if (!isMatch) {
+      const failed = ((user as any).failedLoginAttempts || 0) + 1;
+      const shouldLock = failed >= MAX_FAILED_ATTEMPTS;
+      const update: any = {
+        failedLoginAttempts: shouldLock ? 0 : failed,
+      };
+      if (shouldLock) {
+        update.lockUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
+      }
+      await UserRepository.update(String(user._id), update);
       await AuditLog.create({
         userId: user._id,
         action: 'LOGIN',
         resource: 'User',
-        metadata: { ...metadata },
+        metadata,
         status: 'FAILURE'
       });
       throw new UnauthorizedError('Email, tên đăng nhập hoặc mật khẩu không chính xác');
     }
 
-    // 3. Session Hardening: Lưu thông tin session vào Redis
-    const sessionTTL = data.rememberMe ? 60 * 60 * 24 * 7 : 900; // 7 days or 15 mins
-    await redis.set(`session:${user._id}:${metadata.ip}`, JSON.stringify({
-      userAgent: metadata.userAgent,
-      lastLogin: new Date().toISOString(),
-      rememberMe: data.rememberMe
-    }), 'EX', sessionTTL);
+    // Đăng nhập thành công → reset bộ đếm + xóa khóa
+    await UserRepository.update(String(user._id), {
+      failedLoginAttempts: 0,
+      lockUntil: null,
+    });
 
-    // 3b. Cập nhật thời điểm đăng nhập gần nhất (cho tính trạng thái "Không hoạt động")
-    await UserRepository.update(user._id.toString(), { lastLoginAt: new Date() });
-
-    // 4. Audit Logging
     await AuditLog.create({
       userId: user._id,
       action: 'LOGIN',
       resource: 'User',
-      metadata: { ...metadata, rememberMe: data.rememberMe },
+      metadata,
       status: 'SUCCESS'
     });
 
-    // 5. Sinh bộ đôi Token
-    const tokens = generateTokens(user._id.toString(), user.role, data.rememberMe);
+    const tokens = generateTokens(user._id.toString(), user.role);
 
     return {
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        memberTier: (user as any).memberTier || 'MEMBER',
-        status: (user as any).status || 'active',
-        fullName: (user as any).fullName || '',
-        phoneNumber: (user as any).phoneNumber || '',
-        gender: (user as any).gender || '',
-        createdAt: user.createdAt
-      },
+      user: toPublicUser(user),
       tokens
     };
   }
 
-  /**
-   * Đăng xuất & Blacklist Refresh Token (Bảo mật 2026)
-   */
-  static async logout(refreshToken: string, userId: string) {
-    // Đưa Refresh Token vào Blacklist trong Redis (Hết hạn sau 7 ngày theo config)
-    const SEVEN_DAYS = 7 * 24 * 60 * 60;
-    await redis.set(`blacklist:${refreshToken}`, 'true', 'EX', SEVEN_DAYS);
+  static async logout(refreshToken: string, userId?: string) {
+    if (!refreshToken) throw new UnauthorizedError('Refresh token là bắt buộc');
 
-    // Audit Log
+    // Xác minh token hợp lệ trước khi blacklist — chặn người lạ ném token bừa vào blacklist,
+    // và lấy jti để blacklist đúng cách rotation thay vì theo giá trị token.
+    let jti: string | undefined;
+    try {
+      ({ jti } = verifyRefreshToken(refreshToken));
+    } catch {
+      throw new UnauthorizedError('Refresh token không hợp lệ');
+    }
+
+    await redis.set(
+      refreshTokenBlacklistKey(refreshToken, jti),
+      '1',
+      'EX',
+      REFRESH_TOKEN_TTL_SECONDS
+    );
+
     await AuditLog.create({
       userId,
       action: 'LOGOUT',
       resource: 'User',
       status: 'SUCCESS'
     });
-
-    return { success: true };
   }
 }

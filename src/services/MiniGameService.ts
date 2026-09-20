@@ -3,76 +3,38 @@ import { Voucher } from '../models/Voucher.ts';
 import { UserVoucher } from '../models/UserVoucher.ts';
 import { User } from '../models/User.ts';
 import { VoucherService } from './VoucherService.ts';
-import mongoose from 'mongoose';
+import { UnauthorizedError, ValidationError } from '../utils/errors.ts';
 
-const DAILY_LIMIT = 3; // Deprecated in favor of custom spin turns
+// Ô quay -> index trong mảng 5 voucher minigame (sort theo createdAt)
+const SEGMENT_VOUCHER_INDEX = [0, 1, 2, 0, 3, 4];
 
 export class MiniGameService {
   /**
-   * Check if user can play based on spinTurns
-   */
-  static async canPlay(userId?: string) {
-    if (!userId || userId === 'guest') {
-      return { allowed: false, reason: 'Vui lòng đăng nhập để tham gia trò chơi này.' };
-    }
-
-    const user = await User.findById(userId).lean();
-    if (!user) {
-      return { allowed: false, reason: 'Không tìm thấy thông tin người dùng.' };
-    }
-
-    const turns = user.spinTurns || 0;
-    if (turns <= 0) {
-      return { allowed: false, reason: 'Bạn đã hết lượt quay hôm nay. Hãy quay lại vào ngày mai!' };
-    }
-
-    return { allowed: true, spinTurns: turns };
-  }
-
-  /**
-   * Get today's remaining plays for a user (Mapped to spinTurns)
-   */
-  static async getRemainingPlays(userId?: string) {
-    if (!userId || userId === 'guest') return 0;
-    const user = await User.findById(userId).select('spinTurns').lean();
-    return user?.spinTurns || 0;
-  }
-
-  /**
-   * Đồng bộ và tính toán lượt quay của User:
-   * Mỗi ngày chỉ có 1 lượt quay duy nhất.
-   * Nếu không quay thì xem như bỏ qua, ngày hôm sau cấp lại 1 lượt mới chứ không cộng dồn.
+   * Đồng bộ lượt quay của User: mỗi ngày chỉ có 1 lượt, không cộng dồn.
    */
   static async syncUserSpinTurns(userId: string): Promise<number> {
     const user = await User.findById(userId);
     if (!user) return 0;
 
-    // Lấy khoảng thời gian trong ngày hiện tại theo giờ Việt Nam (UTC+7)
-    const formatter = new Intl.DateTimeFormat('en-CA', {
+    // Khoảng thời gian ngày hiện tại theo giờ Việt Nam (UTC+7)
+    const todayVNStr = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Ho_Chi_Minh',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    });
-    const todayVNStr = formatter.format(new Date());
+    }).format(new Date());
     const startOfDay = new Date(`${todayVNStr}T00:00:00.000+07:00`);
     const endOfDay = new Date(`${todayVNStr}T23:59:59.999+07:00`);
 
-    // Kiểm tra xem hôm nay user đã quay lượt nào chưa
     const playedToday = await MiniGameSession.countDocuments({
       userId,
       playedAt: { $gte: startOfDay, $lte: endOfDay },
     });
 
-    // Mỗi ngày chỉ có đúng 1 lượt quay:
-    // - Nếu hôm nay chưa quay: có 1 lượt
-    // - Nếu hôm nay đã quay: còn 0 lượt
-    // - Không cộng dồn từ những ngày trước
     const availableTurns = playedToday > 0 ? 0 : 1;
 
     if (user.spinTurns !== availableTurns) {
       user.spinTurns = availableTurns;
-      user.lastDailySpinGrantedAt = new Date();
       await user.save();
     }
 
@@ -86,6 +48,7 @@ export class MiniGameService {
     data: {
       gameType: GameType;
       won: boolean;
+      label?: string;
       discountType?: 'percentage' | 'fixed';
       discountAmount?: number;
       segmentIndex?: number;
@@ -93,25 +56,22 @@ export class MiniGameService {
     userId?: string
   ) {
     if (!userId || userId === 'guest') {
-      throw new Error('Vui lòng đăng nhập để lưu kết quả game.');
+      throw new UnauthorizedError('Vui lòng đăng nhập để lưu kết quả game.');
     }
 
-    // Trừ lượt quay của user (mỗi ngày 1 lượt nên sau khi quay sẽ về 0)
-    const user = await User.findById(userId);
+    // Trừ lượt quay atomic: chỉ thành công khi còn lượt, chặn race 2 request song song
+    const user = await User.findOneAndUpdate(
+      { _id: userId, spinTurns: { $gt: 0 } },
+      { $set: { spinTurns: 0 } },
+      { new: true }
+    );
     if (!user) {
-      throw new Error('Không tìm thấy thông tin người dùng.');
+      throw new ValidationError('Bạn đã hết lượt quay hôm nay. Hãy quay lại vào ngày mai!');
     }
-    if ((user.spinTurns || 0) <= 0) {
-      throw new Error('Bạn đã hết lượt quay hôm nay. Hãy quay lại vào ngày mai!');
-    }
-    user.spinTurns = 0;
-    await user.save();
 
-    let voucherCode = undefined;
     let selectedVoucher = null;
-    let won = data.won;
 
-    if (won) {
+    if (data.won) {
       await VoucherService.ensureDefaultMinigameVouchers();
 
       const minigameVouchers = await Voucher.find({
@@ -119,67 +79,51 @@ export class MiniGameService {
         status: 'active',
       }).sort({ createdAt: 1 }).lean();
 
-      let minigameIndex = 0;
-      if (data.segmentIndex === 0) minigameIndex = 0;
-      else if (data.segmentIndex === 1) minigameIndex = 1;
-      else if (data.segmentIndex === 2) minigameIndex = 2;
-      else if (data.segmentIndex === 4) minigameIndex = 3;
-      else if (data.segmentIndex === 5) minigameIndex = 4;
-      else minigameIndex = 0;
-
-      selectedVoucher = minigameVouchers[minigameIndex % minigameVouchers.length] || minigameVouchers[0];
-
-      if (selectedVoucher) {
-        voucherCode = selectedVoucher.code;
-
-        const now = new Date();
-        const validityDays =
-          typeof selectedVoucher.validityDays === 'number' && selectedVoucher.validityDays > 0
-            ? selectedVoucher.validityDays
-            : 7;
-        const expiresAt = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
-
-        // Cấp phát cho UserVoucher để user sử dụng với ngày hết hạn cá nhân hóa
-        await UserVoucher.create({
-          userId,
-          voucherId: selectedVoucher._id,
-          code: selectedVoucher.code,
-          startDate: now,
-          expiresAt,
-          isUsed: false,
-          grantedReason: 'minigame',
-        });
-        console.log(`🎁 [Voucher Grant Minigame] Granted fixed minigame voucher ${selectedVoucher.code} (hết hạn sau ${validityDays} ngày: ${expiresAt.toISOString()}) to user ${userId}`);
-
-        // Create game session record
-        const session = await MiniGameSession.create({
-          userId,
-          gameType: data.gameType,
-          status: 'won',
-          playedAt: now,
-          expiresAt,
-          reward: {
-            voucherCode,
-            discountType: selectedVoucher.type,
-            discountAmount: selectedVoucher.value,
-          },
-        });
-
-        return session;
-      } else {
-        won = false;
+      if (minigameVouchers.length > 0) {
+        const idx = SEGMENT_VOUCHER_INDEX[data.segmentIndex ?? 0] ?? 0;
+        selectedVoucher = minigameVouchers[idx % minigameVouchers.length];
       }
     }
 
-    // Create game session record for lost game
-    const session = await MiniGameSession.create({
+    if (selectedVoucher) {
+      const now = new Date();
+      const validityDays =
+        typeof selectedVoucher.validityDays === 'number' && selectedVoucher.validityDays > 0
+          ? selectedVoucher.validityDays
+          : 7;
+      const expiresAt = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+
+      await UserVoucher.create({
+        userId,
+        voucherId: selectedVoucher._id,
+        code: selectedVoucher.code,
+        startDate: now,
+        expiresAt,
+        isUsed: false,
+        grantedReason: 'minigame',
+      });
+
+      return MiniGameSession.create({
+        userId,
+        gameType: data.gameType,
+        status: 'won',
+        playedAt: now,
+        expiresAt,
+        reward: {
+          voucherCode: selectedVoucher.code,
+          discountType: selectedVoucher.type,
+          discountAmount: selectedVoucher.value,
+          label: data.label,
+        },
+      });
+    }
+
+    return MiniGameSession.create({
       userId,
       gameType: data.gameType,
       status: 'lost',
       playedAt: new Date(),
     });
-
-    return session;
   }
 
   /**
@@ -200,11 +144,7 @@ export class MiniGameService {
       .limit(limit)
       .lean();
 
-    // Map unique user ids
     const userIds = [...new Set(sessions.map((s) => s.userId).filter(Boolean))];
-
-    // Find users to map names
-    const User = mongoose.model('User');
     const users = await User.find({ _id: { $in: userIds } }).select('name').lean();
     const userMap = new Map(users.map((u: any) => [u._id.toString(), u.name]));
 

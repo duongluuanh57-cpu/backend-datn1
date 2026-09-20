@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { UserRepository } from '../repositories/UserRepository.ts';
-import { generateTokens } from '../utils/auth.ts';
+import { generateTokens, toPublicUser } from '../utils/auth.ts';
 import type { IUser } from '../models/User.ts';
 
 // Cấu hình cho từng OAuth Provider
@@ -130,10 +130,9 @@ export class OAuthService {
       }
     }
 
-    const tokens = generateTokens(user!._id.toString(), user!.role, false);
-    await UserRepository.update(user!._id.toString(), { lastLoginAt: new Date() });
+    const tokens = generateTokens(user!._id.toString(), user!.role);
     return {
-      user: { id: user!._id, username: user!.username, email: user!.email },
+      user: toPublicUser(user!),
       tokens,
     };
   }

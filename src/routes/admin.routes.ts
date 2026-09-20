@@ -3,9 +3,7 @@ import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware.ts';
 import { csrfProtection } from '../middleware/csrfMiddleware.ts';
 import { DashboardStatsController } from '../controllers/admin/dashboardStatsController.ts';
 import { AuditLog } from '../models/AuditLog.ts';
-import { addSseClient, removeSseClient } from '../utils/adminSseEmitter.ts';
 import { detectFrontendUrl } from '../utils/viewHelpers.ts';
-import crypto from 'crypto';
 
 export async function adminRoutes(app: FastifyInstance) {
   // Rate limit cho admin: 120 req/phút
@@ -33,39 +31,6 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // CSRF bảo vệ tất cả POST/PUT/DELETE
   app.addHook('preHandler', csrfProtection);
-
-  // ── SSE: Real-time order notifications (GET only, exempt from CSRF) ──
-  app.get('/order-events', { preHandler: adminAuthMiddleware }, async (request, reply) => {
-    const clientId = crypto.randomUUID();
-    const origin = (request.headers.origin as string) || '*';
-    reply.raw.setHeader('Access-Control-Allow-Origin', origin);
-    reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
-    reply.raw.setHeader('Content-Type', 'text/event-stream');
-    reply.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-    reply.raw.setHeader('Connection', 'keep-alive');
-    reply.raw.setHeader('X-Accel-Buffering', 'no');
-    reply.raw.flushHeaders();
-    reply.raw.write(': connected\n\n');
-    addSseClient(clientId, reply);
-
-    return new Promise<void>((resolve) => {
-      const heartbeat = setInterval(() => {
-        try {
-          reply.raw.write(': ping\n\n');
-        } catch {
-          clearInterval(heartbeat);
-          removeSseClient(clientId);
-          resolve();
-        }
-      }, 25000);
-
-      request.raw.on('close', () => {
-        clearInterval(heartbeat);
-        removeSseClient(clientId);
-        resolve();
-      });
-    });
-  });
 
   // Dashboard Stats API
   app.get('/dashboard-stats', DashboardStatsController.getSummaryStats);

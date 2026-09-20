@@ -2,9 +2,9 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
-import { Payment } from '../../models/Payment.ts';
 import { User } from '../../models/User.ts';
-import { enhanceItemsWithProductData, recalculateTotalAmount, populateOrderTotals, buildDateFilter, autoCancelExpiredVNPayOrders, unmarkSoldCounted } from './orderHelpers.ts';
+import { enhanceItemsWithProductData, populateOrderTotals, autoCancelExpiredVNPayOrders, unmarkSoldCounted } from './orderHelpers.ts';
+import { StockService } from '../../services/cart/StockService.ts';
 
 /**
  * GET /api/orders/my-orders
@@ -30,15 +30,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
       });
     }
 
-    const { startDate, endDate, status } = req.query as { startDate?: string; endDate?: string; status?: string };
     const query: any = { userId: new mongoose.Types.ObjectId(userId) };
-
-    const dateFilter = buildDateFilter(startDate, endDate);
-    if (dateFilter) query.createdAt = dateFilter;
-
-    if (status && status !== 'all') {
-      query.status = status;
-    }
 
     const orders = await Order.find(query)
       .sort({ createdAt: -1 })
@@ -62,45 +54,8 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * GET /api/orders/:id
- */
-/**
- * GET /api/orders/by-txn-ref/:txnRef
- * Tra cứu đơn hàng theo mã giao dịch VNPAY (txnRef)
- * Public endpoint — txnRef là random unique ID, không cần auth
- */
-export async function getOrderByTxnRef(req: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { txnRef } = req.params as { txnRef: string };
-
-    if (!txnRef) {
-      return reply.status(400).send({ success: false, message: 'Thiếu mã giao dịch' });
-    }
-
-    const paymentRecord = await Payment.findOne({ txnRef }).lean();
-    const order = paymentRecord
-      ? await Order.findById(paymentRecord.orderId).populate('voucherId').populate('shippingMethodId').lean()
-      : await Order.findOne({ _id: mongoose.Types.ObjectId.isValid(txnRef) ? txnRef : null }).populate('voucherId').populate('shippingMethodId').lean();
-
-    if (!order) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng', data: { found: false } });
-    }
-
-    const items = await OrderItem.find({ orderId: order._id }).lean();
-    await enhanceItemsWithProductData(items);
-    populateOrderTotals(order, items);
-    (order as any).items = items;
-
-    return reply.status(200).send({ success: true, data: order });
-  } catch (error: any) {
-    return reply.status(500).send({ success: false, message: error.message });
-  }
-}
-
-/**
  * PATCH /api/orders/:id/cancel
- * User gửi yêu cầu hủy đơn hàng — chỉ cho phép khi đơn đang pending
- * Không hủy luôn, chỉ đánh dấu cancelRequested để admin xử lý
+ * User tự hủy đơn hàng — chỉ cho phép khi đơn đang pending, kèm lý do (tùy chọn)
  */
 export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -131,13 +86,6 @@ export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
       });
     }
 
-    if (order.cancelRequested) {
-      return reply.status(400).send({
-        success: false,
-        message: 'Đơn hàng đang chờ xử lý hủy',
-      });
-    }
-
     const { cancelReason } = (req.body || {}) as { cancelReason?: string };
     const validReasons = ['want_change_voucher', 'want_change_product', 'complicated_payment', 'found_cheaper', 'changed_mind'];
 
@@ -146,11 +94,13 @@ export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
     }
 
     order.status = 'cancelled';
-    order.cancelRequested = false;
     await order.save();
 
     // Trả lại lượt bán nếu đơn đã được cộng soldCount trước đó
     await unmarkSoldCounted(order._id);
+
+    // Hoàn kho + hoàn voucher (idempotent — retry không hoàn kép)
+    await StockService.restoreOrderResources(order._id);
 
     return reply.status(200).send({ success: true, message: 'Hủy đơn hàng thành công' });
   } catch (error: any) {

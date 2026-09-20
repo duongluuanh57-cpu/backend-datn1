@@ -424,7 +424,7 @@ export class CartService {
     const cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) }).lean();
     const totalAmount = cart?.totalAmount || 0;
 
-    const user = await User.findById(userId).select('memberTier totalSpent').lean() as any;
+    const user = await User.findById(userId).select('memberTier').lean() as any;
     const userTier = user?.memberTier || 'MEMBER';
 
     const vouchers = await VoucherService.getActive(userTier, userId);
@@ -468,7 +468,7 @@ export class CartService {
       throw err;
     }
 
-    const user = await User.findById(userId).select('memberTier totalSpent').lean() as any;
+    const user = await User.findById(userId).select('memberTier').lean() as any;
     const userTier = user?.memberTier || 'MEMBER';
 
     const cart = await Cart.findOne({ userId: new mongoose.Types.ObjectId(userId) });

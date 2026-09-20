@@ -15,16 +15,16 @@ export type Department =
   | 'technical'        // Bộ phận Kỹ thuật / Đổi trả
   | 'general';         // Bộ phận Hỗ trợ chung
 
-export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type TicketStatus = 'open' | 'in_progress' | 'closed';
 
 export interface ISupportTicket extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
   orderId?: mongoose.Types.ObjectId;
-  returnId?: mongoose.Types.ObjectId;
   ticketType: TicketType | string;
   department: Department | string;
   title: string;
   status: TicketStatus;
+  reopened?: boolean;
   closedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -32,9 +32,8 @@ export interface ISupportTicket extends Document {
 
 const SupportTicketSchema = new Schema<ISupportTicket>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     orderId: { type: Schema.Types.ObjectId, ref: 'Order', index: true },
-    returnId: { type: Schema.Types.ObjectId, ref: 'ReturnItem', index: true },
     ticketType: { 
       type: String, 
       default: 'order_inquiry', 
@@ -48,10 +47,11 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
     title: { type: String, required: true, trim: true },
     status: { 
       type: String, 
-      enum: ['open', 'in_progress', 'resolved', 'closed'], 
+      enum: ['open', 'in_progress', 'closed'], 
       default: 'open', 
       index: true 
     },
+    reopened: { type: Boolean, default: false },
     closedAt: { type: Date },
   },
   {

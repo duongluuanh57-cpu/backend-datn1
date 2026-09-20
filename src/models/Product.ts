@@ -14,6 +14,9 @@ export interface IProduct extends Document {
   reviewsCount?: number;
   avgRating?: number;
   discountPercentage?: number;
+  // Cửa sổ khuyến mãi tùy chọn — null = áp dụng ngay và vô hạn
+  discountStartDate?: Date | null;
+  discountEndDate?: Date | null;
   soldCount?: number;
   viewCount?: number;
   specifications?: {
@@ -60,6 +63,9 @@ const ProductSchema = new Schema<IProduct>(
     reviewsCount: { type: Number, default: 0, min: 0 },
     avgRating: { type: Number, default: 0, min: 0, max: 5 },
     discountPercentage: { type: Number, default: 0, min: 0, max: 100 },
+    // ── Cửa sổ khuyến mãi (tùy chọn): null = áp dụng ngay và vô hạn, có ngày thì giới hạn khung ──
+    discountStartDate: { type: Date, default: null },
+    discountEndDate: { type: Date, default: null },
     soldCount: { type: Number, default: 0, min: 0 },
     viewCount: { type: Number, default: 0, min: 0 },
     isFeatured: { type: Boolean, default: false, index: true },

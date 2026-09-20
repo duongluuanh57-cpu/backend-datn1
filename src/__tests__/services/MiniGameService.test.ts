@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../models/User.ts', () => ({
-  User: { findById: vi.fn() },
+  User: { findById: vi.fn(), findOneAndUpdate: vi.fn(), find: vi.fn() },
 }));
 
 vi.mock('../../models/MiniGameSession.ts', () => ({
@@ -33,52 +33,11 @@ beforeEach(() => {
 });
 
 describe('MiniGameService', () => {
-  describe('canPlay', () => {
-    it('blocks guests', async () => {
-      const result = await MiniGameService.canPlay('guest');
-      expect(result.allowed).toBe(false);
-    });
-
-    it('blocks when user not found', async () => {
-      (User.findById as any).mockReturnValue({ lean: vi.fn().mockResolvedValue(null) });
-      const result = await MiniGameService.canPlay('user1');
-      expect(result.allowed).toBe(false);
-    });
-
-    it('blocks when no spin turns left', async () => {
-      (User.findById as any).mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 0 }) });
-      const result = await MiniGameService.canPlay('user1');
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain('hết lượt');
-    });
-
-    it('allows play when spin turns available', async () => {
-      (User.findById as any).mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 1 }) });
-      const result = await MiniGameService.canPlay('user1');
-      expect(result.allowed).toBe(true);
-      expect(result.spinTurns).toBe(1);
-    });
-  });
-
-  describe('getRemainingPlays', () => {
-    it('returns 0 for guests', async () => {
-      expect(await MiniGameService.getRemainingPlays('guest')).toBe(0);
-    });
-
-    it('returns remaining spin turns', async () => {
-      (User.findById as any).mockReturnValue({
-        select: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue({ spinTurns: 1 }) }),
-      });
-      expect(await MiniGameService.getRemainingPlays('u1')).toBe(1);
-    });
-  });
-
   describe('syncUserSpinTurns', () => {
     it('grants 1 turn if user has not played today', async () => {
       const user = {
         _id: 'user1',
         spinTurns: 0,
-        lastDailySpinGrantedAt: null,
         save: vi.fn().mockResolvedValue(true),
       };
       (User.findById as any).mockResolvedValue(user);
@@ -94,7 +53,6 @@ describe('MiniGameService', () => {
       const user = {
         _id: 'user1',
         spinTurns: 1,
-        lastDailySpinGrantedAt: new Date(),
         save: vi.fn().mockResolvedValue(true),
       };
       (User.findById as any).mockResolvedValue(user);
@@ -106,10 +64,10 @@ describe('MiniGameService', () => {
       expect(user.save).toHaveBeenCalled();
     });
 
-    it('resets accumulated turns (e.g. 11 turns) down to 1 if not played today', async () => {
+    it('does not save when turns already synced', async () => {
       const user = {
         _id: 'user1',
-        spinTurns: 11,
+        spinTurns: 1,
         save: vi.fn().mockResolvedValue(true),
       };
       (User.findById as any).mockResolvedValue(user);
@@ -117,81 +75,59 @@ describe('MiniGameService', () => {
 
       const turns = await MiniGameService.syncUserSpinTurns('user1');
       expect(turns).toBe(1);
-      expect(user.spinTurns).toBe(1);
-      expect(user.save).toHaveBeenCalled();
+      expect(user.save).not.toHaveBeenCalled();
     });
   });
 
   describe('saveResult', () => {
-    let mockUser: any;
-
-    beforeEach(() => {
-      mockUser = {
-        _id: 'user1',
-        spinTurns: 1,
-        save: vi.fn().mockResolvedValue(true),
-      };
-    });
-
     it('throws for guests', async () => {
-      await expect(MiniGameService.saveResult({ gameType: 'scratch' as any, won: false }, 'guest'))
+      await expect(MiniGameService.saveResult({ gameType: 'wheel', won: false }, 'guest'))
         .rejects.toThrow('đăng nhập');
     });
 
-    it('throws when user not found', async () => {
-      (User.findById as any).mockResolvedValue(null);
-      await expect(MiniGameService.saveResult({ gameType: 'scratch' as any, won: false }, 'user1'))
-        .rejects.toThrow('Không tìm thấy');
-    });
-
-    it('throws when no turns left', async () => {
-      (User.findById as any).mockResolvedValue({ ...mockUser, spinTurns: 0 });
-      await expect(MiniGameService.saveResult({ gameType: 'scratch' as any, won: false }, 'user1'))
+    it('throws when no turns left (atomic update matched nothing)', async () => {
+      (User.findOneAndUpdate as any).mockResolvedValue(null);
+      await expect(MiniGameService.saveResult({ gameType: 'wheel', won: false }, 'user1'))
         .rejects.toThrow('hết lượt');
     });
 
     it('creates session without voucher when lost', async () => {
-      (User.findById as any).mockResolvedValue(mockUser);
+      (User.findOneAndUpdate as any).mockResolvedValue({ _id: 'user1', spinTurns: 0 });
       (MiniGameSession.create as any).mockResolvedValue({ status: 'lost' });
 
-      const result = await MiniGameService.saveResult({ gameType: 'scratch' as any, won: false }, 'user1');
+      const result = await MiniGameService.saveResult({ gameType: 'wheel', won: false }, 'user1');
 
       expect(MiniGameSession.create).toHaveBeenCalled();
       expect(UserVoucher.create).not.toHaveBeenCalled();
       expect(result.status).toBe('lost');
-      expect(mockUser.spinTurns).toBe(0);
-      expect(mockUser.save).toHaveBeenCalled();
     });
 
     it('creates session and grants voucher when won', async () => {
-      (User.findById as any).mockResolvedValue(mockUser);
+      (User.findOneAndUpdate as any).mockResolvedValue({ _id: 'user1', spinTurns: 0 });
       (VoucherService.ensureDefaultMinigameVouchers as any).mockResolvedValue(undefined);
       (Voucher.find as any).mockReturnValue({
         sort: vi.fn().mockReturnValue({
           lean: vi.fn().mockResolvedValue([
-            { _id: 'v1', code: 'MG-ABC123', type: 'fixed', value: 50000 },
+            { _id: 'v0', code: 'GAME-FS1', type: 'fixed', value: 0 },
+            { _id: 'v1', code: 'GAME-DISC5', type: 'percentage', value: 5 },
           ]),
         }),
       });
       (UserVoucher.create as any).mockResolvedValue({});
       (MiniGameSession.create as any).mockResolvedValue({
         status: 'won',
-        reward: { voucherCode: 'MG-ABC123', discountType: 'fixed', discountAmount: 50000 },
+        reward: { voucherCode: 'GAME-DISC5', discountType: 'percentage', discountAmount: 5 },
       });
 
       const result = await MiniGameService.saveResult(
-        { gameType: 'scratch' as any, won: true, discountType: 'fixed', discountAmount: 50000 },
+        { gameType: 'wheel', won: true, segmentIndex: 1, discountType: 'percentage', discountAmount: 5 },
         'user1'
       );
 
       expect(UserVoucher.create).toHaveBeenCalled();
       const voucherArg = (UserVoucher.create as any).mock.calls[0][0];
-      expect(voucherArg.code).toBe('MG-ABC123');
+      expect(voucherArg.code).toBe('GAME-DISC5');
       expect(voucherArg.grantedReason).toBe('minigame');
-      expect(voucherArg.startDate).toBeInstanceOf(Date);
-      expect(voucherArg.expiresAt).toBeInstanceOf(Date);
-      expect(voucherArg.expiresAt.getTime()).toBeGreaterThan(voucherArg.startDate.getTime());
-      expect(mockUser.spinTurns).toBe(0);
       expect(result.status).toBe('won');
     });
   });

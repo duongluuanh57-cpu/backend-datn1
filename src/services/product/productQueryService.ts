@@ -196,23 +196,10 @@ export class ProductQueryService {
     const productsRaw = await query.lean();
     const formatted = await formatMultipleProducts(productsRaw);
 
-    // QUY TẮC: Sản phẩm trong Session "Sản Phẩm Mới Về" nếu có % giảm giá > 5% thì tự động chỉ hiện là 5%
-    const products = formatted.map((p: any) => {
-      const currentDiscount = p.discountPercentage || p.discount || 0;
-      if (currentDiscount > 5) {
-        const origPrice = p.originalPrice || p.price || 0;
-        const newPrice = origPrice > 0 ? Math.round(origPrice * (1 - 5 / 100)) : p.price;
-        return {
-          ...p,
-          discount: 5,
-          discountPercentage: 5,
-          price: newPrice,
-        };
-      }
-      return p;
-    });
+    // Khuyến mãi hiển thị đúng dữ liệu thật (autoDiscount 5% của lifecycle hoặc khuyến mãi admin) — không kẹp cứng.
 
     // Sắp xếp sản phẩm mới theo lượt bán từ Thấp -> Cao
+    const products = formatted;
     products.sort((a: any, b: any) => {
       const soldDiff = (a.soldCount || 0) - (b.soldCount || 0);
       if (soldDiff !== 0) return soldDiff;
@@ -450,7 +437,12 @@ export class ProductQueryService {
         productIds = Array.from(allIds).map(id => new mongoose.Types.ObjectId(id));
       }
       if (productIds.length === 0) return [];
-      productsRaw = await Product.find({ _id: { $in: productIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
+      // Nhất quán với trending: chỉ hiện sản phẩm còn ít nhất 1 biến thể trong kho
+      const inStockIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+      const inStockSet = new Set(inStockIds.map((id: any) => id.toString()));
+      const visibleIds = productIds.filter((id: any) => inStockSet.has(id.toString()));
+      if (visibleIds.length === 0) return [];
+      productsRaw = await Product.find({ _id: { $in: visibleIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
     }
     const products = await formatMultipleProducts(productsRaw);
     const getActualPrice = (product: any) => { const p = product.price ?? 0; if (!p) return 0; let active = product.discountPercentage && product.discountPercentage > 0; if (active) { const now = new Date(); if (product.discountStartDate && new Date(product.discountStartDate) > now) active = false; if (product.discountEndDate && new Date(product.discountEndDate) < now) active = false; } return active ? Math.round(p * (1 - product.discountPercentage / 100)) : p; };
@@ -507,8 +499,18 @@ export class ProductQueryService {
     }
 
     const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia']);
+    // Khuyến mãi có discountStartDate/EndDate thì tôn trọng cửa sổ; không có ngày = đang áp dụng.
     const now = new Date();
-    const discountFilter: any = { discountPercentage: { $gt: 0 }, discountEndDate: { $gt: now }, $or: [{ discountStartDate: null }, { discountStartDate: { $exists: false } }, { discountStartDate: { $lte: now } }] };
+    const discountFilter: any = {
+      discountPercentage: { $gt: 0 },
+      $or: [
+        { discountStartDate: { $in: [null] as any }, discountEndDate: { $in: [null] as any } },
+        { discountStartDate: { $exists: false }, discountEndDate: { $exists: false } },
+        { discountStartDate: { $lte: now }, discountEndDate: { $gt: now } },
+        { discountStartDate: null, discountEndDate: { $gt: now } },
+        { discountStartDate: { $lte: now }, discountEndDate: null },
+      ],
+    };
     let queryBase: any;
     if (saleProductIds.length > 0) {
       queryBase = { _id: { $in: saleProductIds }, status: 'active', ...discountFilter };
@@ -750,7 +752,7 @@ export class ProductQueryService {
       case 'priceDesc': priceSortNeeded = true; priceSortAsc = false; break;
       case 'stockAsc': stockSortNeeded = true; stockSortAsc = true; break;
       case 'stockDesc': stockSortNeeded = true; stockSortAsc = false; break;
-      case 'rating': sort = { rating: -1, reviewsCount: -1 }; break;
+      case 'rating': sort = { avgRating: -1, reviewsCount: -1 }; break;
       case 'newest': sort = { createdAt: -1 }; break;
       case 'oldest': sort = { createdAt: 1 }; break;
       case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break;

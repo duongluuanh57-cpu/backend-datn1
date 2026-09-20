@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ReviewService } from '../services/ReviewService.ts';
 import { ImageService } from '../services/ImageService.ts';
 import { requireAdmin } from '../utils/adminAuth.ts';
-import { verifyAccessToken } from '../utils/auth.ts';
+import { optionalAuthMiddleware } from '../middleware/authMiddleware.ts';
 import { User } from '../models/User.ts';
 
 export class ReviewController {
@@ -11,15 +11,8 @@ export class ReviewController {
       const { productId } = req.params as { productId: string };
       const { page = '1', limit = '10', rating, hasImages, hasComment } = req.query as { page?: string; limit?: string; rating?: string; hasImages?: string; hasComment?: string };
 
-      let currentUserId: string | undefined = undefined;
-      const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        try {
-          const token = authHeader.substring(7);
-          const decoded = verifyAccessToken(token);
-          currentUserId = decoded.userId;
-        } catch {}
-      }
+      // Đã đăng nhập (cookie/Bearer qua optionalAuth) → được xem cả review pending/rejected của chính mình
+      const currentUserId: string | undefined = (req as any).user?.userId;
 
       const result = await ReviewService.getByProduct(
         productId,
@@ -49,6 +42,9 @@ export class ReviewController {
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
       const user = (req as any).user;
+      if (!user?.userId) {
+        return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập để đánh giá' });
+      }
       const userId = user.userId || user._id?.toString();
       const body = req.body as {
         productId: string;
@@ -83,72 +79,15 @@ export class ReviewController {
     }
   }
 
-  static async update(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const user = (req as any).user;
-      const userId = user.userId || user._id?.toString();
-      const { id } = req.params as { id: string };
-      const body = req.body as {
-        rating?: number;
-        comment?: string;
-        overallComment?: string;
-        images?: string[];
-        aspects?: { name: string; rating: number; comment?: string }[];
-        isAnonymous?: boolean;
-      };
-
-      if (body.aspects) {
-        for (const a of body.aspects) {
-          if (!a.rating || a.rating < 1 || a.rating > 5) {
-            return reply.status(400).send({ success: false, message: `rating cho "${a.name}" phải từ 1 đến 5` });
-          }
-        }
-      }
-      if (body.rating !== undefined && (body.rating < 1 || body.rating > 5)) {
-        return reply.status(400).send({ success: false, message: 'rating phải từ 1 đến 5' });
-      }
-
-      const review = await ReviewService.update(userId, id, body as any);
-      return reply.send({ success: true, data: review });
-    } catch (err: any) {
-      return reply.status(400).send({ success: false, message: err.message });
-    }
-  }
-
-  static async delete(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const user = (req as any).user;
-      const userId = user.userId || user._id?.toString();
-      const { id } = req.params as { id: string };
-
-      await ReviewService.delete(userId, id);
-      return reply.send({ success: true, message: 'Đã xoá review' });
-    } catch (err: any) {
-      return reply.status(400).send({ success: false, message: err.message });
-    }
-  }
-
-  static async getMyReviews(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const user = (req as any).user;
-      const userId = user.userId || user._id?.toString();
-      const { page = '1', limit = '10' } = req.query as { page?: string; limit?: string };
-      const result = await ReviewService.getMyReviews(userId, parseInt(page), parseInt(limit));
-      return reply.send({ success: true, ...result });
-    } catch (err: any) {
-      return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-
   static async moderate(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
 
       const { id } = req.params as { id: string };
-      const { status } = req.body as { status: 'visible' | 'hidden' | 'rejected' };
+      const { status } = req.body as { status: 'visible' | 'rejected' };
 
-      if (!status || !['visible', 'hidden', 'rejected'].includes(status)) {
-        return reply.status(400).send({ success: false, message: 'status phải là visible, hidden hoặc rejected' });
+      if (!status || !['visible', 'rejected'].includes(status)) {
+        return reply.status(400).send({ success: false, message: 'status phải là visible hoặc rejected' });
       }
 
       // Lấy tên tài khoản admin đang thao tác
@@ -200,6 +139,9 @@ export class ReviewController {
   static async canReview(req: FastifyRequest, reply: FastifyReply) {
     try {
       const user = (req as any).user;
+      if (!user?.userId) {
+        return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập để đánh giá' });
+      }
       const userId = user.userId || user._id?.toString();
       const { productId } = req.params as { productId: string };
 

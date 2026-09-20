@@ -214,11 +214,29 @@ export class ProductController {
 
   /**
    * POST /api/products/:id/track-view
-   * Increments viewCount on a product (Redis-style, direct MongoDB increment)
+   * Tăng viewCount — validate ObjectId + chống spam: mỗi IP+product chỉ đếm 1 lần/1 giờ.
    */
   static async trackProductView(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
+      if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+        return reply.status(400).send({ success: false, message: 'ID sản phẩm không hợp lệ' });
+      }
+
+      // Chống spam: dedupe theo IP trong 1 giờ (lỗi Redis = đếm bình thường, không chặn UX)
+      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+      const dedupeKey = `view:dedupe:${id}:${ip}`;
+      let shouldCount = true;
+      try {
+        const { redis } = await import('../../config/redis.ts');
+        const set = await redis.set(dedupeKey, '1', 'EX', 3600, 'NX');
+        shouldCount = set === 'OK';
+      } catch (_) {}
+
+      if (!shouldCount) {
+        return reply.status(200).send({ success: true, modified: false, deduped: true });
+      }
+
       const result = await Product.updateOne({ _id: id }, { $inc: { viewCount: 1 } });
       return reply.status(200).send({ success: true, modified: result.modifiedCount > 0 });
     } catch (error: any) {
@@ -259,70 +277,4 @@ export class ProductController {
     }
   }
 
-  /**
-   * GET /api/products/needs-supplement
-   * Trả về danh sách sản phẩm cần bổ sung thông tin
-   */
-  static async getNeedsSupplement(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const scentKeys = ['longevity', 'sillage', 'scentTrail', 'style', 'suitableFor', 'occasion', 'season', 'time'];
-
-      // Draft + active products missing essential info
-      const products = await Product.find({
-        $or: [
-          { status: 'draft' },
-          {
-            status: 'active',
-            $or: [
-              { $or: [{ description: { $exists: false } }, { description: '' }, { description: null }] },
-              { brandId: { $exists: false } },
-              { $expr: { $ne: [{ $size: { $ifNull: ['$categories', []] } }, 1] } },
-              { $expr: { $eq: [{ $size: { $ifNull: ['$variants', []] } }, 0] } },
-              ...scentKeys.map(key => ({ [key]: { $in: ['', null] } })),
-            ],
-          },
-        ],
-      })
-        .select('name image brandId description categories variants status ' + scentKeys.join(' '))
-        .populate('brandId', 'name')
-        .populate('categories', 'name')
-        .sort({ createdAt: -1 })
-        .lean();
-
-      const toDowngrade: string[] = [];
-      const data = products.map((p: any) => {
-        const missing: string[] = [];
-        if (!p.description || p.description.length < 50) missing.push('description');
-        if (!p.variants || p.variants.length === 0) missing.push('variants');
-        if (!p.brandId) missing.push('brand');
-        if (!p.categories || p.categories.length !== 1) missing.push('categories');
-        scentKeys.forEach(function(key) { if (!p[key]) missing.push(key); });
-
-        if (p.status === 'active' && missing.length > 0) {
-          toDowngrade.push(p._id);
-        }
-
-        return {
-          _id: p._id,
-          name: p.name,
-          brand: p.brandId?.name || '',
-          image: p.image || '',
-          description: p.description || '',
-          categories: (p.categories || []).map((c: any) => c.name),
-          missing,
-          missingCount: missing.length,
-          status: p.status,
-        };
-      });
-
-      // Auto-downgrade active→draft nếu thiếu info
-      if (toDowngrade.length > 0) {
-        await Product.updateMany({ _id: { $in: toDowngrade } }, { status: 'draft' });
-      }
-
-      return reply.status(200).send({ success: true, data, total: data.length });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
 }

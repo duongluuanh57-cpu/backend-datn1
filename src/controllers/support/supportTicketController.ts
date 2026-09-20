@@ -1,10 +1,47 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
-import { SupportTicket, TicketStatus } from '../../models/SupportTicket.ts';
+import { SupportTicket, ISupportTicket, TicketStatus } from '../../models/SupportTicket.ts';
 import { SupportTicketReply } from '../../models/SupportTicketReply.ts';
 import { Order } from '../../models/Order.ts';
 import { User } from '../../models/User.ts';
 import { ImageService } from '../../services/ImageService.ts';
+
+// Trạng thái chỉ đi tới: open -> in_progress -> closed (không quay lại)
+const STATUS_RANK: Record<TicketStatus, number> = { open: 0, in_progress: 1, closed: 2 };
+
+function isBackwardStatusMove(from: TicketStatus, to: TicketStatus) {
+  return STATUS_RANK[to] < STATUS_RANK[from];
+}
+
+function applyStatus(ticket: ISupportTicket, status: TicketStatus) {
+  ticket.status = status;
+  ticket.closedAt = status === 'closed' ? new Date() : undefined;
+}
+
+/** Gắn replyCount + lastReply cho danh sách ticket bằng đúng 1 query */
+// ponytail: tải toàn bộ replies của trang để đếm — đổi sang aggregate $facet nếu thread dài
+async function attachReplyMeta<T extends { _id: mongoose.Types.ObjectId }>(tickets: T[]) {
+  const replies = tickets.length
+    ? await SupportTicketReply.find({ ticketId: { $in: tickets.map((t) => t._id) } })
+        .sort({ createdAt: -1 })
+        .populate('senderId', 'fullName username role avatar')
+        .lean()
+    : [];
+
+  const meta = new Map<string, { replyCount: number; lastReply: any }>();
+  for (const r of replies) {
+    const key = String(r.ticketId);
+    const entry = meta.get(key);
+    if (entry) entry.replyCount++;
+    else meta.set(key, { replyCount: 1, lastReply: r });
+  }
+
+  return tickets.map((t) => ({
+    ...t,
+    replyCount: meta.get(String(t._id))?.replyCount ?? 0,
+    lastReply: meta.get(String(t._id))?.lastReply ?? null,
+  }));
+}
 
 /**
  * GET /api/support-tickets/my-tickets
@@ -17,40 +54,19 @@ export async function getMyTickets(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
     }
 
-    const { status, orderId } = req.query as { status?: string; orderId?: string };
+    const { orderId } = req.query as { orderId?: string };
     const query: any = { userId: new mongoose.Types.ObjectId(userId) };
 
-    if (status && status !== 'all' && status !== 'undefined' && status !== 'null') {
-      query.status = status;
-    }
-
-    if (orderId && mongoose.Types.ObjectId.isValid(orderId) && orderId !== 'undefined' && orderId !== 'null') {
+    if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
       query.orderId = new mongoose.Types.ObjectId(orderId);
     }
 
     const tickets = await SupportTicket.find(query)
       .sort({ updatedAt: -1, createdAt: -1 })
-      .populate('orderId', 'totalAmount status shippingInfo createdAt')
+      .populate('orderId', 'totalAmount status')
       .lean();
 
-    // Đính kèm số lượng phản hồi và phản hồi mới nhất cho mỗi ticket
-    const enhancedTickets = await Promise.all(
-      tickets.map(async (ticket: any) => {
-        const replyCount = await SupportTicketReply.countDocuments({ ticketId: ticket._id });
-        const lastReply = await SupportTicketReply.findOne({ ticketId: ticket._id })
-          .sort({ createdAt: -1 })
-          .populate('senderId', 'fullName username role avatar')
-          .lean();
-
-        return {
-          ...ticket,
-          replyCount,
-          lastReply,
-        };
-      })
-    );
-
-    return reply.status(200).send({ success: true, data: enhancedTickets });
+    return reply.status(200).send({ success: true, data: await attachReplyMeta(tickets) });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message || 'Lỗi lấy danh sách ticket' });
   }
@@ -72,7 +88,7 @@ export async function getTicketDetail(req: FastifyRequest, reply: FastifyReply) 
 
     const ticket = await SupportTicket.findById(id)
       .populate('userId', 'fullName username email phoneNumber avatar role')
-      .populate('orderId', 'totalAmount status shippingInfo trackingNumber paymentMethod paymentStatus itemsSubtotal shippingFee createdAt')
+      .populate('orderId', 'totalAmount status')
       .lean();
 
     if (!ticket) {
@@ -89,13 +105,7 @@ export async function getTicketDetail(req: FastifyRequest, reply: FastifyReply) 
       .populate('senderId', 'fullName username email avatar role')
       .lean();
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        ticket,
-        replies,
-      },
-    });
+    return reply.status(200).send({ success: true, data: { ticket, replies } });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message || 'Lỗi lấy thông tin ticket' });
   }
@@ -112,9 +122,8 @@ export async function createTicket(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
     }
 
-    const { orderId, returnId, ticketType, department, title, message, image } = req.body as {
+    const { orderId, ticketType, department, title, message, image } = req.body as {
       orderId?: string;
-      returnId?: string;
       ticketType?: string;
       department?: string;
       title: string;
@@ -145,7 +154,6 @@ export async function createTicket(req: FastifyRequest, reply: FastifyReply) {
     const newTicket = await SupportTicket.create({
       userId: new mongoose.Types.ObjectId(userId),
       orderId: validOrderId,
-      returnId: returnId && mongoose.Types.ObjectId.isValid(returnId) ? new mongoose.Types.ObjectId(returnId) : undefined,
       ticketType: ticketType || 'order_inquiry',
       department: department || 'cskh',
       title: title.trim(),
@@ -159,20 +167,59 @@ export async function createTicket(req: FastifyRequest, reply: FastifyReply) {
       image: image || '',
     });
 
-    const populatedReply = await SupportTicketReply.findById(initialReply._id)
-      .populate('senderId', 'fullName username email avatar role')
-      .lean();
-
     return reply.status(201).send({
       success: true,
       message: 'Gửi yêu cầu hỗ trợ thành công! Đội ngũ tư vấn sẽ phản hồi bạn sớm nhất.',
       data: {
         ticket: newTicket,
-        reply: populatedReply,
+        reply: await initialReply.populate('senderId', 'fullName username email avatar role'),
       },
     });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message || 'Lỗi khi tạo yêu cầu hỗ trợ' });
+  }
+}
+
+/**
+ * POST /api/support-tickets/guest
+ * Khách không đăng nhập gửi liên hệ từ trang Contact -> tạo ticket cho Admin
+ */
+export async function createGuestTicket(req: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { fullName, email, phone, subject, message } = req.body as {
+      fullName?: string;
+      email?: string;
+      phone?: string;
+      subject?: string;
+      message?: string;
+    };
+
+    if (!fullName?.trim() || !email?.trim() || !message?.trim()) {
+      return reply.status(400).send({ success: false, message: 'Vui lòng điền đầy đủ họ tên, email và nội dung' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return reply.status(400).send({ success: false, message: 'Email không hợp lệ' });
+    }
+
+    const newTicket = await SupportTicket.create({
+      title: (subject?.trim() || 'Liên hệ từ trang Contact').slice(0, 200),
+      ticketType: 'other',
+      department: 'general',
+      status: 'open',
+    });
+
+    await SupportTicketReply.create({
+      ticketId: newTicket._id,
+      senderId: null,
+      message: `[Khách vãng lai] ${fullName.trim()} - ${email.trim()}${phone?.trim() ? ` - ${phone.trim()}` : ''}\n\n${message.trim()}`,
+    });
+
+    return reply.status(201).send({
+      success: true,
+      message: 'Gửi liên hệ thành công! Đội ngũ tư vấn sẽ phản hồi bạn sớm nhất.',
+    });
+  } catch (error: any) {
+    return reply.status(500).send({ success: false, message: error.message || 'Lỗi khi gửi yêu cầu hỗ trợ' });
   }
 }
 
@@ -204,8 +251,18 @@ export async function replyTicket(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(404).send({ success: false, message: 'Không tìm thấy yêu cầu hỗ trợ' });
     }
 
-    if (role !== 'ADMIN' && ticket.userId.toString() !== userId) {
+    if (role !== 'ADMIN' && ticket.userId?.toString() !== userId) {
       return reply.status(403).send({ success: false, message: 'Bạn không có quyền gửi tin nhắn trong yêu cầu này' });
+    }
+
+    // Ticket đã đóng -> kết thúc hội thoại, muốn tiếp khách phải mở lại (1 lần) hoặc tạo ticket mới
+    if (ticket.status === 'closed') {
+      return reply.status(400).send({
+        success: false,
+        message: role === 'ADMIN'
+          ? 'Yêu cầu đã kết thúc. Chuyển trạng thái nếu muốn tiếp tục.'
+          : 'Yêu cầu đã kết thúc. Vui lòng mở lại yêu cầu để tiếp tục trao đổi.',
+      });
     }
 
     const newReply = await SupportTicketReply.create({
@@ -215,29 +272,17 @@ export async function replyTicket(req: FastifyRequest, reply: FastifyReply) {
       image: image || '',
     });
 
-    // Nếu khách hàng phản hồi và ticket đang đóng hoặc đã giải quyết -> mở lại ticket
-    if (role !== 'ADMIN') {
-      if (ticket.status === 'closed' || ticket.status === 'resolved') {
-        ticket.status = 'in_progress';
-        ticket.closedAt = undefined;
-      }
-    } else {
-      // Nếu Admin phản hồi và ticket đang là 'open' -> chuyển sang 'in_progress'
-      if (ticket.status === 'open') {
-        ticket.status = 'in_progress';
-      }
+    // Admin phản hồi vào ticket 'open' -> chuyển 'in_progress'
+    if (role === 'ADMIN' && ticket.status === 'open') {
+      applyStatus(ticket, 'in_progress');
+      await ticket.save();
     }
-    await ticket.save();
-
-    const populatedReply = await SupportTicketReply.findById(newReply._id)
-      .populate('senderId', 'fullName username email avatar role')
-      .lean();
 
     return reply.status(201).send({
       success: true,
       message: 'Gửi tin nhắn thành công',
       data: {
-        reply: populatedReply,
+        reply: await newReply.populate('senderId', 'fullName username email avatar role'),
         ticketStatus: ticket.status,
       },
     });
@@ -248,7 +293,7 @@ export async function replyTicket(req: FastifyRequest, reply: FastifyReply) {
 
 /**
  * PATCH /api/support-tickets/:id/status
- * Cập nhật trạng thái ticket (Khách hàng đóng ticket hoặc Admin đổi trạng thái)
+ * Cập nhật trạng thái ticket (Khách hàng đóng/mở lại ticket hoặc Admin đổi trạng thái)
  */
 export async function updateTicketStatus(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -261,7 +306,7 @@ export async function updateTicketStatus(req: FastifyRequest, reply: FastifyRepl
       return reply.status(400).send({ success: false, message: 'Mã ticket không hợp lệ' });
     }
 
-    const validStatuses: TicketStatus[] = ['open', 'in_progress', 'resolved', 'closed'];
+    const validStatuses: TicketStatus[] = ['open', 'in_progress', 'closed'];
     if (!validStatuses.includes(status)) {
       return reply.status(400).send({ success: false, message: 'Trạng thái không hợp lệ' });
     }
@@ -272,22 +317,28 @@ export async function updateTicketStatus(req: FastifyRequest, reply: FastifyRepl
     }
 
     if (role !== 'ADMIN') {
-      if (ticket.userId.toString() !== userId) {
+      if (ticket.userId?.toString() !== userId) {
         return reply.status(403).send({ success: false, message: 'Không có quyền cập nhật yêu cầu này' });
       }
-      // Khách hàng chỉ được phép đóng hoặc đánh dấu giải quyết
-      if (status !== 'closed' && status !== 'resolved') {
+      if (ticket.status === 'closed') {
+        // Ticket đã kết thúc -> khách chỉ được mở lại đúng 1 lần
+        if (ticket.reopened || status !== 'in_progress') {
+          return reply.status(400).send({
+            success: false,
+            message: ticket.reopened
+              ? 'Yêu cầu chỉ được mở lại 1 lần. Vui lòng tạo yêu cầu mới.'
+              : 'Khách hàng chỉ có thể mở lại yêu cầu hỗ trợ',
+          });
+        }
+        ticket.reopened = true;
+      } else if (status !== 'closed') {
         return reply.status(400).send({ success: false, message: 'Khách hàng chỉ có thể đóng yêu cầu hỗ trợ' });
       }
+    } else if (isBackwardStatusMove(ticket.status, status)) {
+      return reply.status(400).send({ success: false, message: 'Trạng thái chỉ chuyển theo chiều tiến, không quay lại' });
     }
 
-    ticket.status = status;
-    if (status === 'closed' || status === 'resolved') {
-      ticket.closedAt = new Date();
-    } else {
-      ticket.closedAt = undefined;
-    }
-
+    applyStatus(ticket, status);
     await ticket.save();
 
     return reply.status(200).send({
@@ -306,19 +357,11 @@ export async function updateTicketStatus(req: FastifyRequest, reply: FastifyRepl
  */
 export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      department,
-      ticketType,
-      search,
-    } = req.query as {
+    const { page = 1, limit = 20, status, department, search } = req.query as {
       page?: number | string;
       limit?: number | string;
       status?: string;
       department?: string;
-      ticketType?: string;
       search?: string;
     };
 
@@ -327,22 +370,12 @@ export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyRepl
     const skip = (p - 1) * l;
 
     const filter: any = {};
+    if (status && status !== 'all') filter.status = status;
+    if (department && department !== 'all') filter.department = department;
 
-    if (status && status !== 'all' && status !== 'undefined' && status !== 'null') {
-      filter.status = status;
-    }
-
-    if (department && department !== 'all' && department !== 'undefined' && department !== 'null') {
-      filter.department = department;
-    }
-
-    if (ticketType && ticketType !== 'all' && ticketType !== 'undefined' && ticketType !== 'null') {
-      filter.ticketType = ticketType;
-    }
-
-    if (search && search.trim() && search.trim() !== 'undefined' && search.trim() !== 'null') {
-      const searchRegex = new RegExp(search.trim(), 'i');
-      // Tìm user theo username/fullName/email
+    const trimmed = search?.trim();
+    if (trimmed) {
+      const searchRegex = new RegExp(trimmed, 'i');
       const matchedUsers = await User.find({
         $or: [
           { fullName: searchRegex },
@@ -350,18 +383,14 @@ export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyRepl
           { email: searchRegex },
           { phoneNumber: searchRegex },
         ],
-      }).select('_id').lean();
+      })
+        .select('_id')
+        .lean();
 
-      const matchedUserIds = matchedUsers.map((u) => u._id);
+      filter.$or = [{ title: searchRegex }, { userId: { $in: matchedUsers.map((u) => u._id) } }];
 
-      filter.$or = [
-        { title: searchRegex },
-        { userId: { $in: matchedUserIds } },
-      ];
-
-      if (mongoose.Types.ObjectId.isValid(search.trim())) {
-        filter.$or.push({ _id: new mongoose.Types.ObjectId(search.trim()) });
-        filter.$or.push({ orderId: new mongoose.Types.ObjectId(search.trim()) });
+      if (mongoose.Types.ObjectId.isValid(trimmed)) {
+        filter.$or.push({ _id: new mongoose.Types.ObjectId(trimmed) }, { orderId: new mongoose.Types.ObjectId(trimmed) });
       }
     }
 
@@ -371,34 +400,13 @@ export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyRepl
       .skip(skip)
       .limit(l)
       .populate('userId', 'fullName username email phoneNumber avatar role')
-      .populate('orderId', 'totalAmount status shippingInfo createdAt')
+      .populate('orderId', 'totalAmount status')
       .lean();
-
-    const enhancedTickets = await Promise.all(
-      tickets.map(async (t: any) => {
-        const replyCount = await SupportTicketReply.countDocuments({ ticketId: t._id });
-        const lastReply = await SupportTicketReply.findOne({ ticketId: t._id })
-          .sort({ createdAt: -1 })
-          .populate('senderId', 'fullName username role avatar')
-          .lean();
-
-        return {
-          ...t,
-          replyCount,
-          lastReply,
-        };
-      })
-    );
 
     return reply.status(200).send({
       success: true,
-      data: enhancedTickets,
-      pagination: {
-        page: p,
-        limit: l,
-        total,
-        totalPages: Math.ceil(total / l),
-      },
+      data: await attachReplyMeta(tickets),
+      pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) },
     });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message || 'Lỗi lấy danh sách ticket admin' });
@@ -407,16 +415,12 @@ export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyRepl
 
 /**
  * PATCH /api/support-tickets/admin/:id
- * Admin: Cập nhật thông tin / phân công phòng ban / trạng thái ticket
+ * Admin: Cập nhật trạng thái / phân công phòng ban ticket
  */
 export async function adminUpdateTicket(req: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = req.params as { id: string };
-    const { status, department, ticketType } = req.body as {
-      status?: TicketStatus;
-      department?: string;
-      ticketType?: string;
-    };
+    const { status, department } = req.body as { status?: TicketStatus; department?: string };
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return reply.status(400).send({ success: false, message: 'Mã ticket không hợp lệ' });
@@ -428,17 +432,12 @@ export async function adminUpdateTicket(req: FastifyRequest, reply: FastifyReply
     }
 
     if (status) {
-      ticket.status = status;
-      if (status === 'closed' || status === 'resolved') {
-        ticket.closedAt = new Date();
-      } else {
-        ticket.closedAt = undefined;
+      if (isBackwardStatusMove(ticket.status, status)) {
+        return reply.status(400).send({ success: false, message: 'Trạng thái chỉ chuyển theo chiều tiến, không quay lại' });
       }
+      applyStatus(ticket, status);
     }
-
     if (department) ticket.department = department;
-    if (ticketType) ticket.ticketType = ticketType;
-
     await ticket.save();
 
     return reply.status(200).send({
@@ -474,4 +473,3 @@ export async function uploadTicketImage(req: FastifyRequest, reply: FastifyReply
     return reply.status(500).send({ success: false, message: error.message || 'Lỗi khi upload ảnh' });
   }
 }
-

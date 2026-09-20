@@ -3,7 +3,7 @@ import { ProductService } from '../services/ProductService.ts';
 import { BrandService } from '../services/BrandService.ts';
 import { FlashSaleService } from '../services/FlashSaleService.ts';
 import { safeRedisGet, safeRedisSet } from '../config/redis.ts';
-import { verifyAccessToken } from '../utils/auth.ts';
+import { verifyAccessToken, ACCESS_COOKIE } from '../utils/auth.ts';
 import { Favorite } from '../models/Favorite.ts';
 import Cart from '../models/Cart.ts';
 import CartItem from '../models/CartItem.ts';
@@ -411,6 +411,8 @@ const resolvers = {
       status?: string;
     }) => {
       try {
+        // productsAll là query công khai: chỉ bao giờ trả hàng 'active',
+        // không nhận status từ client (tránh lộ draft/archived như REST GET /api/products trước đây)
         const result = await ProductService.getAllProducts({
           page: args.page || 1,
           limit: args.limit || 20,
@@ -420,7 +422,7 @@ const resolvers = {
           tag: args.tag,
           category: args.category,
           sortBy: args.sortBy,
-          status: args.status || 'active',
+          status: 'active',
         });
         return {
           items: (result.items || []).map(mapProduct),
@@ -479,14 +481,19 @@ const resolvers = {
       };
     },
 
-    cartAndFavorites: async (_: any, __: any, context: { authorization?: string }) => {
-      // Verify JWT từ context — nếu không có token thì trả về empty (không throw)
-      const authHeader = context?.authorization;
-      if (!authHeader?.startsWith('Bearer ')) return EMPTY_CART_AND_FAVORITES;
+    cartAndFavorites: async (_: any, __: any, context: { authorization?: string; cookie?: any }) => {
+      // Token từ httpOnly cookie (ưu tiên) hoặc Bearer header — không có thì trả empty (không throw)
+      let token: string | undefined;
+      if (context?.cookie?.[ACCESS_COOKIE]) {
+        token = context.cookie[ACCESS_COOKIE];
+      } else if (context?.authorization?.startsWith('Bearer ')) {
+        token = context.authorization.substring(7);
+      }
+      if (!token) return EMPTY_CART_AND_FAVORITES;
 
       let userId: string;
       try {
-        const decoded = verifyAccessToken(authHeader.substring(7));
+        const decoded = verifyAccessToken(token);
         userId = decoded.userId;
       } catch {
         return EMPTY_CART_AND_FAVORITES;

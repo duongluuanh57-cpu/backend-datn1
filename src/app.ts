@@ -49,15 +49,18 @@ import { AuthPageController } from './controllers/auth/authPageController.ts';
 
 import rawBody from 'fastify-raw-body';
 import multipart from '@fastify/multipart';
+import cookie from '@fastify/cookie';
 import { register } from './config/metrics.ts';
 import { graphqlRoute } from './graphql/route.ts';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
+import { rateLimitKey, rateLimitMax } from './utils/rateLimit.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
     bodyLimit: 10485760,
+    trustProxy: true, // chạy sau proxy (Render) — request.ip mới là IP client thật
     logger: process.env.NODE_ENV === 'production'
       ? { level: process.env.LOG_LEVEL || 'info' }
       : {
@@ -77,6 +80,7 @@ export function buildApp(): FastifyInstance {
   });
 
   app.register(corePlugin);
+  app.register(cookie); // parse request.cookies — phục vụ session httpOnly cookie
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -123,22 +127,12 @@ export function buildApp(): FastifyInstance {
 
   // Global Rate Limiting
   app.register(rateLimit, {
-    max: (request: any) => {
-      if (request.method === 'GET' || request.method === 'HEAD') return 1000;
-      const user = (request as any).user;
-      if (user?.role === 'ADMIN') return 500;
-      if (user?.role === 'USER') return 600;
-      return 120;
-    },
+    max: rateLimitMax,
     timeWindow: '1 minute',
-    keyGenerator: (request) => {
-      return (request as any).user?._id?.toString() || request.ip;
-    },
+    keyGenerator: rateLimitKey,
     allowList: (request: any) => {
       if (request.url?.startsWith('/api/favorites')) return true;
       if (request.url?.startsWith('/api/cart')) return true;
-      if (request.url === '/api/auth/login-page' || request.url === '/api/auth/register-page') return true;
-      if (request.url === '/api/auth/login' || request.url === '/api/auth/register') return true;
       return false;
     },
   });
@@ -149,7 +143,6 @@ export function buildApp(): FastifyInstance {
 
   // Redirect auth helper routes to frontend
   app.get('/login', AuthPageController.getLoginPage);
-  app.get('/register', AuthPageController.getRegisterPage);
 
   app.register(aiRoutes, { prefix: '/api/ai' });
   app.register(productRoutes, { prefix: '/api/products' });

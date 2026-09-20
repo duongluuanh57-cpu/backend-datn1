@@ -18,8 +18,8 @@ export interface ICartItem extends Document {
 const CartItemSchema = new Schema<ICartItem>(
   {
     cartId: { type: Schema.Types.ObjectId, ref: 'Cart', required: true },
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    userId: { type: Schema.Types.ObjectId, required: true },
+    productId: { type: Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
     image: { type: String },
     brand: { type: String },

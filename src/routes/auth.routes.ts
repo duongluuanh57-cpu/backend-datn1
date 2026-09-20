@@ -4,12 +4,13 @@ import { z } from 'zod';
 import rateLimit from '@fastify/rate-limit';
 import { AuthSessionController } from '../controllers/auth/authSessionController.ts';
 import { AuthProfileController } from '../controllers/auth/authProfileController.ts';
-import { AuthPageController } from '../controllers/auth/authPageController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '../types/user.types.ts';
 
 export async function authRoutes(app: FastifyInstance) {
-  // Rate limit riêng cho login/register — 50 req/phút mỗi IP, không phân biệt role
+  // Rate limit cho POST /login, /register — 50 req/phút mỗi IP.
+  // request.url luôn là full path (/api/auth/login) kể cả trong plugin có prefix,
+  // nên bắt bằng suffix thay vì so sánh tuyệt đối.
   await app.register(rateLimit, {
     max: 50,
     timeWindow: '1 minute',
@@ -17,11 +18,11 @@ export async function authRoutes(app: FastifyInstance) {
       return request.ip;
     },
     allowList: (request: any) => {
-      // Chỉ áp dụng cho login/register (API + form page actions)
-      const url = request.url || '';
-      return url !== '/login' && url !== '/register' && url !== '/login-page' && url !== '/register-page';
+      if (request.method !== 'POST') return true;
+      return !/\/(login|register)$/.test(request.url || '');
     },
     errorResponseBuilder: () => ({
+      statusCode: 429, // @fastify/rate-limit v10 throw giá trị này — thiếu statusCode sẽ bị map thành 500
       success: false,
       message: 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau',
     }),
@@ -52,6 +53,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
   }, AuthSessionController.logout);
 
+  // Xác minh mật khẩu trước khi cho sửa thông tin nhạy cảm — chỉ so sánh, không ghi gì
+  typedApp.post('/verify-password', {
+    preHandler: authMiddleware,
+    schema: {
+      body: z.object({ password: z.string().min(1, 'Vui lòng nhập mật khẩu') })
+    }
+  }, AuthProfileController.verifyPassword);
+
   // Đổi mật khẩu cho user đang đăng nhập
   typedApp.post('/change-password', {
     preHandler: authMiddleware,
@@ -75,6 +84,7 @@ export async function authRoutes(app: FastifyInstance) {
         fullName: z.string().max(100).optional(),
         phoneNumber: z.string().max(20).optional(),
         gender: z.enum(['MALE', 'FEMALE', 'OTHER', '']).optional(),
+        dateOfBirth: z.string().max(10).optional(),
       })
     }
   }, AuthProfileController.updateProfile);
@@ -83,17 +93,4 @@ export async function authRoutes(app: FastifyInstance) {
   typedApp.post('/upload-avatar', {
     preHandler: authMiddleware,
   }, AuthProfileController.uploadAvatar);
-
-  // Set admin_token cookie từ frontend (giải quyết cross-origin cookie issue)
-  typedApp.get('/set-admin-session', {
-    schema: {
-      querystring: z.object({ token: z.string().min(1) })
-    }
-  }, AuthSessionController.setAdminSession);
-
-  // ── HTML Pages (Login/Register forms) ──
-  typedApp.get('/login', AuthPageController.getLoginPage);
-  typedApp.get('/register', AuthPageController.getRegisterPage);
-  typedApp.post('/login-page', AuthPageController.loginPageAction);
-  typedApp.post('/register-page', AuthPageController.registerPageAction);
 }

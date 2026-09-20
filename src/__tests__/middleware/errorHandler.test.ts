@@ -40,6 +40,7 @@ describe("errorHandler", () => {
     errorHandler(error, req, reply);
     expect(sentStatus).toBe(400);
     expect(sentBody.success).toBe(false);
+    expect(sentBody.message).toBe("Invalid field");
   });
 
   it("should return 429 with specific message for rate-limit", () => {

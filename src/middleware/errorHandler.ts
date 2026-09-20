@@ -21,7 +21,7 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
   if (error.validation) {
     return reply.status(400).send({
       success: false,
-      message: 'Lỗi xác thực dữ liệu (Validation Failed)',
+      message: error.validation.map((v: any) => v.message).filter(Boolean).join('; ') || 'Lỗi xác thực dữ liệu (Validation Failed)',
       errors: error.validation,
     });
   }

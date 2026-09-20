@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
-export type GameType = 'wheel' | 'scratch' | 'dice' | 'quiz';
-export type GameStatus = 'playing' | 'won' | 'lost';
+export type GameType = 'wheel';
+export type GameStatus = 'won' | 'lost';
 
 export interface IMiniGameSession extends Document {
   userId?: mongoose.Types.ObjectId | string;
@@ -10,6 +10,7 @@ export interface IMiniGameSession extends Document {
     voucherCode: string;
     discountType: 'percentage' | 'fixed';
     discountAmount: number;
+    label?: string;
   };
   playedAt: Date;
   expiresAt: Date;
@@ -23,17 +24,18 @@ const MiniGameSessionSchema = new Schema<IMiniGameSession>(
     gameType: {
       type: String,
       required: true,
-      enum: ['wheel', 'scratch', 'dice', 'quiz'],
+      enum: ['wheel'],
     },
     status: {
       type: String,
-      enum: ['playing', 'won', 'lost'],
-      default: 'playing',
+      enum: ['won', 'lost'],
+      required: true,
     },
     reward: {
       voucherCode: { type: String },
       discountType: { type: String, enum: ['percentage', 'fixed'] },
       discountAmount: { type: Number },
+      label: { type: String },
     },
     playedAt: { type: Date, default: Date.now },
     expiresAt: { type: Date },

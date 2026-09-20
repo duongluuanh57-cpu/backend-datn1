@@ -93,7 +93,7 @@ export class DashboardStatsController {
         Order.find()
           .sort({ createdAt: -1 })
           .limit(10)
-          .select('_id shippingInfo customerName userId totalAmount status createdAt')
+          .select('_id shippingInfo userId totalAmount status createdAt')
           .populate({ path: 'userId', select: 'username email fullName' })
           .lean(),
 

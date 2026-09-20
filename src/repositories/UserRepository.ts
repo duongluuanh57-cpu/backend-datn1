@@ -1,6 +1,5 @@
 import { User } from '../models/User.ts';
 import type { IUser } from '../models/User.ts';
-import { INACTIVE_AFTER_MS } from '../utils/accountStatus.ts';
 import { memberTierRange } from '../utils/memberTier.ts';
 
 export class UserRepository {
@@ -25,12 +24,16 @@ export class UserRepository {
     return User.findById(id).lean();
   }
 
-  static async update(id: string, data: Partial<IUser>): Promise<IUser | null> {
-    return User.findByIdAndUpdate(id, data, { new: true });
+  /**
+   * Lay user kem cac truong bao mat mac dinh bi select:false
+   * (passwordChangedAt — dung de vo hieu hoa refresh token cu khi doi mat khau).
+   */
+  static async findByIdWithSecurity(id: string): Promise<IUser | null> {
+    return User.findById(id).select('+passwordChangedAt').lean() as Promise<IUser | null>;
   }
 
-  static async findAll(): Promise<IUser[]> {
-    return User.find({}).sort({ createdAt: -1 }).lean();
+  static async update(id: string, data: Partial<IUser>): Promise<IUser | null> {
+    return User.findByIdAndUpdate(id, data, { new: true });
   }
 
   static async findPaginated(
@@ -48,34 +51,13 @@ export class UserRepository {
       ];
     }
 
-    if (role && role !== 'ALL') {
-      const roles = role.split(',').filter(Boolean);
-      if (roles.length > 0) {
-        match.role = roles.length > 1 ? { $in: roles } : roles[0];
-      }
+    if (role) match.role = role;
+
+    if (status) {
+      match.status = status;
     }
 
-    if (status && status !== 'ALL') {
-      const statuses = status.split(',').filter(Boolean);
-      if (statuses.length > 0) {
-        const INACTIVE_THRESHOLD = new Date(Date.now() - INACTIVE_AFTER_MS);
-        // "Không hoạt động": status inactive hoặc không đăng nhập quá lâu
-        const conditions: any[] = statuses.map((s) =>
-          s === 'inactive'
-            ? {
-                $or: [
-                  { status: 'inactive' },
-                  { status: 'active', lastLoginAt: { $lt: INACTIVE_THRESHOLD } },
-                  { status: 'active', lastLoginAt: { $exists: false }, createdAt: { $lt: INACTIVE_THRESHOLD } },
-                ],
-              }
-            : { status: s }
-        );
-        match.$and = conditions;
-      }
-    }
-
-    const tierRange = memberTier && memberTier !== 'ALL' ? memberTierRange(memberTier) : null;
+    const tierRange = memberTier ? memberTierRange(memberTier) : null;
     const needsSpent = Boolean(tierRange) || sortBy === 'spentDesc' || sortBy === 'spentAsc';
 
     // Pipeline lọc chung (kể cả lọc theo hạng thành viên tính real-time từ tổng chi tiêu)
@@ -147,10 +129,5 @@ export class UserRepository {
     ]);
 
     return { items: users, total, page, totalPages: Math.ceil(total / limit) };
-  }
-
-  static async delete(id: string): Promise<boolean> {
-    const result = await User.deleteOne({ _id: id });
-    return result.deletedCount > 0;
   }
 }

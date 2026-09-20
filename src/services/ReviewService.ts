@@ -24,7 +24,9 @@ export class ReviewService {
 
     const [deliveredOrders, reviewedCount] = await Promise.all([
       Order.find({ userId: uid, status: 'delivered' }).lean(),
-      Review.countDocuments({ userId: uid, productId: pid }),
+      // Chỉ đếm review CÒN HIỆU LỰC (visible/pending). Review bị từ chối không mất lượt —
+      // user được viết lại, khớp thông điệp lỗi sẵn có "mua thêm để đánh giá tiếp".
+      Review.countDocuments({ userId: uid, productId: pid, status: { $in: ['visible', 'pending'] } }),
     ]);
 
     const orderIds = deliveredOrders.map((o) => o._id);
@@ -179,10 +181,37 @@ export class ReviewService {
       mergedComment = mergedComment ? `${mergedComment}\n\n${data.overallComment}` : data.overallComment;
     }
 
+    // 1 lượt mua = 1 review: ghép review mới với 1 OrderItem của lượt mua chưa có review
+    let orderItemId: mongoose.Types.ObjectId | undefined = data.orderItemId
+      ? new mongoose.Types.ObjectId(data.orderItemId)
+      : undefined;
+    if (!orderItemId) {
+      const deliveredOrderIds = (
+        await Order.find({ userId: new mongoose.Types.ObjectId(userId), status: 'delivered' })
+          .select('_id')
+          .lean()
+      ).map((o: any) => o._id);
+      const usedItemIds = (
+        await Review.find({ userId: new mongoose.Types.ObjectId(userId), productId: new mongoose.Types.ObjectId(data.productId) })
+          .select('orderItemId')
+          .lean()
+      )
+        .map((r: any) => r.orderItemId?.toString())
+        .filter(Boolean);
+      const freeItem = await OrderItem.findOne({
+        orderId: { $in: deliveredOrderIds },
+        productId: new mongoose.Types.ObjectId(data.productId),
+        _id: { $nin: usedItemIds },
+      })
+        .select('_id')
+        .lean();
+      orderItemId = (freeItem as any)?._id || undefined;
+    }
+
     const review = await Review.create({
       userId: new mongoose.Types.ObjectId(userId),
       productId: new mongoose.Types.ObjectId(data.productId),
-      orderItemId: data.orderItemId ? new mongoose.Types.ObjectId(data.orderItemId) : undefined,
+      orderItemId,
       rating: finalRating,
       comment: mergedComment,
       overallComment: data.overallComment || '',
@@ -221,83 +250,7 @@ export class ReviewService {
     return review;
   }
 
-  static async update(
-    userId: string,
-    reviewId: string,
-    data: {
-      rating?: number;
-      comment?: string;
-      overallComment?: string;
-      images?: string[];
-      aspects?: { name: AspectName; rating: number; comment?: string }[];
-      isAnonymous?: boolean;
-    }
-  ) {
-    const review = await Review.findOne({ _id: reviewId, userId: new mongoose.Types.ObjectId(userId) });
-    if (!review) {
-      throw new Error('Không tìm thấy review hoặc bạn không có quyền sửa');
-    }
-
-    if (data.aspects) {
-      const aspects: IReviewAspect[] = data.aspects.map((a) => ({
-        name: a.name,
-        rating: a.rating,
-        comment: a.comment || '',
-      }));
-      for (const a of aspects) {
-        if (!VALID_ASPECTS.includes(a.name)) {
-          throw new Error(`Khía cạnh "${a.name}" không hợp lệ`);
-        }
-      }
-      review.aspects = aspects;
-      review.rating = computeAvgRating(aspects);
-      const aspectComments = aspects.map((a) => a.comment).filter(Boolean).join('\n');
-      review.comment = data.overallComment
-        ? `${aspectComments}\n\n${data.overallComment}`
-        : aspectComments;
-    }
-    if (data.rating !== undefined) review.rating = data.rating;
-    if (data.comment !== undefined) review.comment = data.comment;
-    if (data.overallComment !== undefined) review.overallComment = data.overallComment;
-    if (data.images !== undefined) review.images = data.images;
-    if (data.isAnonymous !== undefined) review.isAnonymous = data.isAnonymous;
-    await review.save();
-
-    await ReviewService.updateProductStats(review.productId.toString());
-    return review;
-  }
-
-  static async delete(userId: string, reviewId: string) {
-    const review = await Review.findOneAndDelete({
-      _id: reviewId,
-      userId: new mongoose.Types.ObjectId(userId),
-    });
-    if (!review) {
-      throw new Error('Không tìm thấy review hoặc bạn không có quyền xoá');
-    }
-
-    await ReviewService.updateProductStats(review.productId.toString());
-    return review;
-  }
-
-  static async getMyReviews(userId: string, page = 1, limit = 10) {
-    const query = { userId: new mongoose.Types.ObjectId(userId) };
-    const skip = (page - 1) * limit;
-
-    const [reviews, total] = await Promise.all([
-      Review.find(query)
-        .populate('productId', 'name image')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Review.countDocuments(query),
-    ]);
-
-    return { reviews, total, page, totalPages: Math.ceil(total / limit) };
-  }
-
-  static async moderate(reviewId: string, status: 'visible' | 'hidden' | 'rejected', adminName?: string) {
+  static async moderate(reviewId: string, status: 'visible' | 'rejected', adminName?: string) {
     const review = await Review.findById(reviewId);
     if (!review) {
       throw new Error('Không tìm thấy review');
@@ -326,7 +279,7 @@ export class ReviewService {
 
   static async getAll(page = 1, limit = 20, status?: string, search?: string, rating?: number) {
     const query: Record<string, any> = {};
-    if (status && ['visible', 'hidden', 'pending', 'rejected'].includes(status)) {
+    if (status && ['visible', 'pending', 'rejected'].includes(status)) {
       query.status = status;
     }
     if (rating && rating >= 1 && rating <= 5) {

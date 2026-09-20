@@ -1,13 +1,9 @@
-import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
-import { ProductVariant } from '../../models/ProductVariant.ts';
 import { Product } from '../../models/Product.ts';
 import { ProductImage } from '../../models/ProductImage.ts';
-import { requireAdmin } from '../../utils/adminAuth.ts';
-
-export { requireAdmin } from '../../utils/adminAuth.ts';
 
 /**
+ * Bổ sung ảnh thương hiệu còn thiếu vào snapshot item của đơn hàng.
  */
 export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
   if (!items || items.length === 0) return;
@@ -17,11 +13,10 @@ export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
 
   if (productIds.length === 0) return;
 
-  const [variants, productData, productImages] = await Promise.all([
-    ProductVariant.find({ productId: { $in: productIds } }).lean(),
+  const [productData, productImages] = await Promise.all([
     Product.find(
       { _id: { $in: productIds } },
-      { _id: 1, reviewsCount: 1, image: 1, brandId: 1 }
+      { _id: 1, image: 1, brandId: 1 }
     ).populate('brandId', 'name logo').lean(),
     ProductImage.find({ productId: { $in: productIds } }).select('url productId').sort({ createdAt: 1 }).lean(),
   ]);
@@ -34,24 +29,15 @@ export async function enhanceItemsWithProductData(items: any[]): Promise<void> {
 
   for (const item of items) {
     const pid = item.productId?.toString();
-    item.variants = variants.filter((v: any) => v.productId?.toString() === pid);
     const prod = productData.find((p: any) => p._id.toString() === pid);
     const brandLogo = (prod?.brandId as any)?.logo;
     const resolvedProdImage = imgMap.get(pid || '') || prod?.image || null;
-    item.productReviewsCount = prod?.reviewsCount || 0;
     let finalImg = item.image || resolvedProdImage;
     if (brandLogo && finalImg === brandLogo) {
       finalImg = imgMap.get(pid || '') || null;
     }
     item.productImage = finalImg;
   }
-}
-
-/**
- * Recalculate totalAmount from items
- */
-export function recalculateTotalAmount(items: any[]): number {
-  return items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
 }
 
 /**
@@ -84,25 +70,6 @@ export function populateOrderTotals(order: any, items: any[]): void {
 }
 
 /**
- * Build date filter from query params
- */
-export function buildDateFilter(startDate?: string, endDate?: string): Record<string, Date> | undefined {
-  if (!startDate && !endDate) return undefined;
-  const dateQuery: any = {};
-  if (startDate) {
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-    dateQuery.$gte = start;
-  }
-  if (endDate) {
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    dateQuery.$lte = end;
-  }
-  return dateQuery;
-}
-
-/**
  * Tự động hủy các đơn hàng VNPay chưa thanh toán quá 15 phút
  */
 export async function autoCancelExpiredVNPayOrders(userId?: string): Promise<void> {
@@ -117,7 +84,16 @@ export async function autoCancelExpiredVNPayOrders(userId?: string): Promise<voi
   if (userId) {
     query.userId = new mongoose.Types.ObjectId(userId);
   }
+  // Lấy id các đơn bị hủy để hoàn kho + voucher (updateMany không trả ids)
+  const expired = await Order.find(query).select('_id').lean();
   await Order.updateMany(query, { $set: { status: 'cancelled' } });
+
+  if (expired.length > 0) {
+    const { StockService } = await import('../../services/cart/StockService.ts');
+    for (const o of expired) {
+      await StockService.restoreOrderResources(o._id);
+    }
+  }
 }
 
 /**

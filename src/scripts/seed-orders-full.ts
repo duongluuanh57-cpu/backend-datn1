@@ -367,7 +367,6 @@ async function runSeed() {
       paymentMethod: payMethod,
       paymentStatus,
       soldCounted: isSold,
-      cancelRequested: status === 'cancelled',
       cancelReason: status === 'cancelled' ? getRandomItem(cancelReasons) : undefined,
       deliveredAt,
       cancelledAt,

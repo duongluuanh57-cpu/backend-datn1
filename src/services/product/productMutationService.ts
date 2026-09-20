@@ -27,6 +27,24 @@ export class ProductMutationService {
     if (data.reviewsCount !== undefined) updateData.reviewsCount = data.reviewsCount;
     if (data.status !== undefined) updateData.status = data.status;
 
+    // Discount: admin đặt tay luôn thắng (gỡ cờ autoDiscount để lifecycle không đụng vào)
+    if (data.discountPercentage !== undefined) {
+      const pct = Math.max(0, Math.min(100, Number(data.discountPercentage) || 0));
+      updateData.discountPercentage = pct;
+      if (pct > 0) updateData.autoDiscount = false;
+    }
+    // Cửa sổ khuyến mãi tùy chọn: chỉ ghi khi request có gửi field này
+    if (data.discountStartDate !== undefined) {
+      updateData.discountStartDate = data.discountStartDate ? new Date(data.discountStartDate) : null;
+    }
+    if (data.discountEndDate !== undefined) {
+      updateData.discountEndDate = data.discountEndDate ? new Date(data.discountEndDate) : null;
+    }
+    if (updateData.discountPercentage === 0) {
+      updateData.discountStartDate = null;
+      updateData.discountEndDate = null;
+    }
+
     // Specifications sub-document update
     const specFields = ['longevity', 'sillage', 'scentTrail', 'style', 'suitableFor', 'occasion', 'season', 'time'];
     for (const key of specFields) {
@@ -142,6 +160,9 @@ export class ProductMutationService {
             url
           })));
         }
+        // Giữ ảnh chính trên Product đồng bộ với collection ảnh
+        const mainImage = data.image || (data.images && data.images[0]) || '';
+        await Product.updateOne({ _id: id }, { $set: { image: mainImage } });
       }
 
       // Sync Variants in ProductVariant collection
@@ -160,11 +181,6 @@ export class ProductMutationService {
           }
         }
 
-        try {
-          const fs = require('fs');
-          fs.appendFileSync('variants_debug.log', `[Variants Debug] productId=${id} has50ml=${has50ml} defaultIndex=${defaultIndex}\nInput variants: ${JSON.stringify(data.variants)}\n\n`);
-        } catch (e) {}
-
         const variantsToInsert = data.variants.map((v: any, index: number) => {
           const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
           const variantType = v.type === 'decant' || v.type === 'fullbox'
@@ -175,8 +191,8 @@ export class ProductMutationService {
             productId: id,
             size: v.size || '50ml',
             type: variantType,
-            price: Number(v.price) || 0,
-            quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+            price: Math.max(0, Number(v.price) || 0),
+            quantityInStock: Math.max(0, v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0)),
             sku: v.sku || '',
             isDefault: index === defaultIndex,
             sortOrder: index,
@@ -225,11 +241,8 @@ export class ProductMutationService {
         }
       }
 
-      // Xóa các cache liên quan sau khi cập nhật
-      await clearProductCache();
-      try {
-        await redis.del(`products:${id}`);
-      } catch (_) {}
+      // Xóa các cache liên quan sau khi cập nhật (kèm cache chi tiết của chính sản phẩm này)
+      await clearProductCache(id);
     }
 
     return updatedProduct;
@@ -274,10 +287,7 @@ export class ProductMutationService {
       );
       await Promise.all([...imgPromises, ...folderPromises]);
 
-      await clearProductCache();
-      try {
-        await redis.del(`products:${id}`);
-      } catch (_) {}
+      await clearProductCache(id);
     }
     return result.deletedCount > 0;
   }
@@ -370,7 +380,9 @@ export class ProductMutationService {
     if (data.discountPercentage !== undefined) productData.discountPercentage = data.discountPercentage;
     if (data.image !== undefined) productData.image = data.image;
     if (data.status !== undefined) productData.status = data.status;
-    productData.isNewArrival = true;
+    // Hàng Limited là dòng độc quyền riêng, không xếp vào "Sản phẩm mới"
+    const isLimitedTag = typeof data.tag === 'string' && data.tag.toLowerCase().includes('limited');
+    productData.isNewArrival = !isLimitedTag;
 
     productData.specifications = {
       longevity: data.longevity || data.specifications?.longevity || '',
@@ -534,8 +546,8 @@ export class ProductMutationService {
           productId: saved._id,
           size: v.size || '50ml',
           type: variantType,
-          price: Number(v.price) || 0,
-          quantityInStock: v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0),
+          price: Math.max(0, Number(v.price) || 0),
+          quantityInStock: Math.max(0, v.quantityInStock !== undefined ? Number(v.quantityInStock) : (v.quantity !== undefined ? Number(v.quantity) : 0)),
           sku: v.sku || '',
           isDefault: index === defaultIndex,
           sortOrder: index,
@@ -601,7 +613,8 @@ export class ProductMutationService {
 
     const { _id, createdAt, updatedAt, __v, name, slug, ...rest } = original;
     const duplicatedName = `${name} (Copy)`;
-    const slugName = `${slug}-copy-${Date.now().toString().slice(-4)}`;
+    const slugBase = slug || slugify(name || 'san-pham');
+    const slugName = `${slugBase}-copy-${Date.now().toString().slice(-4)}`;
 
     const newProduct = new Product({
       ...rest,
@@ -657,8 +670,10 @@ export async function clearProductCache(productId?: string): Promise<void> {
       'products:new:tag:v6',
       'products:new:v6:15',
       'products:limited:tag:v4',
+      'products:limited:tag:v6',
       'products:trending:tag:v5',
       'products:trending:v6:15',
+      'products:sale:tag:v3',
     ];
     if (productId) {
       keysToDelete.push(`product:detail:${productId}`, `products:${productId}`);
@@ -670,15 +685,19 @@ export async function clearProductCache(productId?: string): Promise<void> {
       'products:trending:*',
       'products:sale:*',
       'products:public:*',
+      'products:seasonal:*',
       'products:suggest:*',
       'graphql:*',
     ];
+    // redis.keys block toàn server (O(N)) — dùng scan không block
     for (const pattern of patterns) {
       try {
-        const found = await redis.keys(pattern);
-        if (found && found.length > 0) {
-          keysToDelete.push(...found);
-        }
+        let cursor = '0';
+        do {
+          const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+          cursor = next;
+          if (keys.length > 0) keysToDelete.push(...keys);
+        } while (cursor !== '0');
       } catch (_) {}
     }
     const uniqueKeys = [...new Set(keysToDelete)];

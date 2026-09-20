@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ISupportTicketReply extends Document {
   ticketId: mongoose.Types.ObjectId;
-  senderId: mongoose.Types.ObjectId;
+  senderId?: mongoose.Types.ObjectId | null;
   message: string;
   image?: string;
   createdAt: Date;
@@ -12,7 +12,7 @@ export interface ISupportTicketReply extends Document {
 const SupportTicketReplySchema = new Schema<ISupportTicketReply>(
   {
     ticketId: { type: Schema.Types.ObjectId, ref: 'SupportTicket', required: true, index: true },
-    senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    senderId: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     message: { type: String, required: true, trim: true },
     image: { type: String, default: '' },
   },

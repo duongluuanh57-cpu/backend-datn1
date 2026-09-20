@@ -3,9 +3,7 @@ import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
 import { Payment } from '../../models/Payment.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
-import { UserAddress } from '../../models/UserAddress.ts';
-import { Voucher } from '../../models/Voucher.ts';
-import { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, populateOrderTotals, buildDateFilter, autoCancelExpiredVNPayOrders, markSoldCounted, unmarkSoldCounted } from './orderHelpers.ts';
+import { enhanceItemsWithProductData, populateOrderTotals, autoCancelExpiredVNPayOrders, markSoldCounted, unmarkSoldCounted } from './orderHelpers.ts';
 
 /**
  * GET /api/orders/admin/all
@@ -13,8 +11,6 @@ import { requireAdmin, enhanceItemsWithProductData, recalculateTotalAmount, popu
  */
 export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyReply) {
   try {
-    if (!requireAdmin(req, reply)) return;
-
     await autoCancelExpiredVNPayOrders();
 
     const query = req.query as {
@@ -23,10 +19,6 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
       status?: string;
       paymentStatus?: string;
       search?: string;
-      startDate?: string;
-      endDate?: string;
-      cancelRequested?: string;
-      sortBy?: string;
     };
 
     const page = Math.max(1, parseInt(query.page || '1', 10));
@@ -37,9 +29,6 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
 
     if (query.status && query.status !== 'all') {
       filter.status = query.status;
-      if (query.status === 'pending') {
-        filter.cancelRequested = { $ne: true };
-      }
     } else {
       // Mặc định ẩn đơn đã hủy — chỉ hiện khi lọc theo trạng thái 'cancelled'
       filter.status = { $ne: 'cancelled' };
@@ -66,24 +55,10 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
       }
     }
 
-    const dateFilter = buildDateFilter(query.startDate, query.endDate);
-    if (dateFilter) filter.createdAt = dateFilter;
-
-    // ── Filter cancelRequested ──
-    if (query.cancelRequested === 'true') {
-      filter.cancelRequested = true;
-    }
-
-    // ── Sort ──
-    let sortObj: any = { createdAt: -1 };
-    if (query.sortBy === 'oldest') sortObj = { createdAt: 1 };
-    else if (query.sortBy === 'totalAsc') sortObj = { totalAmount: 1 };
-    else if (query.sortBy === 'totalDesc') sortObj = { totalAmount: -1 };
-
     // ── 1 Aggregation query thay cho N+1 ──
     const aggPipeline: any[] = [
       { $match: filter },
-      { $sort: sortObj },
+      { $sort: { createdAt: -1 } },
       { $skip: skip },
       { $limit: limit },
       {
@@ -139,8 +114,6 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
  */
 export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyReply) {
   try {
-    if (!requireAdmin(req, reply)) return;
-
     await autoCancelExpiredVNPayOrders();
 
     const { id } = req.params as { id: string };
@@ -166,21 +139,6 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
     populateOrderTotals(order, items);
     order.items = items;
 
-    // ── Lấy địa chỉ đầy đủ từ UserAddress ──
-    if (order.userId) {
-      const userAddress = await UserAddress.findOne({
-        userId: (order.userId as any)._id || order.userId,
-        isDefault: true,
-      }).lean();
-      (order as any).userAddress = userAddress || null;
-    }
-
-    // ── Lấy thông tin voucher ──
-    if (order.voucherId) {
-      const voucher = await Voucher.findById(order.voucherId).lean();
-      (order as any).voucher = voucher || null;
-    }
-
     return reply.status(200).send({ success: true, data: order });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message });
@@ -189,33 +147,19 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
 
 /**
  * PATCH /api/orders/admin/:id/status
+ * Admin chỉ chuyển đơn tiến theo tuần tự pending → processing → shipped → delivered.
+ * Hủy đơn qua PATCH /:id/cancel — backend tự set cancelled.
  */
 export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply) {
   try {
-    if (!requireAdmin(req, reply)) return;
-
     const { id } = req.params as { id: string };
     const { status } = req.body as { status: string };
-
-    const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-    if (!validStatuses.includes(status)) {
-      return reply.status(400).send({ success: false, message: 'Trạng thái không hợp lệ' });
-    }
 
     const orderId = new mongoose.Types.ObjectId(id);
     const existing = await Order.findById(orderId).lean();
 
     if (!existing) {
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
-    }
-
-    if (existing.cancelRequested) {
-      return reply.status(400).send({ success: false, message: 'Đơn hàng đang có yêu cầu hủy — không thể thay đổi trạng thái' });
-    }
-
-    // Trạng thái 'cancelled' chỉ có thể được thiết lập thông qua xác nhận yêu cầu hủy, không thể chọn trực tiếp
-    if (status === 'cancelled') {
-      return reply.status(400).send({ success: false, message: 'Không thể chuyển trực tiếp sang trạng thái hủy' });
     }
 
     // Nếu trạng thái hiện tại là final (delivered hoặc cancelled), không cho phép thay đổi nữa
@@ -229,9 +173,9 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
     const targetIndex = statusSequence.indexOf(status);
 
     if (currentIndex === -1 || targetIndex === -1 || targetIndex !== currentIndex + 1) {
-      return reply.status(400).send({ 
-        success: false, 
-        message: `Trạng thái chuyển đổi không hợp lệ. Chỉ có thể chuyển tiếp từ "${statusSequence[currentIndex]}" sang "${statusSequence[currentIndex + 1]}"` 
+      return reply.status(400).send({
+        success: false,
+        message: `Trạng thái chuyển đổi không hợp lệ. Chỉ có thể chuyển tiếp từ "${statusSequence[currentIndex]}" sang "${statusSequence[currentIndex + 1]}"`
       });
     }
 
@@ -268,149 +212,31 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
 }
 
 /**
- * PATCH /api/orders/admin/:id/approve-cancel
- * Xác nhận yêu cầu hủy đơn hàng từ user → đơn chuyển sang trạng thái Đã hủy
+ * PATCH /api/orders/admin/:id/cancel
+ * Admin hủy đơn hàng đang chờ xác nhận
  */
-export async function approveCancelRequest(req: FastifyRequest, reply: FastifyReply) {
+export async function cancelOrderByAdmin(req: FastifyRequest, reply: FastifyReply) {
   try {
-    if (!requireAdmin(req, reply)) return;
-
     const { id } = req.params as { id: string };
-
     const orderId = new mongoose.Types.ObjectId(id);
-    const existing = await Order.findById(orderId).lean();
-
-    if (!existing) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
-    }
-
-    if (!existing.cancelRequested) {
-      return reply.status(400).send({ success: false, message: 'Không có yêu cầu hủy nào' });
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { status: 'cancelled', cancelRequested: false, $unset: { cancelReason: '' } },
-      { new: true }
-    ).lean();
-
-    // Trả lại lượt bán nếu đơn đã được cộng soldCount trước đó
-    await unmarkSoldCounted(orderId);
-
-    return reply.status(200).send({
-      success: true,
-      data: order,
-      message: 'Đã xác nhận hủy đơn hàng',
-    });
-  } catch (error: any) {
-    return reply.status(500).send({ success: false, message: error.message });
-  }
-}
-
-/**
- * PATCH /api/orders/admin/:id/payment-status
- */
-export async function updatePaymentStatus(req: FastifyRequest, reply: FastifyReply) {
-  try {
-    if (!requireAdmin(req, reply)) return;
-
-    const { id } = req.params as { id: string };
-    const { paymentStatus } = req.body as { paymentStatus: string };
-
-    const validPaymentStatuses = ['unpaid', 'paid', 'refunded'];
-    if (!validPaymentStatuses.includes(paymentStatus)) {
-      return reply.status(400).send({ success: false, message: 'Trạng thái thanh toán không hợp lệ' });
-    }
 
     const order = await Order.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(id) },
-      { paymentStatus },
+      { _id: orderId, status: 'pending' },
+      { $set: { status: 'cancelled' } },
       { new: true }
     ).lean();
 
     if (!order) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
+      return reply.status(400).send({ success: false, message: 'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận' });
     }
 
-    // Thanh toán thành công → cộng lượt bán
-    if (paymentStatus === 'paid') {
-      await markSoldCounted(order._id);
-    }
+    await unmarkSoldCounted(orderId);
 
-    return reply.status(200).send({
-      success: true,
-      data: order,
-      message: 'Cập nhật trạng thái thanh toán thành công',
-    });
-  } catch (error: any) {
-    return reply.status(500).send({ success: false, message: error.message });
-  }
-}
+    // Hoàn kho + hoàn voucher (idempotent)
+    const { StockService } = await import('../../services/cart/StockService.ts');
+    await StockService.restoreOrderResources(orderId);
 
-/**
- * PATCH /api/orders/admin/:id/reject-cancel
- * Từ chối yêu cầu hủy đơn hàng từ user
- */
-export async function rejectCancelRequest(req: FastifyRequest, reply: FastifyReply) {
-  try {
-    if (!requireAdmin(req, reply)) return;
-
-    const { id } = req.params as { id: string };
-
-    const orderId = new mongoose.Types.ObjectId(id);
-    const existing = await Order.findById(orderId).lean();
-
-    if (!existing) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
-    }
-
-    if (!existing.cancelRequested) {
-      return reply.status(400).send({ success: false, message: 'Không có yêu cầu hủy nào' });
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      orderId,
-      { status: 'processing', cancelRequested: false, $unset: { cancelReason: '' } },
-      { new: true }
-    ).lean();
-
-    if (!order) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
-    }
-
-    // Từ chối hủy → đơn được xác nhận: cộng lượt bán
-    await markSoldCounted(orderId);
-
-    return reply.status(200).send({
-      success: true,
-      data: order,
-      message: 'Đã từ chối yêu cầu hủy đơn hàng',
-    });
-  } catch (error: any) {
-    return reply.status(500).send({ success: false, message: error.message });
-  }
-}
-
-/**
- * DELETE /api/orders/admin/:id
- */
-export async function deleteOrder(req: FastifyRequest, reply: FastifyReply) {
-  try {
-    if (!requireAdmin(req, reply)) return;
-
-    const { id } = req.params as { id: string };
-
-    await OrderItem.deleteMany({ orderId: new mongoose.Types.ObjectId(id) });
-
-    const order = await Order.findOneAndDelete({
-      _id: new mongoose.Types.ObjectId(id),
-    });
-
-    if (!order) {
-      return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
-    }
-
-    return reply.status(200).send({ success: true, message: 'Xóa đơn hàng thành công' });
+    return reply.status(200).send({ success: true, data: order, message: 'Đã hủy đơn hàng' });
   } catch (error: any) {
     return reply.status(500).send({ success: false, message: error.message });
   }

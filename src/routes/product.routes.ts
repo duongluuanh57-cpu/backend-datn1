@@ -18,11 +18,8 @@ export async function productRoutes(app: FastifyInstance) {
   app.get('/bulk', ProductController.getBulkProducts);
   app.get('/top-brands-by-views', ProductController.getTopBrandsByViews);
 
-  // Quản lý sản phẩm (CRUD) — specific routes MUST come before /:id
-  app.get('/', ProductController.getAllProducts);
-
-  // API: Sản phẩm cần bổ sung thông tin (admin only)
-  app.get('/needs-supplement', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductController.getNeedsSupplement);
+  // Quản lý sản phẩm (CRUD) — chỉ ADMIN (tránh lộ sản phẩm draft/archived qua filter status)
+  app.get('/', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductController.getAllProducts);
 
   app.get('/:id/admin', {
     preHandler: [authMiddleware, requireRole('ADMIN')],

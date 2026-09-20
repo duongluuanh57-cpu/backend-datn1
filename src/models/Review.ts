@@ -26,7 +26,7 @@ export interface IReview extends Document {
   aspects: IReviewAspect[];
   images?: string[];
   isAnonymous: boolean;
-  status: 'visible' | 'hidden' | 'pending' | 'rejected';
+  status: 'visible' | 'pending' | 'rejected';
   rejectionReason?: string;
   aiRejected?: boolean;
   moderatedBy?: string;
@@ -54,7 +54,7 @@ const ReviewSchema = new Schema<IReview>(
     aspects: { type: [ReviewAspectSchema], default: [] },
     images: [{ type: String }],
     isAnonymous: { type: Boolean, default: false },
-    status: { type: String, enum: ['visible', 'hidden', 'pending', 'rejected'], default: 'pending', index: true },
+    status: { type: String, enum: ['visible', 'pending', 'rejected'], default: 'pending', index: true },
     rejectionReason: { type: String, default: '' },
     aiRejected: { type: Boolean, default: false },
     moderatedBy: { type: String, default: '' },
@@ -66,8 +66,10 @@ const ReviewSchema = new Schema<IReview>(
   }
 );
 
-ReviewSchema.index({ userId: 1, productId: 1 }, { unique: true });
+// KHÔNG có unique (userId, productId): user mua lại 2 lần được review 2 lần —
+// giới hạn lượt kiểm bằng purchasedCount trong ReviewService.canReview.
 ReviewSchema.index({ productId: 1, status: 1, rating: 1 });
+ReviewSchema.index({ productId: 1, createdAt: -1 });
 
 export const Review =
   mongoose.models.Review ||

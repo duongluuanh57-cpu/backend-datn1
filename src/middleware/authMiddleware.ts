@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyAccessToken } from '../utils/auth.ts';
+import { verifyAccessToken, ACCESS_COOKIE } from '../utils/auth.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
 
 // Mở rộng kiểu Fastify Request để TypeScript biết có thêm field `user`
@@ -12,21 +12,30 @@ declare module 'fastify' {
   }
 }
 
+/** Lấy access token từ httpOnly cookie hoặc Authorization: Bearer header (fallback) */
+function extractAccessToken(req: FastifyRequest): string | null {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  const cookies = (req as any).cookies || {};
+  const fromCookie = cookies[ACCESS_COOKIE];
+  return typeof fromCookie === 'string' && fromCookie ? fromCookie : null;
+}
+
 /**
- * AuthMiddleware — Xác minh JWT từ header Authorization
+ * AuthMiddleware — Xác minh JWT từ httpOnly cookie (ưu tiên) hoặc Bearer header.
  * Dùng verifyAccessToken() với đầy đủ JWT Best Practices:
  *   - Algorithm whitelist (HS256)
  *   - Validate issuer + audience
  *   - Validate token type (chống dùng refresh token như access token)
  */
 export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
-  const authHeader = req.headers.authorization;
+  const token = extractAccessToken(req);
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (!token) {
     throw new UnauthorizedError('Vui lòng đăng nhập để tiếp tục');
   }
-
-  const token = authHeader.substring(7);
 
   try {
     const decoded = verifyAccessToken(token);
@@ -37,13 +46,12 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * OptionalAuthMiddleware — Xác minh JWT nếu có header Authorization, không throw nếu không có
+ * OptionalAuthMiddleware — Xác minh JWT nếu có token (cookie/Bearer), không throw nếu không có
  */
 export async function optionalAuthMiddleware(req: FastifyRequest) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return;
+  const token = extractAccessToken(req);
+  if (!token) return;
 
-  const token = authHeader.substring(7);
   try {
     const decoded = verifyAccessToken(token);
     req.user = { userId: decoded.userId, role: decoded.role };

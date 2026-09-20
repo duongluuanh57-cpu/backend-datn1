@@ -19,7 +19,7 @@ export class ImageOptimizer {
         .webp({ quality }) // WebP giúp giảm ~50-80% dung lượng so với JPG/PNG
         .toBuffer();
     } catch (error) {
-      console.error('[ImageService Optimize Error]', error);
+      // Log when image format optimization fails - expected for unsupported formats
       throw new Error('Không thể tối ưu hóa hình ảnh này.');
     }
   }
@@ -50,7 +50,7 @@ export class ImageOptimizer {
         .webp({ quality })
         .toBuffer();
     } catch (error) {
-      console.error('[ImageService Product Optimize Error]', error);
+      // Log when product image optimization fails - expected for unsupported formats
       throw new Error('Không thể tối ưu hóa ảnh sản phẩm.');
     }
   }

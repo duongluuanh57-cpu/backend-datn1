@@ -27,8 +27,8 @@ export interface IOrder extends Document {
   paymentMethod: 'cod' | 'momo' | 'vnpay' | 'VNPAY' | 'banking' | 'card' | 'online';
   paymentStatus: 'unpaid' | 'paid' | 'refunded';
 
-  cancelRequested?: boolean;
   soldCounted?: boolean; // Đã cộng/trừ soldCount của Product chưa
+  resourcesRestored?: boolean; // Đã hoàn kho + hoàn voucher khi hủy đơn (chặn hoàn kép)
   cancelReason?: 'want_change_voucher' | 'want_change_product' | 'complicated_payment' | 'found_cheaper' | 'changed_mind';
   deliveredAt?: Date;
   cancelledAt?: Date;
@@ -82,8 +82,9 @@ const OrderSchema = new Schema<IOrder>(
       index: true,
     },
 
-    cancelRequested: { type: Boolean, default: false },
     soldCounted: { type: Boolean, default: false },
+    // Da hoan kho + hoan voucher khi huy don? — chan hoan kep khi retry/double-click
+    resourcesRestored: { type: Boolean, default: false },
     cancelReason: {
       type: String,
       enum: ['want_change_voucher', 'want_change_product', 'complicated_payment', 'found_cheaper', 'changed_mind'],

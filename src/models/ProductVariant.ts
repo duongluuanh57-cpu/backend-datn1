@@ -25,8 +25,8 @@ const ProductVariantSchema = new Schema<IProductVariant>(
         return num > 0 && num < 50 ? 'decant' : 'fullbox';
       },
     },
-    price: { type: Number, required: true },
-    quantityInStock: { type: Number, default: 0 },
+    price: { type: Number, required: true, min: 0 },
+    quantityInStock: { type: Number, default: 0, min: 0 },
     sku: { type: String, default: '', trim: true },
     isDefault: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
