@@ -11,13 +11,20 @@ import { ProductImage } from '../../models/ProductImage.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { formatMultipleProducts, getDefaultVariant } from './productFormatterService.ts';
 import { DiscountLifecycleService } from './discountLifecycleService.ts';
-import { resolveCategoryNames } from './productHelpers.ts';
+import { bySizeAsc } from './productHelpers.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
 import { FlashSaleService } from '../FlashSaleService.ts';
+import { TAG_RULES, findHotProductIds, findLimitedProductIds, newCutoffDate } from './tagRules.ts';
 
 export class ProductQueryService {
   private static CACHE_TTL = 300;
+
+  private static syncDiscountsOnRead(): void {
+    DiscountLifecycleService.syncAutoDiscounts().catch((err) => {
+      console.warn('syncAutoDiscounts error:', err);
+    });
+  }
 
   // Cache tag slug → ID mapping
   private static tagCache = new Map<string, mongoose.Types.ObjectId>();
@@ -71,8 +78,9 @@ export class ProductQueryService {
   /**
    * Đồng bộ quy tắc Tag New (Sản phẩm mới) — CHỈ lo tag, không đụng discount.
    * Discount do DiscountLifecycleService (mô hình trung tâm) đảm nhận.
-   * - Sản phẩm trong vòng 31 ngày (createdAt <= 31 ngày) -> Gán Tag New, isNewArrival = true.
-   * - Quá 31 ngày -> Gỡ Tag New, isNewArrival = false.
+   * Luật nằm ở `TAG_RULES.newWithinDays` (tagRules.ts):
+   * - Sản phẩm ra mắt trong vòng N ngày -> Gán Tag New, isNewArrival = true.
+   * - Quá N ngày -> Gỡ Tag New, isNewArrival = false.
    */
   static async syncNewArrivalTags(): Promise<void> {
     const now = Date.now();
@@ -81,7 +89,7 @@ export class ProductQueryService {
     this.lastSyncNewArrivalTime = now;
 
     try {
-      const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+      const newCutoff = newCutoffDate();
       const newTag = await Tag.findOne({
         status: 'active',
         $or: [{ slug: /^new$/i }, { name: /^sản phẩm mới$/i }],
@@ -94,12 +102,12 @@ export class ProductQueryService {
         $or: [{ slug: /^standard$/i }, { name: /^tiêu chuẩn$/i }],
       }).lean();
 
-      // 1. Sản phẩm quá 31 ngày -> Gỡ Tag New
+      // 1. Sản phẩm quá hạn New -> Gỡ Tag New
       const newTagLinks = await ProductTag.find({ tagId: newTag._id }).lean();
       const newLinkedProdIds = newTagLinks.map(l => l.productId);
       const expiredProducts = await Product.find({
         _id: { $in: newLinkedProdIds },
-        createdAt: { $lt: thirtyOneDaysAgo },
+        createdAt: { $lt: newCutoff },
       }).select('_id').lean();
 
       if (expiredProducts.length > 0) {
@@ -122,10 +130,10 @@ export class ProductQueryService {
         }
       }
 
-      // 2. Sản phẩm trong vòng 31 ngày -> Gán Tag New, isNewArrival = true
+      // 2. Sản phẩm còn trong hạn New -> Gán Tag New, isNewArrival = true
       const recentProducts = await Product.find({
         status: 'active',
-        createdAt: { $gte: thirtyOneDaysAgo },
+        createdAt: { $gte: newCutoff },
       }).select('_id').lean();
 
       if (recentProducts.length > 0) {
@@ -153,12 +161,13 @@ export class ProductQueryService {
   }
 
   static async getNewProducts(limit?: number): Promise<any[]> {
+    // Đồng bộ ngầm khi web đọc dữ liệu, không phụ thuộc cron nền của Render.
+    // Việc đồng bộ chạy nền và tự throttle trong service nên không chặn response.
+    this.syncNewArrivalTags().catch(err => console.warn('syncNewArrivalTags error:', err));
+    this.syncDiscountsOnRead();
+
     const cacheKey = `products:new:tag:all:v2:${limit || 'unlimited'}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
-
-    // Đồng bộ quy tắc Tag New + vòng đời discount trung tâm, ngầm không chặn luồng API
-    this.syncNewArrivalTags().catch(err => console.warn('syncNewArrivalTags error:', err));
-    DiscountLifecycleService.syncAutoDiscounts().catch(err => console.warn('syncAutoDiscounts error:', err));
 
     const newTag = await Tag.findOne({
       status: 'active',
@@ -177,7 +186,7 @@ export class ProductQueryService {
     const limitedProductIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
     const excludedIds = [...fsProductIds, ...limitedProductIds];
 
-    const select = 'name brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status isNewArrival';
+    const select = 'name brandId image categoryId discountPercentage soldCount createdAt status isNewArrival';
     const baseFilter: any = {
       _id: { $in: productIds, $nin: excludedIds },
       status: 'active',
@@ -186,7 +195,7 @@ export class ProductQueryService {
     let query = Product.find(baseFilter)
       .select(select)
       .populate('brandId')
-      .populate('categories')
+      .populate('categoryId')
       .sort({ createdAt: -1 });
 
     if (limit && limit > 0) {
@@ -226,34 +235,22 @@ export class ProductQueryService {
 
       if (!trendingTag) return;
 
-      const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+      // Luật Bán chạy nằm ở TAG_RULES: còn hàng + soldCount >= 15 + rating TB >= 4.5.
+      const hotIds = await findHotProductIds();
 
-      // Lấy đúng TOP 16 sản phẩm CÒN HÀNG có lượt bán cao nhất toàn sàn
-      const top16Products = await Product.find({
-        status: 'active',
-        _id: { $in: inStockProductIds },
-      })
-        .sort({ soldCount: -1, createdAt: -1 })
-        .limit(16)
-        .select('_id tag')
-        .lean();
-
-      const top16Ids = top16Products.map(p => p._id);
-
-      // Xóa liên kết Tag Trending của các sản phẩm nằm ngoài Top 16
+      // Gỡ tag của sản phẩm không còn đạt luật, gán cho sản phẩm mới đạt luật.
       await ProductTag.deleteMany({
         tagId: trendingTag._id,
-        productId: { $nin: top16Ids },
+        productId: { $nin: hotIds },
       });
 
-      // Tối ưu: Lấy danh sách đã tồn tại bằng 1 query duy nhất thay vì lặp 16 lần
       const existingTags = await ProductTag.find({
         tagId: trendingTag._id,
-        productId: { $in: top16Ids },
+        productId: { $in: hotIds },
       }).select('productId').lean();
 
       const existingSet = new Set(existingTags.map(t => t.productId.toString()));
-      const toInsert = top16Ids
+      const toInsert = hotIds
         .filter(pId => !existingSet.has(pId.toString()))
         .map(pId => ({ productId: pId, tagId: trendingTag._id }));
 
@@ -274,19 +271,13 @@ export class ProductQueryService {
     this.lastSyncLimitedTime = now;
 
     try {
-      let limitedTag = await Tag.findOne({
+      const limitedTag = await Tag.findOne({
         status: 'active',
         $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
       }).lean();
 
-      if (!limitedTag) {
-        limitedTag = await Tag.create({
-          name: 'Limited',
-          slug: 'limited',
-          description: 'Phiên bản giới hạn số lượng độc quyền do section Sản phẩm giới hạn gán',
-          status: 'active',
-        });
-      }
+      // Tag Limited là dữ liệu cố định của web; nếu thiếu thì không tự tạo.
+      if (!limitedTag) return;
 
       const newTag = await Tag.findOne({
         status: 'active',
@@ -295,31 +286,31 @@ export class ProductQueryService {
 
       const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
 
-      // Kiểm tra các sản phẩm đã có tag Limited
-      const existingLimitedLinks = await ProductTag.find({ tagId: limitedTag._id }).lean();
-      let limitedProductIds = existingLimitedLinks.map(l => l.productId);
+      // Luật Giới hạn nằm ở TAG_RULES: tổng tồn kho các biến thể <= 20 (và còn hàng).
+      // Bỏ qua hàng đang chạy Flash Sale để các section không giành nhau một sản phẩm.
+      const qualifyingIds = (await findLimitedProductIds())
+        .filter(id => !fsProductIds.some((fsId: any) => fsId.equals(id)));
 
-      if (limitedProductIds.length === 0) {
-        // Section Sản phẩm giới hạn tự động chọn Top 16 sản phẩm đắt giá nhất còn hàng (dòng xa xỉ độc quyền)
-        const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
-        const topProducts = await Product.find({
-          status: 'active',
-          _id: { $in: inStockProductIds, $nin: fsProductIds },
-        })
-          .sort({ price: -1, createdAt: -1 })
-          .limit(16)
-          .select('_id')
-          .lean();
+      // Gỡ tag của sản phẩm không còn khan hiếm, gán cho sản phẩm mới đạt luật.
+      await ProductTag.deleteMany({
+        tagId: limitedTag._id,
+        productId: { $nin: qualifyingIds },
+      });
 
-        const topIds = topProducts.map(p => p._id);
-        if (topIds.length > 0) {
-          await ProductTag.insertMany(
-            topIds.map(pId => ({ productId: pId, tagId: limitedTag!._id })),
-            { ordered: false }
-          ).catch(() => {});
-          limitedProductIds = topIds;
-        }
+      const existingLimitedLinks = await ProductTag.find({
+        tagId: limitedTag._id,
+        productId: { $in: qualifyingIds },
+      }).select('productId').lean();
+      const existingSet = new Set(existingLimitedLinks.map(l => l.productId.toString()));
+      const toInsert = qualifyingIds
+        .filter(id => !existingSet.has(id.toString()))
+        .map(productId => ({ productId, tagId: limitedTag._id }));
+
+      if (toInsert.length > 0) {
+        await ProductTag.insertMany(toInsert, { ordered: false }).catch(() => {});
       }
+
+      const limitedProductIds = qualifyingIds;
 
       // Đảm bảo mọi sản phẩm mang tag Limited KHÔNG bao giờ có tag New
       if (newTag && limitedProductIds.length > 0) {
@@ -338,6 +329,7 @@ export class ProductQueryService {
   }
 
   static async getLimitedProducts(): Promise<any[]> {
+    this.syncDiscountsOnRead();
     const cacheKey = `products:limited:tag:v6`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
     
@@ -351,8 +343,8 @@ export class ProductQueryService {
       const filteredProductIds = productIds.filter(id => !fsProductIds.some(fsId => fsId.equals(id)));
       productsRaw = await Product.find({ _id: { $in: filteredProductIds }, status: 'active' })
         .populate('brandId')
-        .populate('categories')
-        .sort({ price: -1, createdAt: -1 })
+        .populate('categoryId')
+        .sort({ createdAt: -1 })
         .limit(16)
         .lean();
     }
@@ -363,34 +355,25 @@ export class ProductQueryService {
   }
 
   static async getTrendingProducts(limit: number = 16): Promise<any[]> {
+    this.syncDiscountsOnRead();
     const effectiveLimit = Math.min(16, limit > 0 ? limit : 16);
-    const cacheKey = `products:trending:v11:${effectiveLimit}`;
+    const cacheKey = `products:trending:v12:${effectiveLimit}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
     
     // Tự động đồng bộ Tag Trending ngầm không chặn luồng trả lời API
     this.syncTrendingTags().catch(err => console.warn('syncTrendingTags error:', err));
 
     const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-    // Lọc chỉ lấy các sản phẩm CÒN HÀNG (tồn tại ít nhất 1 variant có quantityInStock > 0)
-    const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
+    const hotIds = await findHotProductIds();
+    const candidateIds = hotIds.filter(id => !fsProductIds.some((fsId: any) => fsId.equals(id)));
+    if (candidateIds.length === 0) return [];
 
-    // Lấy top 16 sản phẩm bán chạy nhất còn hàng (sắp xếp giảm dần theo lượt bán).
-    // Nếu sản phẩm nào trong top hết hàng, các sản phẩm tiếp theo còn hàng sẽ tự động cộng dồn lên thay thế vị trí đủ top 16.
-    const baseFilter: any = {
-      status: 'active',
-      _id: { $in: inStockProductIds },
-    };
-    if (fsProductIds.length > 0) {
-      baseFilter._id = { $in: inStockProductIds, $nin: fsProductIds };
-    }
-
-    const query = Product.find(baseFilter)
+    const productsRaw = await Product.find({ status: 'active', _id: { $in: candidateIds } })
       .populate('brandId')
-      .populate('categories')
+      .populate('categoryId')
       .sort({ soldCount: -1, createdAt: -1 })
-      .limit(effectiveLimit);
-
-    const productsRaw = await query.lean();
+      .limit(effectiveLimit)
+      .lean();
 
     const products = await formatMultipleProducts(productsRaw);
     if (products.length > 0) { try { await redis.set(cacheKey, JSON.stringify(products), 'EX', 300); } catch (err) {} }
@@ -398,6 +381,7 @@ export class ProductQueryService {
   }
 
   static async getPublicProducts(type: 'trending' | 'new' | 'limited', filters: any = {}): Promise<any[]> {
+    this.syncDiscountsOnRead();
     const { brand, capacity, priceRange, minPrice, maxPrice, sortBy = 'newest', limit = 20, filterTag } = filters;
     const tagSlugsMap: Record<string, string[]> = { trending: ['trending', 'thinh-hanh', 'ban-chay', 'hot'], new: ['new', 'san-pham-moi'], limited: ['limited', 'gioi-han', 'gioi-han-dac-biet'] };
     let slugs = tagSlugsMap[type] || [];
@@ -408,28 +392,10 @@ export class ProductQueryService {
     if (!slugs || slugs.length === 0) return [];
     const cachePayload = { brand, capacity, priceRange, minPrice, maxPrice, sortBy, limit, filterTag };
     const cacheHash = crypto.createHash('md5').update(JSON.stringify(cachePayload)).digest('hex');
-    const cacheKey = `products:public:v3:${type}:${cacheHash}`;
+    const cacheKey = `products:public:v4:${type}:${cacheHash}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getPublicProducts:', err); }
     let productsRaw;
-    if (type === 'trending') {
-      const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-      const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
-      const filter: any = {
-        status: 'active',
-        _id: { $in: inStockProductIds },
-      };
-      if (fsProductIds.length > 0) {
-        filter._id = { $in: inStockProductIds, $nin: fsProductIds };
-      }
-      let query = Product.find(filter)
-        .populate('brandId')
-        .populate('categories')
-        .sort({ soldCount: -1, createdAt: -1 });
-      if (limit && limit > 0) {
-        query = query.limit(Math.min(16, limit));
-      }
-      productsRaw = await query.lean();
-    } else {
+    {
       let productIds = await this.getProductIdsByTagSlugs(slugs);
       if (type === 'new') {
         const newArrivals = await Product.find({ isNewArrival: true, status: 'active' }).select('_id').lean();
@@ -437,15 +403,16 @@ export class ProductQueryService {
         productIds = Array.from(allIds).map(id => new mongoose.Types.ObjectId(id));
       }
       if (productIds.length === 0) return [];
-      // Nhất quán với trending: chỉ hiện sản phẩm còn ít nhất 1 biến thể trong kho
+      // Chỉ hiện sản phẩm còn ít nhất 1 biến thể trong kho
       const inStockIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
       const inStockSet = new Set(inStockIds.map((id: any) => id.toString()));
       const visibleIds = productIds.filter((id: any) => inStockSet.has(id.toString()));
       if (visibleIds.length === 0) return [];
-      productsRaw = await Product.find({ _id: { $in: visibleIds }, status: 'active' }).populate('brandId').populate('categories').sort({ createdAt: -1 }).lean();
+      const sortSpec: any = type === 'trending' ? { soldCount: -1, createdAt: -1 } : { createdAt: -1 };
+      productsRaw = await Product.find({ _id: { $in: visibleIds }, status: 'active' }).populate('brandId').populate('categoryId').sort(sortSpec).lean();
     }
     const products = await formatMultipleProducts(productsRaw);
-    const getActualPrice = (product: any) => { const p = product.price ?? 0; if (!p) return 0; let active = product.discountPercentage && product.discountPercentage > 0; if (active) { const now = new Date(); if (product.discountStartDate && new Date(product.discountStartDate) > now) active = false; if (product.discountEndDate && new Date(product.discountEndDate) < now) active = false; } return active ? Math.round(p * (1 - product.discountPercentage / 100)) : p; };
+    const getActualPrice = (product: any) => { const p = product.price ?? 0; if (!p) return 0; const active = product.discountPercentage && product.discountPercentage > 0; return active ? Math.round(p * (1 - product.discountPercentage / 100)) : p; };
     const filtered = products.filter((product: any) => {
       if (brand && brand !== 'all') { const bName = (product.brand as any)?.name || (typeof product.brand === 'string' ? product.brand : '') || product.brandName || ''; if (bName.toLowerCase() !== brand.toLowerCase()) return false; }
       if (capacity && capacity !== 'all') { const parsedSizes = product.size ? product.size.split(',').map((s: string) => { const parts = s.trim().split(':'); return parts[0].trim().toLowerCase(); }).filter(Boolean) : []; if (!parsedSizes.includes(capacity.toLowerCase())) return false; }
@@ -463,6 +430,7 @@ export class ProductQueryService {
   }
 
   static async getSaleProducts(): Promise<any[]> {
+    this.syncDiscountsOnRead();
     const cacheKey = `products:sale:tag:v3`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getSaleProducts:', err); }
 
@@ -499,18 +467,7 @@ export class ProductQueryService {
     }
 
     const saleProductIds = await this.getProductIdsByTagSlugs(['sale', 'giam-gia']);
-    // Khuyến mãi có discountStartDate/EndDate thì tôn trọng cửa sổ; không có ngày = đang áp dụng.
-    const now = new Date();
-    const discountFilter: any = {
-      discountPercentage: { $gt: 0 },
-      $or: [
-        { discountStartDate: { $in: [null] as any }, discountEndDate: { $in: [null] as any } },
-        { discountStartDate: { $exists: false }, discountEndDate: { $exists: false } },
-        { discountStartDate: { $lte: now }, discountEndDate: { $gt: now } },
-        { discountStartDate: null, discountEndDate: { $gt: now } },
-        { discountStartDate: { $lte: now }, discountEndDate: null },
-      ],
-    };
+    const discountFilter: any = { discountPercentage: { $gt: 0 } };
     let queryBase: any;
     if (saleProductIds.length > 0) {
       queryBase = { _id: { $in: saleProductIds }, status: 'active', ...discountFilter };
@@ -519,7 +476,7 @@ export class ProductQueryService {
     }
     let productsRaw: any[] = [];
     if (await Product.countDocuments(queryBase).maxTimeMS(3000)) {
-      productsRaw = await Product.find(queryBase).populate('brandId').populate('categories').sort({ discountEndDate: 1, createdAt: -1 }).limit(12).lean();
+      productsRaw = await Product.find(queryBase).populate('brandId').populate('categoryId').sort({ discountPercentage: -1, createdAt: -1 }).limit(12).lean();
     }
     const regularProducts = await formatMultipleProducts(productsRaw);
 
@@ -534,6 +491,7 @@ export class ProductQueryService {
   }
 
   static async getSeasonalProducts(limit: number = 200): Promise<any[]> {
+    this.syncDiscountsOnRead();
     const effectiveLimit = Math.min(200, limit > 0 ? limit : 200);
     const cacheKey = `products:seasonal:v7:${effectiveLimit}`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) {}
@@ -553,7 +511,7 @@ export class ProductQueryService {
 
     const productsRaw = await Product.find(baseFilter)
       .populate('brandId')
-      .populate('categories')
+      .populate('categoryId')
       .sort({ soldCount: -1, createdAt: -1 })
       .limit(effectiveLimit)
       .lean();
@@ -566,6 +524,7 @@ export class ProductQueryService {
   }
 
   static async getAllProducts(options: any = {}): Promise<{ items: any[]; total: number; page: number; totalPages: number }> {
+    this.syncDiscountsOnRead();
     const { page = 1, limit = 25, search, brand, tag, category, sortBy, status, minPrice, maxPrice } = options;
     // Khi sortBy=outOfStock, treat as stock filter
     const stock = sortBy === 'outOfStock' ? 'outOfStock' : options.stock;
@@ -650,24 +609,14 @@ export class ProductQueryService {
         // Chỉ lấy các sản phẩm được gán trực tiếp vào sự kiện Flash Sale đang diễn ra (Active)
         productIds = await FlashSaleService.getActiveFlashSaleProductIds();
       } else if (isNewTag) {
-        // Sản phẩm mới: chỉ lấy các sản phẩm tạo trong vòng 31 ngày gần nhất
-        const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+        // Sản phẩm mới: tạo trong vòng TAG_RULES.newWithinDays ngày gần nhất
         const newProducts = await Product.find({
           status: 'active',
-          createdAt: { $gte: thirtyOneDaysAgo },
+          createdAt: { $gte: newCutoffDate() },
         }).select('_id').lean();
         productIds = newProducts.map(p => p._id);
       } else if (isTrendingTag) {
-        // Trending: Lấy các sản phẩm còn hàng có lượt mua cao nhất giảm dần
-        const inStockProductIds = await ProductVariant.distinct('productId', { quantityInStock: { $gt: 0 } });
-        const trendingProds = await Product.find({
-          status: 'active',
-          _id: { $in: inStockProductIds },
-        })
-          .sort({ soldCount: -1, createdAt: -1 })
-          .select('_id')
-          .lean();
-        productIds = trendingProds.map(p => p._id);
+        productIds = await findHotProductIds();
       } else {
         const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const orConditions: any[] = [
@@ -727,11 +676,7 @@ export class ProductQueryService {
       }
 
       if (validCategoryIds.length > 0) {
-        query.$and = query.$and || [];
-        const catConditions = validCategoryIds.map((id: mongoose.Types.ObjectId) => ({
-          $or: [{ categories: id }, { categoryId: id }]
-        }));
-        query.$and.push({ $or: catConditions });
+        query.categoryId = { $in: validCategoryIds };
       } else {
         return { items: [], total: 0, page, totalPages: 0 };
       }
@@ -752,7 +697,6 @@ export class ProductQueryService {
       case 'priceDesc': priceSortNeeded = true; priceSortAsc = false; break;
       case 'stockAsc': stockSortNeeded = true; stockSortAsc = true; break;
       case 'stockDesc': stockSortNeeded = true; stockSortAsc = false; break;
-      case 'rating': sort = { avgRating: -1, reviewsCount: -1 }; break;
       case 'newest': sort = { createdAt: -1 }; break;
       case 'oldest': sort = { createdAt: 1 }; break;
       case 'bestSeller': sort = { soldCount: -1, createdAt: -1 }; break;
@@ -766,9 +710,9 @@ export class ProductQueryService {
     if (minPrice || maxPrice) {
       // Price filter: fetch matching documents, format once, filter by price and slice page items
       const all = await Product.find(query)
-        .select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status season specifications')
+        .select('name slug brandId image categoryId discountPercentage soldCount createdAt status season specifications')
         .populate('brandId')
-        .populate('categories')
+        .populate('categoryId')
         .sort(sort)
         .lean();
       const formatted = await formatMultipleProducts(all);
@@ -783,7 +727,7 @@ export class ProductQueryService {
     } else {
       try {
         total = await Product.countDocuments(query);
-        products = await Product.find(query).select('name slug brandId image variants categories discountPercentage discountStartDate discountEndDate soldCount createdAt status season specifications').populate('brandId').populate('categories').sort(sort).skip((page - 1) * limit).limit(limit).lean();
+        products = await Product.find(query).select('name slug brandId image categoryId discountPercentage soldCount createdAt status season specifications').populate('brandId').populate('categoryId').sort(sort).skip((page - 1) * limit).limit(limit).lean();
       } catch (err) {
         console.error('Product query error:', err, 'query:', JSON.stringify(query));
         throw new Error('Lỗi truy vấn sản phẩm: ' + (err as any).message);
@@ -821,9 +765,9 @@ export class ProductQueryService {
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).slice(0, 20).map(id => new mongoose.Types.ObjectId(id));
     if (!validIds.length) return [];
     const productsRaw = await Product.find({ _id: { $in: validIds }, status: 'active' })
-      .select('name slug brandId image images thumbnail variants categories price originalPrice original_price discountPercentage discountStartDate discountEndDate soldCount createdAt status')
+      .select('name slug brandId image images thumbnail categoryId price originalPrice original_price discountPercentage soldCount createdAt status')
       .populate('brandId')
-      .populate('categories')
+      .populate('categoryId')
       .lean();
     return formatMultipleProducts(productsRaw);
   }
@@ -884,20 +828,14 @@ export class ProductQueryService {
       console.warn('Redis get error in getProductById:', err);
     }
 
-    const product = await Product.findOne({ _id: id, status: 'active' }).populate('brandId').populate('categories').lean();
+    const product = await Product.findOne({ _id: id, status: 'active' }).populate('brandId').populate('categoryId').lean();
     if (!product) return null;
 
-    const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
-    const oldCatId = !(product.categories as any[])?.length ? (product as any).categoryId : null;
-
-    // Chạy song song 6 truy vấn độc lập
-    const [images, variants, tagLinks, catDoc, activeFS, reviewStats] = await Promise.all([
+    // Chạy song song 5 truy vấn độc lập
+    const [images, variants, tagLinks, activeFS, reviewStats] = await Promise.all([
       ProductImage.find({ productId: id }).lean(),
-      variantIds.length > 0
-        ? ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean()
-        : Promise.resolve([]),
+      ProductVariant.find({ productId: id }).lean().then((vs: any[]) => vs.sort(bySizeAsc)),
       ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug status' }).lean(),
-      oldCatId ? Category.findById(oldCatId).lean().catch(() => null) : Promise.resolve(null),
       FlashSale.findOne({
         status: { $in: ['active', 'scheduled'] },
         'items.productId': new mongoose.Types.ObjectId(id),
@@ -915,7 +853,6 @@ export class ProductQueryService {
 
     const productTag = rawTagSlugs.join(', ') || (product as any).tag || '';
 
-    const oldCatName = catDoc ? catDoc.name : '';
     const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
     const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
 
@@ -948,8 +885,9 @@ export class ProductQueryService {
       computedPrice = Math.round(rawVariantPrice * (1 - totalDiscount / 100));
     }
 
-    const catStr = resolveCategoryNames(product, undefined, oldCatName);
-    const catArr = catStr ? catStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const catObj = (product as any).categoryId && typeof (product as any).categoryId === 'object' ? (product as any).categoryId : null;
+    const categoryId = catObj?._id ? String(catObj._id) : ((product as any).categoryId ? String((product as any).categoryId) : null);
+    const category = catObj ? { _id: catObj._id, name: catObj.name, slug: catObj.slug, status: catObj.status } : null;
 
     const result = {
       ...product,
@@ -961,14 +899,13 @@ export class ProductQueryService {
       soldCount: isFS ? fsSoldCount : ((product as any).soldCount || 0),
       isFlashSale: isFS,
       brand: (product.brandId as any)?.name || '',
-      categories: catArr,
+      categoryId,
+      category,
       image: images[0]?.url || '',
       images: images.slice(1).map(img => img.url),
       variants: variants.map(v => {
         const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
-        const vType = (v as any).type === 'decant' || (v as any).type === 'fullbox'
-          ? (v as any).type
-          : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+        const vType = num > 0 && num < 50 ? 'decant' : 'fullbox';
         return {
           _id: v._id,
           size: v.size,
@@ -999,19 +936,13 @@ export class ProductQueryService {
   }
 
   static async getProductByIdAdmin(id: string): Promise<any | null> {
-    const product = await Product.findOne({ _id: id }).populate('brandId').populate('categories').lean();
+    const product = await Product.findOne({ _id: id }).populate('brandId').populate('categoryId').lean();
     if (!product) return null;
 
-    const variantIds = (product.variants || []) as mongoose.Types.ObjectId[];
-    const oldCatId = !(product.categories as any[])?.length ? (product as any).categoryId : null;
-
-    const [images, variants, tagLinks, catDoc, stats] = await Promise.all([
+    const [images, variants, tagLinks, stats] = await Promise.all([
       ProductImage.find({ productId: id }).lean(),
-      variantIds.length > 0
-        ? ProductVariant.find({ _id: { $in: variantIds } }).sort({ sortOrder: 1 }).lean()
-        : Promise.resolve([]),
+      ProductVariant.find({ productId: id }).lean().then((vs: any[]) => vs.sort(bySizeAsc)),
       ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug' }).lean(),
-      oldCatId ? Category.findById(oldCatId).lean().catch(() => null) : Promise.resolve(null),
       Review.aggregate([
         { $match: { productId: new mongoose.Types.ObjectId(id), status: 'visible' } },
         { $group: { _id: null, count: { $sum: 1 }, avg: { $avg: '$rating' } } },
@@ -1019,28 +950,25 @@ export class ProductQueryService {
     ]);
 
     const tagSlugs = tagLinks.map(l => (l.tagId as any)?.slug).filter(Boolean);
-    const oldCatName = catDoc ? catDoc.name : '';
     const reviewsCount = stats[0]?.count || 0;
     const avgRating = stats[0]?.avg ? Math.round(stats[0].avg * 10) / 10 : 0;
 
     const variant50ml = variants.find((v: any) => v.size === '50ml') || variants[0];
     let computedPrice = variant50ml?.price || 0;
     if (computedPrice > 0 && (product as any).discountPercentage > 0) {
-      const now = new Date();
-      const startOk = !(product as any).discountStartDate || new Date((product as any).discountStartDate) <= now;
-      const endOk = !(product as any).discountEndDate || new Date((product as any).discountEndDate) >= now;
-      if (startOk && endOk) computedPrice = Math.round(computedPrice * (1 - (product as any).discountPercentage / 100));
+      computedPrice = Math.round(computedPrice * (1 - (product as any).discountPercentage / 100));
     }
 
-    const catStr = resolveCategoryNames(product, undefined, oldCatName);
-    const catArr = catStr ? catStr.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const catObjAdmin = (product as any).categoryId && typeof (product as any).categoryId === 'object' ? (product as any).categoryId : null;
+    const categoryIdAdmin = catObjAdmin?._id ? String(catObjAdmin._id) : ((product as any).categoryId ? String((product as any).categoryId) : null);
+    const categoryAdmin = catObjAdmin ? { _id: catObjAdmin._id, name: catObjAdmin.name, slug: catObjAdmin.slug, status: catObjAdmin.status } : null;
 
     // ── Sold count ──
     const variantObjectIds = variants.map((v: any) => v._id);
     let totalSold = 0;
     try {
       const soldAgg = await OrderItem.aggregate([
-        { $match: { variantId: { $in: variantObjectIds }, status: { $ne: 'cancelled' } } },
+        { $match: { productVariantId: { $in: variantObjectIds } } },
         { $group: { _id: null, total: { $sum: '$quantity' } } },
       ]);
       totalSold = soldAgg[0]?.total || 0;
@@ -1064,7 +992,8 @@ export class ProductQueryService {
       time: specs.time || (product as any).time || '',
       image: mainImage,
       images: imageUrls,
-      categories: catArr,
+      categoryId: categoryIdAdmin,
+      category: categoryAdmin,
       variants: variants.map((v: any) => ({
         _id: v._id,
         size: v.size,

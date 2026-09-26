@@ -1,35 +1,53 @@
 import mongoose from 'mongoose';
 import { FlashSale, IFlashSale } from '../models/FlashSale.ts';
-import { Product } from '../models/Product.ts';
 import { redis } from '../config/redis.ts';
 import { formatMultipleProducts } from './product/productFormatterService.ts';
 
 export class FlashSaleService {
+  private static lastReadStatusSyncAt = 0;
+
+  /**
+   * Đồng bộ trạng thái khi có request đọc dữ liệu.
+   * Không cần cron; throttle 60 giây để không ghi DB liên tục khi nhiều request cùng lúc.
+   */
+  static async syncStatusesOnRead(): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastReadStatusSyncAt < 60_000) return;
+    this.lastReadStatusSyncAt = now;
+    await this.updateStatuses();
+  }
+
   static async clearCache() {
     try {
-      const keys = [
-        'products:sale:tag:v2',
-        'products:new:tag:v5',
-        'products:limited:tag:v4',
-        'products:trending:tag:v5',
-        'homepage:all:v1',
-        'homepage:v4',
+      // Các section trang chủ cache theo key có version (hay đổi) → quét theo prefix
+      // thay vì hard-code, nếu không sẽ xóa nhầm key cũ và bỏ sót key hiện hành.
+      const patterns = [
+        'products:sale:*',
+        'products:new:*',
+        'products:limited:*',
+        'products:trending:*',
+        'products:seasonal:*',
+        'products:public:*',
+        'homepage:*',
       ];
-      await redis.del(keys);
-      // products:public:* (có hash theo filter) cũng chứa dữ liệu Flash Sale — dùng scanStream thay cho keys() để không block Redis
-      if (typeof (redis as any).scanStream === 'function') {
-        const stream = redis.scanStream({ match: 'products:public:*', count: 100 });
-        const publicKeys: string[] = [];
-        for await (const resultKeys of stream) {
-          if (resultKeys.length > 0) {
-            publicKeys.push(...resultKeys);
+      const keysToDelete: string[] = [];
+      for (const pattern of patterns) {
+        // scanStream/keys để không block Redis như KEYS trên tập lớn
+        if (typeof (redis as any).scanStream === 'function') {
+          const stream = redis.scanStream({ match: pattern, count: 200 });
+          for await (const resultKeys of stream) {
+            if (resultKeys.length > 0) keysToDelete.push(...resultKeys);
           }
+        } else if (typeof (redis as any).keys === 'function') {
+          const matched = await redis.keys(pattern);
+          if (matched.length > 0) keysToDelete.push(...matched);
         }
-        if (publicKeys.length > 0) await redis.del(publicKeys);
-      } else if (typeof (redis as any).keys === 'function') {
-        const publicKeys = await redis.keys('products:public:*');
-        if (publicKeys.length > 0) await redis.del(publicKeys);
       }
+      const uniqueKeys = [...new Set(keysToDelete)];
+      if (uniqueKeys.length > 0) await redis.del(uniqueKeys);
+      // Trang chủ còn 1 tầng cache in-memory trong graphql/schema → phải hủy cả hai.
+      const { invalidateHomepageCache } = await import('../graphql/schema.ts');
+      invalidateHomepageCache();
     } catch (e) {}
   }
 
@@ -62,6 +80,34 @@ export class FlashSaleService {
   }
 
   /**
+   * Chặn 1 sản phẩm nằm trong 2 đợt Flash Sale có khung giờ trùng nhau.
+   * Chỉ xét các đợt chưa kết thúc/không inactive và có [startDate, endDate] giao nhau.
+   */
+  private static async assertNoProductConflict(
+    productIds: mongoose.Types.ObjectId[],
+    start: Date,
+    end: Date,
+    excludeId?: string,
+  ): Promise<void> {
+    if (productIds.length === 0) return;
+    const filter: any = {
+      status: { $ne: 'inactive' },
+      startDate: { $lt: end },
+      endDate: { $gt: start },
+      'items.productId': { $in: productIds },
+    };
+    const excludeOid = excludeId ? this.toObjectId(excludeId) : null;
+    if (excludeOid) filter._id = { $ne: excludeOid };
+
+    const conflict = await FlashSale.findOne(filter).select('name').lean();
+    if (conflict) {
+      throw new Error(
+        `Một số sản phẩm đã thuộc đợt Flash Sale "${conflict.name}" trong cùng khung giờ. Mỗi sản phẩm chỉ được thuộc 1 đợt Flash Sale tại một thời điểm.`,
+      );
+    }
+  }
+
+  /**
    * Lấy danh sách ObjectId các sản phẩm đang nằm trong đợt Flash Sale đang diễn ra (Active)
    */
   static async getActiveFlashSaleProductIds(): Promise<mongoose.Types.ObjectId[]> {
@@ -82,49 +128,6 @@ export class FlashSaleService {
       }
     }
     return ids;
-  }
-
-  /**
-   * Thêm / Xóa / Gán sản phẩm vào đợt Flash Sale
-   */
-  static async assignProduct(productId: string, flashSaleId: string | null, extraDiscountPercentage = 10, stockLimit = 0) {
-    const pObjectId = this.toObjectId(productId);
-    if (!pObjectId) throw new Error('productId không hợp lệ');
-
-    let fsIdObject: mongoose.Types.ObjectId | null = null;
-    if (flashSaleId) {
-      fsIdObject = this.toObjectId(flashSaleId);
-      if (!fsIdObject) throw new Error('flashSaleId không hợp lệ');
-    }
-
-    const product = await Product.exists({ _id: pObjectId });
-    if (!product) throw new Error('Không tìm thấy sản phẩm');
-
-    // 1. Rút sản phẩm khỏi tất cả các đợt Flash Sale hiện tại
-    await FlashSale.updateMany(
-      { 'items.productId': pObjectId },
-      { $pull: { items: { productId: pObjectId } } }
-    );
-
-    let assignedFs: IFlashSale | null = null;
-    // 2. Nếu có flashSaleId, thêm sản phẩm vào sự kiện Flash Sale được chọn
-    if (fsIdObject) {
-      const fs = await FlashSale.findById(fsIdObject);
-      if (!fs) throw new Error('Không tìm thấy sự kiện Flash Sale được chọn');
-      if (fs.items.length >= 20) {
-        throw new Error('Mỗi đợt Flash Sale chỉ được chọn tối đa 20 sản phẩm');
-      }
-      fs.items.push({
-        productId: pObjectId as any,
-        extraDiscountPercentage: Math.max(0, Math.min(100, Number(extraDiscountPercentage) || 10)),
-        stockLimit: Math.max(0, Math.round(Number(stockLimit) || 0)),
-        soldCount: 0,
-      });
-      assignedFs = await fs.save();
-    }
-
-    await this.clearCache();
-    return assignedFs;
   }
 
   /**
@@ -185,26 +188,10 @@ export class FlashSaleService {
         path: 'items.productId',
         populate: [
           { path: 'brandId' },
-          { path: 'categories' }
+          { path: 'categoryId' }
         ]
       })
       .lean();
-
-    if (!flashSales || flashSales.length === 0) {
-      flashSales = await FlashSale.find({
-        status: { $in: ['active', 'scheduled'] }
-      })
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .populate({
-          path: 'items.productId',
-          populate: [
-            { path: 'brandId' },
-            { path: 'categories' }
-          ]
-        })
-        .lean();
-    }
 
     if (!flashSales || flashSales.length === 0) return [];
 
@@ -278,7 +265,7 @@ export class FlashSaleService {
         path: 'items.productId',
         populate: [
           { path: 'brandId' },
-          { path: 'categories' }
+          { path: 'categoryId' }
         ]
       })
       .lean();
@@ -294,7 +281,7 @@ export class FlashSaleService {
           path: 'items.productId',
           populate: [
             { path: 'brandId' },
-            { path: 'categories' }
+            { path: 'categoryId' }
           ]
         })
         .lean();
@@ -455,6 +442,9 @@ export class FlashSaleService {
     }
 
     const calculatedStatus = this.calculateStatus(start, end, data.status);
+    if (calculatedStatus !== 'inactive') {
+      await this.assertNoProductConflict(items.map((it: any) => it.productId), start, end);
+    }
 
     const flashSale = new FlashSale({
       name,
@@ -497,11 +487,16 @@ export class FlashSaleService {
       throw new Error('Mỗi đợt Flash Sale chỉ được chọn tối đa 20 sản phẩm');
     }
 
+    const newStatus = this.calculateStatus(start, end, data.status);
+    if (newStatus !== 'inactive') {
+      await this.assertNoProductConflict(items.map((it: any) => it.productId), start, end, id);
+    }
+
     existing.name = name;
     existing.startDate = start;
     existing.endDate = end;
     existing.items = items as any;
-    existing.status = this.calculateStatus(start, end, data.status);
+    existing.status = newStatus;
 
     const saved = await existing.save();
     await this.clearCache();
@@ -563,15 +558,4 @@ export class FlashSaleService {
       console.warn('Error updating Flash Sale soldCount:', err);
     }
   }
-}
-
-let cronStarted = false;
-export function startFlashSaleCron() {
-  if (cronStarted) return;
-  cronStarted = true;
-  setInterval(() => {
-    FlashSaleService.updateStatuses().catch((err) => {
-      console.warn('Error updating Flash Sale statuses in cron:', err);
-    });
-  }, 60_000);
 }

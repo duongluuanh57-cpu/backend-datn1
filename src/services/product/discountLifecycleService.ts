@@ -5,6 +5,7 @@ import { ProductTag } from '../../models/ProductTag.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { redis } from '../../config/redis.ts';
 import { FlashSaleService } from '../FlashSaleService.ts';
+import { TAG_RULES } from './tagRules.ts';
 
 /**
  * DiscountLifecycleService — MÔ HÌNH TRUNG TÂM duy nhất gán discount theo Tag.
@@ -31,7 +32,7 @@ export const NEW_AUTO_DISCOUNT_PERCENT = TAG_DISCOUNT_POLICY.new;
 /** Trần discount hệ thống cho hàng Standard. */
 export const STANDARD_MAX_DISCOUNT = 15;
 
-const AUTO_LIFECYCLE_DAYS = 31;
+const AUTO_LIFECYCLE_DAYS = TAG_RULES.newWithinDays;
 const THROTTLE_MS = 600_000;
 
 export interface DiscountCycleResult {

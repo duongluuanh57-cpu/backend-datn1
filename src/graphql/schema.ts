@@ -1,12 +1,12 @@
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { ProductService } from '../services/ProductService.ts';
+import { DiscountLifecycleService } from '../services/product/discountLifecycleService.ts';
 import { BrandService } from '../services/BrandService.ts';
 import { FlashSaleService } from '../services/FlashSaleService.ts';
 import { safeRedisGet, safeRedisSet } from '../config/redis.ts';
 import { verifyAccessToken, ACCESS_COOKIE } from '../utils/auth.ts';
 import { Favorite } from '../models/Favorite.ts';
-import Cart from '../models/Cart.ts';
-import CartItem from '../models/CartItem.ts';
+import { CartService } from '../services/cart/CartService.ts';
 import mongoose from 'mongoose';
 
 const typeDefs = `#graphql
@@ -95,11 +95,9 @@ const typeDefs = `#graphql
 
   type HomepageData {
     flashSales: [FlashSaleEventGql!]
-    sale: [Product!]
     new: [Product!]
     hot: [Product!]
     limited: [Product!]
-    standard: [Product!]
     seasonal: [Product!]
     brands: [Brand!]
   }
@@ -197,11 +195,7 @@ function mapProduct(p: any) {
     soldCount: p.soldCount ?? p.sold_count ?? null,
     quantityInStock: p.quantityInStock ?? 0,
     rating: p.rating ?? p.avgRating ?? p.averageRating ?? null,
-    categories: typeof p.categories === 'string'
-      ? p.categories
-      : Array.isArray(p.categories)
-        ? p.categories.map((c: any) => (c && typeof c === 'object' && c.name ? c.name : String(c))).join(', ')
-        : '',
+    categories: p.category?.name || (typeof p.categories === 'string' ? p.categories : ''),
     isFeatured: p.isFeatured ?? false,
     isNewArrival: p.isNewArrival ?? false,
     isBestSeller: p.isBestSeller ?? false,
@@ -243,16 +237,10 @@ function mapProductDetail(p: any) {
     reviewsCount: p.reviewsCount ?? p.reviews_count ?? 0,
     soldCount: p.soldCount ?? p.sold_count ?? 0,
     rating: p.rating ?? p.avgRating ?? p.averageRating ?? null,
-    categories: typeof p.categories === 'string'
-      ? p.categories.split(',').map((s: string) => s.trim()).filter(Boolean)
-      : Array.isArray(p.categories)
-        ? p.categories
-        : [],
+    categories: p.category?.name ? [p.category.name] : [],
     variants: (p.variants || []).map((v: any) => {
       const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
-      const vType = v.type === 'decant' || v.type === 'fullbox'
-        ? v.type
-        : (num > 0 && num < 50 ? 'decant' : 'fullbox');
+      const vType = num > 0 && num < 50 ? 'decant' : 'fullbox';
       return {
         _id: v._id?.toString() || '',
         size: v.size || '',
@@ -288,7 +276,7 @@ interface HomepageCacheEntry {
 
 const HOMEPAGE_STALE_MS = 180_000; // 3 phút: sau 3 phút thì dữ liệu coi là stale, revalidate ngầm
 const HOMEPAGE_EXPIRE_MS = 600_000; // 10 phút: tối đa lưu trong memory
-const HOMEPAGE_CACHE_KEY = 'homepage:v18';
+const HOMEPAGE_CACHE_KEY = 'homepage:v19';
 
 let memHomepageCache: HomepageCacheEntry | null = null;
 let singleFlightHomepagePromise: Promise<any> | null = null;
@@ -299,17 +287,20 @@ export function invalidateHomepageCache(): void {
 
 async function buildHomepageData(): Promise<any> {
   console.log('[Homepage Worker] Bắt đầu tổng hợp dữ liệu trang chủ...');
-  const [activeFlashSaleEvents, sale, newProducts, hot, limited, standardRaw, brands] = await Promise.race([
+  let timedOut = false;
+  const [activeFlashSaleEvents, newProducts, hot, limited, seasonalRaw, brands] = await Promise.race([
     Promise.all([
       FlashSaleService.getActiveFlashSales(3).catch(() => []),
-      ProductService.getSaleProducts().catch(() => []),
       ProductService.getNewProducts().catch(() => []),
       ProductService.getTrendingProducts(16).catch(() => []),
       ProductService.getLimitedProducts().catch(() => []),
       ProductService.getSeasonalProducts(200).catch(() => []),
       BrandService.getAllBrands().catch(() => []),
     ]),
-    new Promise<any[]>((resolve) => setTimeout(() => resolve([[], [], [], [], [], [], []]), 20_000)),
+    new Promise<any[]>((resolve) => setTimeout(() => {
+      timedOut = true;
+      resolve([[], [], [], [], [], []]);
+    }, 20_000)),
   ]);
 
   const formattedFlashSales = (activeFlashSaleEvents || []).map((ev: any) => ({
@@ -319,20 +310,20 @@ async function buildHomepageData(): Promise<any> {
     products: (ev.items || []).slice(0, 20).map(mapProduct),
   }));
 
-  const seasonalFormatted = (standardRaw || []).slice(0, 200).map(mapProduct);
-
   const result = {
     flashSales: formattedFlashSales,
-    sale: (sale || []).slice(0, 20).map(mapProduct),
     new: (newProducts || []).map(mapProduct),
     hot: (hot || []).slice(0, 16).map(mapProduct),
     limited: (limited || []).slice(0, 16).map(mapProduct),
-    standard: seasonalFormatted,
-    seasonal: seasonalFormatted,
+    // Một mảng duy nhất cho section "Bộ Sưu Tập Theo Mùa": trước đây `standard`
+    // được phát lại đúng 200 sản phẩm này nên payload GraphQL tốn gấp đôi.
+    seasonal: (seasonalRaw || []).slice(0, 200).map(mapProduct),
     brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
   };
 
-  if (result.hot.length > 0 || result.new.length > 0) {
+  // Chỉ cache khi tổng hợp xong thật. Trước đây điều kiện là "hot hoặc new có dữ liệu",
+  // nên DB trống/hỏng nhẹ là mỗi request trang chủ đều chạy lại toàn bộ service.
+  if (!timedOut) {
     memHomepageCache = { data: result, cachedAt: Date.now() };
     await safeRedisSet(HOMEPAGE_CACHE_KEY, JSON.stringify(result), 'EX', 600);
   }
@@ -351,6 +342,15 @@ function triggerBackgroundRevalidation() {
 const resolvers = {
   Query: {
     homepage: async () => {
+      // Render không cần cron nền: đồng bộ trạng thái/giảm giá khi trang chủ nhận request.
+      // Cả hai service đều tự throttle nên request tiếp theo không ghi DB liên tục.
+      FlashSaleService.syncStatusesOnRead().catch((err) => {
+        console.warn('[Homepage] FlashSale status sync error:', err);
+      });
+      DiscountLifecycleService.syncAutoDiscounts().catch((err) => {
+        console.warn('[Homepage] discount sync error:', err);
+      });
+
       const now = Date.now();
 
       // 1. In-Memory Cache: Nếu còn mới (< 3 phút) -> Phản hồi lập tức (< 1ms)
@@ -501,29 +501,25 @@ const resolvers = {
 
       const userObjectId = new mongoose.Types.ObjectId(userId);
 
-      // Fetch cart + favoriteIds song song
-      const [cart, favorites] = await Promise.all([
-        Cart.findOne({ userId: userObjectId }).lean(),
+      // Fetch cart_items + favoriteIds song song
+      const [items, favorites] = await Promise.all([
+        CartService.loadCartItems(userId),
         Favorite.find({ userId: userObjectId }).select('productId').lean(),
       ]);
 
-      let cartItems: any[] = [];
-      if (cart) {
-        const items = await CartItem.find({ cartId: cart._id }).lean();
-        cartItems = items.map((item: any) => ({
-          productId: item.productId?.toString() || '',
-          name: item.name || '',
-          image: item.image || null,
-          brand: item.brand || null,
-          price: item.price ?? 0,
-          discount: item.discount ?? null,
-          quantity: item.quantity ?? 1,
-          variantSize: item.variantSize || null,
-        }));
-      }
+      const cartItems = items.map((item: any) => ({
+        productId: item.productId || '',
+        name: item.name || '',
+        image: item.image || null,
+        brand: item.brand || null,
+        price: item.price ?? 0,
+        discount: item.discount ?? null,
+        quantity: item.quantity ?? 1,
+        variantSize: item.variantSize || null,
+      }));
 
       const totalItems = cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-      const totalAmount = (cart as any)?.totalAmount ?? 0;
+      const totalAmount = items.reduce((sum: number, item: any) => sum + item.price * (item.quantity || 1), 0);
       const favoriteIds = favorites.map((f: any) => f.productId?.toString() || '');
 
       return {
