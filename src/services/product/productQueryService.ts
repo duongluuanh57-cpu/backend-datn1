@@ -15,7 +15,7 @@ import { bySizeAsc } from './productHelpers.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
 import { FlashSaleService } from '../FlashSaleService.ts';
-import { TAG_RULES, findHotProductIds, findLimitedProductIds, newCutoffDate } from './tagRules.ts';
+import { findHotProductIds, findLimitedProductIds, newCutoffDate } from './tagRules.ts';
 
 export class ProductQueryService {
   private static CACHE_TTL = 300;
