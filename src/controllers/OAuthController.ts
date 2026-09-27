@@ -39,11 +39,12 @@ export class OAuthController {
     const result = await OAuthService.handleGoogleCallback(code);
     const frontendUrl = process.env.FRONTEND_URL || 'https://lessence-livid.vercel.app';
 
-    // Set session cookie trước, rồi redirect về FE với URL sạch
+    // Set session cookie trước, rồi redirect về FE với URL sạch.
+    // ADMIN phải có cả access+refresh: callback vừa xong thì FE gọi /api/auth/me
+    // (bước 2 trong comment ở trên) — route đó đọc access_token, chỉ có admin_token là 401.
+    setSessionCookies(reply, result.tokens);
     if (result.user.role === 'ADMIN') {
       setAdminCookie(reply, result.tokens.accessToken);
-    } else {
-      setSessionCookies(reply, result.tokens);
     }
 
     const redirectUrl = new URL(`${frontendUrl}/auth/callback`);

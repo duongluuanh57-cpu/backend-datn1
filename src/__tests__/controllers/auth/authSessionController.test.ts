@@ -133,6 +133,22 @@ describe('AuthSessionController', () => {
       expect(sentBody.data.tokens).toBeUndefined();
       expect(setCookie).toHaveBeenCalledWith('access_token', 'new-at', expect.anything());
       expect(setCookie).toHaveBeenCalledWith('refresh_token', 'new-rt', expect.anything());
+      expect(setCookie).toHaveBeenCalledTimes(2);
+    });
+
+    it('refresh của ADMIN nối luôn admin_token (cookie admin hết hạn sau 12h)', async () => {
+      vi.mocked(redis.get).mockResolvedValue(null);
+      vi.mocked(verifyRefreshToken).mockReturnValue({ userId: 'admin1' } as any);
+      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: 'admin1', role: 'ADMIN', passwordHash: '', email: '', username: '', status: 'active', createdAt: new Date() } as any);
+      vi.mocked(generateTokens).mockReturnValue({ accessToken: 'new-at', refreshToken: 'new-rt' });
+
+      const req = { body: { refreshToken: 'admin-rt' } } as any;
+      const setCookie = vi.fn();
+      const reply = { send: () => ({}), setCookie, clearCookie: vi.fn() } as any;
+
+      await AuthSessionController.refresh(req, reply);
+      expect(setCookie).toHaveBeenCalledWith('admin_token', 'new-at', expect.anything());
+      expect(setCookie).toHaveBeenCalledTimes(3);
     });
 
     it('từ chối refresh khi mọi phiên đã bị thu hồi (đổi mật khẩu)', async () => {

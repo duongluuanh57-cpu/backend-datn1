@@ -311,8 +311,19 @@ describe('AuthController - Register & Login', () => {
         'admin-access-token-888',
         expect.objectContaining({ httpOnly: true, path: '/', maxAge: 12 * 60 * 60 })
       );
-      // Admin không có refresh token — chỉ đúng MỘT cookie được set.
-      expect(setCookie).toHaveBeenCalledTimes(1);
+      // ADMIN nhận đủ 3 cookie: access + refresh (phiên user, để restoreSession()/
+      // /api/auth/me chạy được) và admin_token (route /admin/*).
+      expect(setCookie).toHaveBeenCalledWith(
+        'access_token',
+        'admin-access-token-888',
+        expect.objectContaining({ httpOnly: true, path: '/' })
+      );
+      expect(setCookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'admin-refresh-token-999',
+        expect.objectContaining({ httpOnly: true, path: '/' })
+      );
+      expect(setCookie).toHaveBeenCalledTimes(3);
     });
 
     it('should login with username instead of email', async () => {

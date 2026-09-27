@@ -49,10 +49,14 @@ export class AuthSessionController {
 
     const { user, tokens } = await AuthSessionService.login(data);
 
+    // ADMIN cũng phải nhận access+refresh cookie. FE chỉ có một đường khôi phục phiên
+    // sau F5 là /auth/refresh (SessionManager → restoreSession); thiếu refresh cookie
+    // thì mở /admin trực tiếp hoặc reload đều bị đá về trang đăng nhập.
+    // admin_token và access_token vốn là CÙNG một accessToken nên set cả hai
+    // không nới thêm quyền hạn nào của phiên.
+    setSessionCookies(reply, tokens);
     if (user.role === 'ADMIN') {
       setAdminCookie(reply, tokens.accessToken);
-    } else {
-      setSessionCookies(reply, tokens);
     }
 
     return reply.send({
@@ -114,6 +118,9 @@ export class AuthSessionController {
     }
 
     setSessionCookies(reply, tokens);
+    // admin_token hết hạn sau 12 giờ — phải set lại ở đây, nếu không phiên user vẫn
+    // tự nối dài còn /admin chết 401 đúng giữa lúc đang làm việc.
+    if (user.role === 'ADMIN') setAdminCookie(reply, tokens.accessToken);
 
     // Trả kèm user public — frontend dùng để khôi phục session sau F5 mà không cần gọi thêm /me.
     // Token mới chỉ nằm trong cookie vừa set ở trên.

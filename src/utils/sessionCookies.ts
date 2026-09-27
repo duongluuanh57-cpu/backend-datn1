@@ -43,8 +43,10 @@ export function setSessionCookies(
 }
 
 /**
- * Admin không có refresh token: chỉ một access token sống 12 giờ, để ở cookie riêng
- * để phiên admin không dùng lẫn với phiên user trên cùng trình duyệt.
+ * Cookie riêng cho route /admin/* (adminAuthMiddleware đọc đúng tên này). Giá trị là
+ * CÙNG một accessToken mà access_token mang — khác nhau ở TTL (12h vs 15') và ở chỗ
+ * nó không bị các route user đụng tới. ADMIN đăng nhập được set cả ba cookie vì FE
+ * khôi phục phiên chỉ qua /auth/refresh, cần refresh_token tồn tại.
  */
 export function setAdminCookie(reply: FastifyReply, accessToken: string): void {
   void reply.setCookie(ADMIN_COOKIE, accessToken, { ...sessionCookieAttrs(), maxAge: ADMIN_COOKIE_MAX_AGE });
