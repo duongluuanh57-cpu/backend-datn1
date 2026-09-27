@@ -203,9 +203,9 @@ describe('AI generate sản phẩm Limited', () => {
 });
 
 describe('AI generate — chặn mô tả viết lệch tên sản phẩm', () => {
-  async function runGenerate(description: string) {
+  async function runGenerate(description: string, name = 'Creed Aventus Absolu Limited Edition EDP') {
     store.aiResponse = JSON.stringify({
-      name: 'Creed Aventus Absolu Limited Edition EDP',
+      name,
       brand: 'Creed',
       description,
       variants: [{ size: '100ml', price: 9800000, quantityInStock: 6 }],
@@ -214,7 +214,7 @@ describe('AI generate — chặn mô tả viết lệch tên sản phẩm', () =
     await generateProduct(
       {
         body: {
-          name: 'Creed Aventus Absolu Limited Edition EDP',
+          name,
           availableTags: ['Limited'],
           availableBrands: ['Creed'],
           availableCategories: [],
@@ -240,6 +240,23 @@ describe('AI generate — chặn mô tả viết lệch tên sản phẩm', () =
     const payload = await runGenerate(good);
 
     expect(payload.data.description).toBe(good);
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it('tên có dấu được coi là khớp với bản không dấu (Chloé = Chloe)', async () => {
+    const good =
+      '**Mô tả hương thơm:** Chloé Eau de Parfum là biểu tượng của sự thanh lịch, mở đầu bằng hoa mẫu đơn và vải.';
+    const payload = await runGenerate(good, 'Nước hoa Chloe Eau de Parfum');
+
+    expect(payload.data.description).toBe(good);
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it('tên chỉ toàn từ chung thì không có cơ sở để bỏ mô tả', async () => {
+    const anyDesc = '**Mô tả hương thơm:** Nồng độ EDP lưu hương 6-8 giờ, phong cách thanh lịch.';
+    const payload = await runGenerate(anyDesc, 'Nước hoa EDP');
+
+    expect(payload.data.description).toBe(anyDesc);
     expect(payload.warnings).toEqual([]);
   });
 });

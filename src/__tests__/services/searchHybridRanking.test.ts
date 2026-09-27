@@ -70,7 +70,7 @@ beforeEach(() => {
       // Mô phỏng Mongo: khớp $or các regex name, không neo đầu chuỗi thì phải tìm thấy ở giữa tên.
       const conds = (pipeline[0]?.$match?.$or ?? []).map((c: any) => c.name.$regex as string);
       const hit = CREED_DOCS.filter((d) =>
-        conds.some((src) => new RegExp(src, 'i').test(d.name))
+        conds.some((src: string) => new RegExp(src, 'i').test(d.name))
       );
       return hit.map((d) => ({ ...d, brandData: { name: 'Creed' } }));
     },
@@ -101,7 +101,7 @@ describe('hybridSearch — hạng theo mức khớp tên, không ngẫu nhiên',
 
     const pipeline = mongooseCollectionAggregate.mock.calls.at(-1)[0];
     const nameSources = (pipeline[0].$match.$or ?? []).map((c: any) => String(c.name?.$regex ?? ''));
-    expect(nameSources.some((src) => src.startsWith('^'))).toBe(false);
+    expect(nameSources.some((src: string) => src.startsWith('^'))).toBe(false);
     expect(nameSources).toContain('eladaria');
   });
 
@@ -110,6 +110,6 @@ describe('hybridSearch — hạng theo mức khớp tên, không ngẫu nhiên',
 
     const pipeline = mongooseCollectionAggregate.mock.calls.at(-1)[0];
     const nameSources = (pipeline[0].$match.$or ?? []).map((c: any) => String(c.name?.$regex ?? ''));
-    expect(nameSources.every((src) => src.startsWith('^'))).toBe(true);
+    expect(nameSources.every((src: string) => src.startsWith('^'))).toBe(true);
   });
 });

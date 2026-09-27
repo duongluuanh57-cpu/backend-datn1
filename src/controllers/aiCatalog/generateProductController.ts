@@ -4,30 +4,13 @@ import { SearchService } from '../../services/SearchService.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { extractAndFixJson } from './sanitizeJson.ts';
 import { TAG_RULES, isLimitedTagRef } from '../../services/product/tagRules.ts';
+import { descriptionMatchesName, distinctiveNameWords } from '../../services/product/nameConsistency.ts';
 
 /**
  * POST /api/ai/admin/generate-product
  * AI tạo thông tin sản phẩm từ tên.
  * Brand chỉ được chọn từ danh sách brand active có sẵn; AI không được tạo brand mới.
  */
-
-const GENERIC_NAME_WORDS = new Set([
-  'edp', 'edt', 'edc', 'eau', 'parfum', 'de', 'la', 'le', 'les', 'pour', 'homme', 'femme',
-  'limited', 'edition', 'nuoc', 'nước', 'hoa', 'giftset', 'pcs', 'intense', 'extreme', 'new',
-]);
-
-function nameWords(value: unknown): string[] {
-  return String(value ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-}
-
-/**
- * Từ đặc trưng của tên, đã trừ tên brand và các từ ai cũng có.
- * Brand không chứng minh được mô tả viết đúng chai: "Creed Spring Flower EDP" vẫn đầy chữ "Creed".
- */
-function distinctiveNameWords(name: unknown, brand: unknown): string[] {
-  const brandWords = new Set(nameWords(brand));
-  return nameWords(name).filter((w) => w.length >= 3 && !GENERIC_NAME_WORDS.has(w) && !brandWords.has(w));
-}
 
 export async function generateProduct(req: FastifyRequest, reply: FastifyReply) {
   try {
@@ -245,14 +228,10 @@ HÃY TRẢ LỀ THEO ĐỊNH DẠNG JSON (không markdown, không giải thích)
     const warnings: string[] = [];
     const description = String(productData.description || '');
     const signatureWords = distinctiveNameWords(productData.name || name, productData.brand);
-    if (description && signatureWords.length > 0) {
-      const lower = description.toLowerCase();
-      const hit = signatureWords.filter((word) => lower.includes(word)).length;
-      if (hit / signatureWords.length < 0.5) {
-        console.warn(`⚠️ [generateProduct] Mô tả trả về không nhắc tới "${name}", bỏ mô tả để admin viết lại`);
-        productData.description = '';
-        warnings.push('Mô tả AI trả về nói về sản phẩm khác nên đã bị loại — hãy kiểm tra và viết lại mô tả.');
-      }
+    if (description && !descriptionMatchesName(description, signatureWords)) {
+      console.warn(`⚠️ [generateProduct] Mô tả trả về không nhắc tới "${name}", bỏ mô tả để admin viết lại`);
+      productData.description = '';
+      warnings.push('Mô tả AI trả về nói về sản phẩm khác nên đã bị loại — hãy kiểm tra và viết lại mô tả.');
     }
 
     return reply.send({
