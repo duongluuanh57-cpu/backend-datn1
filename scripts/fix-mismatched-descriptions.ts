@@ -1,22 +1,29 @@
 /**
- * Tìm (và tùy chọn dọn) mô tả sản phẩm viết về chai khác.
+ * Dọn mô tả sản phẩm bị chép nhầm từ chai khác.
  *
- * Nguồn gốc: dữ liệu import hàng loạt, mô tả bị gắn lệch sang sản phẩm khác —
- * kiểm bằng từ định danh của chính tên sản phẩm (logic dùng chung với guard lúc
- * AI generate trong src/services/product/nameConsistency.ts).
+ * Nguồn gốc: dữ liệu import hàng loạt, có row mang tên chai này nhưng mô tả của chai khác.
+ * So khớp bằng từ định danh của tên (logic dùng chung với guard lúc AI generate,
+ * src/services/product/nameConsistency.ts).
  *
  * Chạy:
  *   npx tsx scripts/fix-mismatched-descriptions.ts              # bao cao, khong ghi
  *   npx tsx scripts/fix-mismatched-descriptions.ts --apply <id> # xoa mo ta cua dung id truyen vao
  *
- * Script không tự ghi hàng loạt: mô tả hợp lệ vẫn có thể không lặp lại tên chai,
+ * Script chỉ báo cáo, không tự ghi hàng loạt: mô tả hợp lệ vẫn có thể không lặp lại tên chai,
  * nên quyết định là việc của người đọc báo cáo.
+ *
+ * Ảnh: KHÔNG có phép thử tự động nào ở đây. Folder trong URL (/products/<ten-chai>/) do bên
+ * import đặt và không phản ánh nội dung ảnh — đã kiểm chứng: folder "creed-spring-flower-edp"
+ * chứa ảnh chai Aventus (đúng), còn 2 row Boss folder khớp tên lại chứa ảnh Armani/Montblanc
+ * (sai). Ảnh chỉ kết luận được bằng cách mở ra xem, nên báo cáo in URL gallery của từng row
+ * đáng ngờ để người đọc mở đối chiếu.
  */
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { connectDB } from '../src/config/database.ts';
 import { redis } from '../src/config/redis.ts';
 import { Product } from '../src/models/Product.ts';
+import { ProductImage } from '../src/models/ProductImage.ts';
 import { descriptionMatchesName, distinctiveNameWords, foldNameText } from '../src/services/product/nameConsistency.ts';
 
 /** Tên chai khác mà chính mô tả này nêu đủ — bằng chứng nó thuộc về sản phẩm nào. */
@@ -53,10 +60,12 @@ async function main() {
   for (const { row, sig, hit } of suspects) {
     const preview = String(row.description).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
     const other = namedProducts(String(row.description), rows, String(row._id));
+    const gallery = await ProductImage.find({ productId: row._id }).select('url').sort({ _id: 1 }).lean();
     console.log(`? ${row._id}  ${row.name}  [${row.status}]`);
     console.log(`   tu dinh dang: ${sig.join(', ')} | co trong mo ta: ${hit.join(', ') || '(khong co)'}`);
     console.log(`   trung ten chai khac trong catalog: ${other.join(' | ') || '(khong co)'}`);
-    console.log(`   mo ta bat dau: "${preview}"\n`);
+    console.log(`   mo ta bat dau: "${preview}"`);
+    console.log(`   anh can xem lai: ${gallery.map(g => g.url).join('\n     ') || '(khong co anh)'}\n`);
   }
 
   if (!targets.length) {
