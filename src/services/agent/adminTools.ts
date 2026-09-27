@@ -162,17 +162,23 @@ export async function updateProductFields(
 
     // Chỉ những key có thật trên schema Product mới ghi được; Mongoose strict mode âm thầm
     // vứt key lạ, nên lọc ở đây để không báo "đã cập nhật price/tags" trong khi không có gì đổi.
+    // `_id`/`__v`/`id` không phải thứ admin sửa, còn path lồng (`brandId.name`) là đường
+    // đọc của bản populate — ghi vào sẽ cast lỗi hoặc đè mất con trỏ brand.
+    const PROTECTED_KEYS = new Set(['_id', '__v', 'id']);
     const writable = new Set(Object.keys(Product.schema.paths));
     const applied: Record<string, any> = {};
     const rejected: string[] = [];
     for (const [key, value] of Object.entries(fields || {})) {
-      if (writable.has(key.split('.')[0])) applied[key] = value;
-      else rejected.push(key);
+      const root = key.split('.')[0];
+      if (key.includes('.') || PROTECTED_KEYS.has(root) || !writable.has(root)) rejected.push(key);
+      else applied[key] = value;
     }
     if (Object.keys(applied).length === 0) {
       const hint = rejected.includes('price') || rejected.includes('tags')
         ? ' Giá và tag giờ nằm ở bảng biến thể / ProductTag, không còn là cột của sản phẩm.'
-        : '';
+        : rejected.some(k => k.includes('.'))
+          ? ' Chỉ nhận tên cột trực tiếp của sản phẩm, không nhận path lồng nhau.'
+          : '';
       return { success: false, message: `Không có field nào cập nhật được: ${rejected.join(', ') || '(trống)'}.${hint}` };
     }
 
@@ -182,7 +188,7 @@ export async function updateProductFields(
     }
 
     const changedFields = Object.keys(applied).join(', ');
-    const skippedNote = rejected.length > 0 ? ` (bỏ qua ${rejected.join(', ')} — không phải cột của Product)` : '';
+    const skippedNote = rejected.length > 0 ? ` (bỏ qua ${rejected.join(', ')} — không phải cột hợp lệ của Product)` : '';
     return {
       success: true,
       message: `Đã cập nhật sản phẩm "${existing.name}" (${changedFields})${skippedNote}`,

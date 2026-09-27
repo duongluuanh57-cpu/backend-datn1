@@ -52,6 +52,44 @@ describe("adminTools", () => {
       expect(updateProduct).not.toHaveBeenCalled();
     });
 
+    it("REGRESSION: `_id`/`__v` là cột thật nhưng không phải thứ admin được sửa", async () => {
+      const updateProduct = vi.fn(async (_id: string, _fields: Record<string, any>) => ({ _id: VALID_ID }));
+      const deps: AdminToolDeps = {
+        findProductById: () => Promise.resolve({ name: "Old Name" }),
+        updateProduct,
+      };
+
+      const result = await updateProductFields(
+        VALID_ID,
+        { _id: "000000000000000000000000", __v: 9 },
+        deps
+      );
+
+      expect(result.success).toBe(false);
+      expect(updateProduct).not.toHaveBeenCalled();
+    });
+
+    it("REGRESSION: path lồng `brandId.name` không được thành lệnh đè con trỏ brand", async () => {
+      const updateProduct = vi.fn(async (_id: string, _fields: Record<string, any>) => ({ _id: VALID_ID }));
+      const deps: AdminToolDeps = {
+        findProductById: () => Promise.resolve({ name: "Old Name" }),
+        updateProduct,
+      };
+
+      const onlyNested = await updateProductFields(VALID_ID, { "brandId.name": "Tự bịa" }, deps);
+      expect(onlyNested.success).toBe(false);
+      expect(onlyNested.message).toContain("path lồng nhau");
+
+      const mixed = await updateProductFields(
+        VALID_ID,
+        { "brandId.name": "Tự bịa", description: "OK" },
+        deps
+      );
+      expect(mixed.success).toBe(true);
+      expect(updateProduct.mock.calls[0][1]).toEqual({ description: "OK" });
+      expect(mixed.message).toContain("bỏ qua brandId.name");
+    });
+
     it("should handle update failure (returns null)", async () => {
       const deps: AdminToolDeps = {
         findProductById: () => Promise.resolve({ name: "Existing" }),
