@@ -228,10 +228,13 @@ async function buildPlan(data: any, candidates: any[]) {
 
   const discounts = await getEffectiveProductDiscounts(targets.map((t) => t.product._id));
 
-  // Review có unique index userId+productId: một người chỉ review một sản phẩm một lần.
-  const reviewedPairs = new Set<string>();
-  const existingReviews = (await Review.find({ productId: { $in: targets.map((t) => t.product._id) } }).select('userId productId').lean()) as any[];
-  for (const r of existingReviews) reviewedPairs.add(`${r.userId}:${r.productId}`);
+  // Avg review visible hiện có của từng chai mục tiêu — để rating mới không kéo
+  // chai đang sát mốc 4.5 xuống dưới cổng hotMinRating.
+  const ratingAgg = await Review.aggregate<{ _id: mongoose.Types.ObjectId; sum: number; n: number }>([
+    { $match: { status: 'visible', productId: { $in: targets.map((t) => t.product._id) } } },
+    { $group: { _id: '$productId', sum: { $sum: '$rating' }, n: { $sum: 1 } } },
+  ]);
+  const aggBy = new Map(ratingAgg.map((r) => [String(r._id), { sum: r.sum, n: r.n }]));
 
   const addrByUser = new Map<string, any>();
   for (const a of addresses) {
@@ -365,15 +368,20 @@ async function buildPlan(data: any, candidates: any[]) {
         createdAt,
       });
 
-      const pairKey = `${user._id}:${pid}`;
-      if (status === 'delivered' && rng() < 0.78 && !reviewedPairs.has(pairKey)) {
-        reviewedPairs.add(pairKey);
+      // Luật thật (ReviewService.canReview): mỗi lượt mua delivered = 1 lượt review.
+      // Mỗi đơn seed là 1 lượt mua nên review tối đa 1 cái/đơn — không giới hạn theo cặp user+product.
+      if (status === 'delivered' && rng() < 0.78) {
+        const agg = aggBy.get(pid) || { sum: 0, n: 0 };
+        let rating = 5;
+        if (rng() < 0.25 && (agg.sum + 4) / (agg.n + 1) >= 4.6) rating = 4;
+        agg.sum += rating; agg.n += 1;
+        aggBy.set(pid, agg);
         const reviewed = new Date(Math.min(now - DAY, createdAt.getTime() + deliveredOffset + ri(1, 12) * DAY));
         reviews.push({
           userId: user._id,
           productId: new mongoose.Types.ObjectId(pid),
           orderItemId: itemId,
-          rating: pick([5, 5, 5, 5, 4]),
+          rating,
           comment: pick(COMMENT_POOL),
           images: [],
           isAnonymous: rng() < 0.15,
