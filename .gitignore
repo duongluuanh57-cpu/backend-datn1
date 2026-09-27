@@ -9,8 +9,9 @@ backups
 .idea
 .antigravity
 .gemini
-# Lock files
+# Lock files (repo dùng npm, không dùng pnpm)
 pnpm-workspace.yaml
+pnpm-lock.yaml
 .backups
 # Script một lần thả ở gốc repo
 /fix3.js
