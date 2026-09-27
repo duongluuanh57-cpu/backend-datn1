@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyAccessToken, ACCESS_COOKIE } from '../utils/auth.ts';
+import { verifyAccessToken, isSessionRevoked, ACCESS_COOKIE } from '../utils/auth.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
 
 // Mở rộng kiểu Fastify Request để TypeScript biết có thêm field `user`
@@ -39,6 +39,10 @@ export async function authMiddleware(req: FastifyRequest, reply: FastifyReply) {
 
   try {
     const decoded = verifyAccessToken(token);
+    // Token ký trước lần đổi mật khẩu gần nhất → không còn hiệu lực.
+    if (await isSessionRevoked(decoded.userId, decoded.iat)) {
+      throw new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+    }
     req.user = { userId: decoded.userId, role: decoded.role };
   } catch (err: any) {
     throw new UnauthorizedError(err.message || 'Token không hợp lệ hoặc đã hết hạn');
@@ -54,6 +58,9 @@ export async function optionalAuthMiddleware(req: FastifyRequest) {
 
   try {
     const decoded = verifyAccessToken(token);
+    // Phiên đã bị thu hồi (logout/đổi mật khẩu) → coi như guest, không throw.
+    // Nếu bỏ qua check này, cookie ADMIN đã logout vẫn giữ role ADMIN.
+    if (await isSessionRevoked(decoded.userId, decoded.iat)) return;
     req.user = { userId: decoded.userId, role: decoded.role };
   } catch {
     // Ignore error for optional auth

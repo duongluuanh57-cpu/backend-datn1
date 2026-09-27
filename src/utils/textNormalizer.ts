@@ -38,10 +38,15 @@ const PERFUME_ABBREVIATIONS: Record<string, string> = {
 // ── Core functions ──
 
 /**
- * Strip Vietnamese diacritics via Unicode NFD decomposition
+ * Strip Vietnamese diacritics via Unicode NFD decomposition.
+ * `đ/Đ` (U+0111/U+0110) không phân rã theo NFD nên phải map thủ công về 'd',
+ * nếu không sẽ bị coi là ký tự lạ (rơi khỏi slug hoặc thành dấu cách).
  */
 export function stripDiacritics(text: string): string {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd');
 }
 
 /**
@@ -49,7 +54,7 @@ export function stripDiacritics(text: string): string {
  * Dùng cho: fuzzy matching, comparison, dedup
  */
 export function normalize(text: string): string {
-  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  return stripDiacritics(text.toLowerCase()).trim();
 }
 
 /**
@@ -57,10 +62,7 @@ export function normalize(text: string): string {
  * Dùng cho: URL slugs, tag slugs, category slugs
  */
 export function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+  return stripDiacritics(text.toLowerCase())
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'item';
 }
@@ -69,10 +71,7 @@ export function slugify(text: string): string {
  * Tokenize: split text into words, filter short words
  */
 export function tokenize(text: string, minWordLength: number = 2): string[] {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+  return stripDiacritics(text.toLowerCase())
     .replace(/[^\w\s]/g, ' ')
     .split(/\s+/)
     .filter(w => w.length >= minWordLength);

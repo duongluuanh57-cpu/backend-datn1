@@ -4,15 +4,38 @@
  * Mỗi executor nhận input và trả về kết quả dạng text hoặc stream
  */
 import { AIService } from '../AIService.ts';
-import { SearchService } from '../SearchService.ts';
-import { ContentSearchService } from '../ContentSearchService.ts';
+import { SearchService, extractPriceRange } from '../SearchService.ts';
 import { formatMultipleProducts } from '../product/productFormatterService.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Tag } from '../../models/Tag.ts';
 import { Product } from '../../models/Product.ts';
+import { ProductVariant } from '../../models/ProductVariant.ts';
 import type { RouteContext } from './queryRouterTypes.ts';
 
 // ── HELPERS ──────────────────────────────────────────────────────────────
+
+/** Lịch sử đưa vào prompt phải sạch token điều khiển UI và giới hạn số turn để tránh blow-up token / spoof card */
+function sanitizeHistory(history: any[]): { role: 'user' | 'assistant'; content: string }[] {
+  return (history || [])
+    .slice(-10)
+    .map(h => ({
+      role: (h?.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: String(h?.content || '').replace(/\[(?:CARD|BUY_FLOW|ADD_TO_CART):\s*[^\]]*\]/gi, '').trim(),
+    }))
+    .filter(h => h.content.length > 0);
+}
+
+/** Câu hỏi hiện tại LUÔN là turn role 'user' */
+function buildChatMessages(history: any[], message: string) {
+  const chatMessages = sanitizeHistory(history);
+  const last = chatMessages[chatMessages.length - 1];
+  if (last && last.role === 'user') {
+    chatMessages[chatMessages.length - 1] = { role: 'user' as const, content: message };
+  } else {
+    chatMessages.push({ role: 'user' as const, content: message });
+  }
+  return chatMessages;
+}
 
 let cachedStoreOverview: { data: string; expiresAt: number } | null = null;
 
@@ -48,23 +71,33 @@ async function buildContext(
 ): Promise<RouteContext> {
   let products: any[] = [];
   let mode: string = '';
-  let documents: any[] = [];
   let storeOverview: string = '';
 
   try {
-    const [searchResult, contentResult, overview] = await Promise.all([
+    const [searchResult, overview] = await Promise.all([
       SearchService.hybridSearch(message, 4),
-      ContentSearchService.search(message, 2).catch(() => []),
       getStoreOverview(),
     ]);
 
     storeOverview = overview;
     mode = searchResult.mode;
-    documents = contentResult;
 
     const rawProducts = searchResult.products || [];
     if (rawProducts.length > 0) {
       products = await formatMultipleProducts(rawProducts);
+
+      // Lọc theo giá HIỂN THỊ trên card (price của formatted product) để không đề xuất sp vượt khoảng giá khách yêu cầu
+      const priceRange = extractPriceRange(message);
+      if (priceRange) {
+        const { minPrice, maxPrice } = priceRange;
+        products = products.filter((p: any) => {
+          const pVal = p.price;
+          if (typeof pVal !== 'number' || pVal <= 0) return false;
+          if (minPrice !== undefined && pVal < minPrice) return false;
+          if (maxPrice !== undefined && pVal > maxPrice) return false;
+          return true;
+        });
+      }
     }
 
     // Nếu search theo nội dung câu ngắn (như "thêm sản phẩm vào giỏ hàng") không khớp sản phẩm,
@@ -84,7 +117,7 @@ async function buildContext(
       if (recentCardIds.length > 0) {
         const fallbackDocs = await Product.find({ _id: { $in: recentCardIds }, status: 'active' })
           .populate('brandId')
-          .populate('categories')
+          .populate('categoryId')
           .lean();
         if (fallbackDocs.length > 0) {
           products = await formatMultipleProducts(fallbackDocs);
@@ -97,7 +130,6 @@ async function buildContext(
 
   return {
     products,
-    documents,
     mode,
     storeOverview,
     historyContext: '',
@@ -114,6 +146,11 @@ function buildSystemPrompt(
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
 KHÔNG bao giờ nhắc đến từ "Database", "Cơ sở dữ liệu", "Hệ thống".
 
+PHẠM VI HOẠT ĐỘNG:
+- Chỉ tư vấn sản phẩm nước hoa, thương hiệu, mùi hương, giá và dung tích.
+- Hỗ trợ khách chọn loại sản phẩm và thêm sản phẩm vào giỏ hàng.
+- Không trả lời tin tức, tài liệu, chính sách hoặc câu hỏi ngoài phạm vi sản phẩm; nếu ngoài phạm vi, hãy nhờ khách liên hệ bộ phận phù hợp.
+
 QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.
 
 QUY TẮC MUA HÀNG & CHỌN LOẠI SẢN PHẨM: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó (ví dụ "tôi muốn mua sản phẩm này", "tôi muốn mua chai này", "thêm vào giỏ hàng chai Chloe", "đặt mua chai Boss", "lấy chai 1", "cho vào giỏ hàng", v.v.):
@@ -126,13 +163,7 @@ QUY TẮC ĐỊNH DẠNG TIN NHẮN:
 - Trình bày dạng danh sách gạch đầu dòng gọn gàng kèm giá bán cụ thể (ví dụ: - **Tên sản phẩm** (Hãng) - Giá: 1.225.000đ: Mô tả ngắn...). Tuyệt đối KHÔNG viết dấu hoa thị dính chùm như *** hay * **.
 - QUAN TRỌNG VỀ GIÁ GIẢM: Nếu sản phẩm có giá khuyến mãi/giảm giá (trong context có ghi "Giá gốc:" và "Giảm: %"), bạn BẮT BUỘC phải tư vấn giá bán đã giảm (giá ưu đãi/khuyến mãi) cho khách hàng (ví dụ: "Giá ưu đãi chỉ: 1.225.000đ (giá gốc: 2.450.000đ, giảm 50%)"). Tuyệt đối KHÔNG báo giá gốc như là giá bán hiện tại!
 
-QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về thương hiệu hoặc các hãng theo xuất xứ quốc gia (như "hãng nước hoa Việt Nam", "nước hoa Pháp", "hãng của Ý", "hãng Mỹ", "hãng Anh", v.v.), bạn BẮT BUỘC phải tra cứu phần "TỔNG QUAN CỬA HÀNG" bên dưới. Nếu cửa hàng có thương hiệu thuộc quốc gia đó (ví dụ: Verites có xuất xứ Việt Nam), bạn PHẢI giới thiệu ngay cho khách hàng. KHÔNG ĐƯỢC trả lời là shop chỉ có hãng quốc tế khi cửa hàng có thương hiệu đó!
-
-CHÍNH SÁCH CỬA HÀNG L'ESSENCE:
-- Giao hàng & Freeship: Miễn phí vận chuyển toàn quốc cho đơn hàng từ 500.000đ trở lên.
-- Cam kết chất lượng: 100% nước hoa chính hãng nhập khẩu nguyên seal, đền bù 200% giá trị nếu phát hiện hàng giả/kém chất lượng.
-- Chính sách đổi trả: Hỗ trợ đổi trả miễn phí trong vòng 7 ngày nếu lỗi do nhà sản xuất hoặc sản phẩm còn nguyên tem mác.
-- Phương thức thanh toán: Hỗ trợ thanh toán tiện lợi qua VNPAY, Thẻ Visa/Master, Chuyển khoản ngân hàng hoặc COD (nhận hàng kiểm tra rồi mới thanh toán).`;
+QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về thương hiệu hoặc các hãng theo xuất xứ quốc gia (như "hãng nước hoa Việt Nam", "nước hoa Pháp", "hãng của Ý", "hãng Mỹ", "hãng Anh", v.v.), bạn BẮT BUỘC phải tra cứu phần "TỔNG QUAN CỬA HÀNG" bên dưới. Nếu cửa hàng có thương hiệu thuộc quốc gia đó (ví dụ: Verites có xuất xứ Việt Nam), bạn PHẢI giới thiệu ngay cho khách hàng. KHÔNG ĐƯỢC trả lời là shop chỉ có hãng quốc tế khi cửa hàng có thương hiệu đó!`;
 
   const isAdmin = userRole === 'ADMIN';
 
@@ -155,14 +186,10 @@ CHÍNH SÁCH CỬA HÀNG L'ESSENCE:
       const priceStr = p.price ? `${p.price.toLocaleString('vi-VN')}đ` : 'Liên hệ';
       const origPriceStr = p.originalPrice && p.originalPrice > p.price ? ` (Giá gốc: ${p.originalPrice.toLocaleString('vi-VN')}đ, Giảm: ${p.discount}%)` : '';
       const descStr = p.description ? ` | Mô tả: ${p.description.substring(0, 100)}` : '';
-      const catStr = p.categories ? ` | Danh mục: ${p.categories}` : '';
+      const catStr = p.category?.name ? ` | Danh mục: ${p.category.name}` : '';
       const sizeStr = p.size ? ` | Dung tích: ${p.size}` : '';
       return `- **${p.name}** (Hãng: ${p.brand} | Giá bán: ${priceStr}${origPriceStr}${catStr}${sizeStr}${descStr}) [CARD:${p._id}]`;
     }).join('\n')}`;
-  }
-
-  if (ctx.documents.length > 0) {
-    contextStr += `\n\nTÀI LIỆU LIÊN QUAN:\n${ctx.documents.map(d => `- [${d.title}]: ${d.body.substring(0, 500)}`).join('\n')}`;
   }
 
   if (ctx.storeOverview) {
@@ -197,15 +224,7 @@ export async function executeVectorSearch(
   const ctx = await buildContext(message, history, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
-  const chatMessages = [...history];
-  if (chatMessages.length > 0) {
-    chatMessages[chatMessages.length - 1] = {
-      ...chatMessages[chatMessages.length - 1],
-      content: message,
-    };
-  } else {
-    chatMessages.push({ role: 'user' as const, content: message });
-  }
+  const chatMessages = buildChatMessages(history, message);
 
   const stream = await AIService.createChatStream(chatMessages, systemPrompt);
   return { stream, products: ctx.products || [] };
@@ -223,15 +242,7 @@ export async function executeSqlSearch(
   const ctx = await buildContext(message, history, userRole);
   const systemPrompt = buildSystemPrompt(ctx, userRole);
 
-  const chatMessages = [...history];
-  if (chatMessages.length > 0) {
-    chatMessages[chatMessages.length - 1] = {
-      ...chatMessages[chatMessages.length - 1],
-      content: message,
-    };
-  } else {
-    chatMessages.push({ role: 'user' as const, content: message });
-  }
+  const chatMessages = buildChatMessages(history, message);
 
   const stream = await AIService.createChatStream(chatMessages, systemPrompt);
   return { stream, products: ctx.products || [] };
@@ -255,15 +266,7 @@ Hãy trả lời dựa trên kiến thức bạn có.
 Nếu không chắc chắn, hãy nói "Mình sẽ cập nhật thêm thông tin này, bạn quay lại sau nhé! 😊"
 KHÔNG bịa đặt thông tin hay số liệu cụ thể nếu không chắc chắn.`;
 
-  const chatMessages = [...history];
-  if (chatMessages.length > 0) {
-    chatMessages[chatMessages.length - 1] = {
-      ...chatMessages[chatMessages.length - 1],
-      content: message,
-    };
-  } else {
-    chatMessages.push({ role: 'user' as const, content: message });
-  }
+  const chatMessages = buildChatMessages(history, message);
 
   const stream = await AIService.createChatStream(chatMessages, systemPrompt);
   return { stream, products: [] };
@@ -287,17 +290,29 @@ export async function executeGraphSearch(
       const productIds = ctx.products.map(p => p._id);
       const brands = [...new Set(ctx.products.map(p => p.brandId).filter(Boolean))];
       
-      const relatedProducts = await Product.find({
+      const relatedDocs = await Product.find({
         _id: { $nin: productIds },
         $or: [
           { brandId: { $in: brands } },
         ],
         status: 'active',
       })
-        .select('name price brandId images')
-        .limit(5)
+        .select('name brandId images')
+        .limit(10)
         .populate('brandId', 'name')
         .lean();
+
+      // Chỉ gợi ý sản phẩm liên quan còn hàng
+      const relatedInStockIds = relatedDocs.length > 0
+        ? await ProductVariant.distinct('productId', {
+            productId: { $in: relatedDocs.map((p: any) => p._id) },
+            quantityInStock: { $gt: 0 },
+          })
+        : [];
+      const relatedInStockSet = new Set(relatedInStockIds.map((id: any) => id.toString()));
+      const relatedProducts = relatedDocs
+        .filter((p: any) => relatedInStockSet.has(p._id.toString()))
+        .slice(0, 5);
 
       if (relatedProducts.length > 0) {
         graphContext = `SẢN PHẨM LIÊN QUAN (cùng hãng):\n${relatedProducts.map((p: any) => {
@@ -315,7 +330,7 @@ Trả lời ngắn gọn, thân thiện, dùng icon :3.
 
 Bạn đang ở chế độ GỢI Ý. Hãy tư vấn nhiệt tình, đề xuất sản phẩm phù hợp dựa trên nhu cầu của khách.
 QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]).
-QUY TẮC THÊM VÀO GIỎ HÀNG: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó, hãy chèn cú pháp [ADD_TO_CART:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời và thông báo vui vẻ rằng bạn đã thêm sản phẩm vào giỏ hàng cho họ :3.
+QUY TẮC MUA HÀNG & THÊM VÀO GIỎ: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó, bạn KHÔNG được tuyên bố đã thực hiện bất kỳ thao tác nào (tuyệt đối KHÔNG nói "đã thêm vào giỏ hàng"). Bạn PHẢI hỏi trước khách muốn chọn loại sản phẩm (Chiết chai / Fullbox) và dung tích, đồng thời BẮT BUỘC chèn cú pháp [BUY_FLOW:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời để khách bấm chọn ở nút bên dưới.
 
 ${ctx.products.length > 0 ? `SẢN PHẨM KHỚP:\n${ctx.products.map(p => {
   const priceStr = p.price ? `${p.price.toLocaleString('vi-VN')}đ` : 'Liên hệ';
@@ -326,15 +341,7 @@ ${graphContext ? `\n${graphContext}` : ''}
 
 Hãy hỏi thêm sở thích của khách để gợi ý chính xác hơn!`;
 
-  const chatMessages = [...history];
-  if (chatMessages.length > 0) {
-    chatMessages[chatMessages.length - 1] = {
-      ...chatMessages[chatMessages.length - 1],
-      content: message,
-    };
-  } else {
-    chatMessages.push({ role: 'user' as const, content: message });
-  }
+  const chatMessages = buildChatMessages(history, message);
 
   const stream = await AIService.createChatStream(chatMessages, systemPrompt);
   return { stream, products: ctx.products || [] };

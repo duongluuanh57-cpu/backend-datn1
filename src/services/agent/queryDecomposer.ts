@@ -5,9 +5,8 @@
  *   "Tạo 5 sản phẩm nước hoa Dior trending 2026"
  * Thành plan:
  *   [
- *     { tool: "ensure_brand", args: { name: "Dior" } },
  *     { tool: "search_trending", args: { brand: "Dior", limit: 5 } },
- *     { tool: "generate_product", args: { name: "$step_2.products[0].name", ... }, dependsOn: [2] },
+ *     { tool: "generate_product", args: { name: "$step_1.products[0].name", ... }, dependsOn: [1] },
  *     ...
  *   ]
  */
@@ -15,9 +14,16 @@ import { generateText } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 
-const provider = createGoogleGenerativeAI({
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-});
+// Lazy-init provider — tránh crash khi dynamic import (process.env có thể undefined),
+// cùng pattern với adminAgent.ts
+let _provider: any = null;
+function getProvider() {
+  if (!_provider) {
+    const apiKey = globalThis.process.env?.GEMINI_API_KEY || globalThis.process.env?.GOOGLE_GENERATIVE_AI_API_KEY || '';
+    _provider = createGoogleGenerativeAI({ apiKey });
+  }
+  return _provider;
+}
 
 const MODEL = 'gemini-3.1-flash-lite-preview';
 
@@ -50,15 +56,15 @@ export async function decomposeQuery(
   const prompt = `Bạn là Query Decomposer cho admin dashboard L'essence. Phân tích yêu cầu của admin và phân rã thành các bước tuần tự.
 
 TOOLS CÓ SẴN (dùng ĐÚNG tên tool, đúng tham số):
-1. ensure_brand(name) → Kiểm tra brand tồn tại. Nếu chưa có → AI tự tạo brand (origin + description). Trả về { brandId, name, existed }.
-2. search_trending(brand?, query?, limit) → Tìm nước hoa trending. Trả về { products: [{ name, brand, description }] }.
-3. generate_product(name, brand?, price?) → Tạo sản phẩm mới. AI tự sinh mô tả, giá, size, tags, SEO... Trả về { productId, name, price }.
-4. find_products(query, limit?) → Tìm sản phẩm trong DB theo tên. Trả về { products: [{ id, name, brand, price }] }.
-5. update_product(id?, name?, fields) → Cập nhật sản phẩm. fields là object các trường cần sửa.
-6. delete_product(id?, name?) → Xóa sản phẩm.
+1. search_trending(brand?, query?, limit) → Tìm nước hoa trending. Trả về { products: [{ name, brand, description }] }.
+2. generate_product(name, brand?, price?) → Tạo sản phẩm mới. Brand phải là brand đã tồn tại; AI không được tạo brand mới. Trả về { productId, name, price }.
+3. find_products(query, limit?) → Tìm sản phẩm trong DB theo tên. Trả về { products: [{ id, name, brand, price }] }.
+4. update_product(id?, name?, fields) → Cập nhật sản phẩm. fields là object các trường cần sửa.
+5. delete_product(id?, name?) → Xóa sản phẩm.
 
 QUY TẮC PHÂN RÃ:
-- Nếu admin nói "tạo X sản phẩm hãng Y" → dùng ensure_brand(Y) → search_trending(brand=Y, limit=X) → generate_product cho từng sản phẩm
+- Brand là dữ liệu cố định của web, không có tool tạo brand.
+- Nếu admin nói "tạo X sản phẩm hãng Y" → chỉ dùng search_trending(brand=Y, limit=X) → generate_product cho từng sản phẩm; nếu Y không có sẵn thì báo lỗi.
 - Nếu admin nói "tạo sản phẩm X" → CHỈ 1 step generate_product
 - Nếu admin nói "tìm sản phẩm X" → CHỈ 1 step find_products
 - Nếu admin nói "cập nhật/sửa X" → CHỈ 1 step update_product
@@ -82,7 +88,7 @@ OUTPUT FORMAT — TRẢ VỀ ĐÚNG JSON (không markdown, không giải thích)
 
 LƯU Ý QUAN TRỌNG:
 - Khi 1 step generate_product cần kết quả từ step search_trending trước đó, dùng cú pháp tham chiếu: "$step_N.data.products[0].name" để chỉ tên sản phẩm đầu tiên từ step N.
-- condition dùng để skip step nếu điều kiện không thỏa. VD: "$1.data.existed === true" để skip ensure_brand. Để null nếu không có condition.
+- condition dùng để skip step nếu điều kiện không thỏa. Để null nếu không có condition.
 - dependsOn là mảng ID của các step cần hoàn thành trước.
 
 ADMIN MESSAGE: "${message}"
@@ -91,7 +97,7 @@ Hãy phân rã và trả về JSON:`;
 
   try {
     const result = await (generateText as any)({
-      model: provider.interactions(MODEL),
+      model: getProvider().interactions(MODEL),
       system: 'Bạn là Query Decomposer. Chỉ trả về JSON, không markdown, không giải thích thêm.',
       messages: [{ role: 'user', content: prompt }],
       tools: {

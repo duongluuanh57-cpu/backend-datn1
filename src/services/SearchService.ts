@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { VectorSearchService } from './VectorSearchService.ts';
 import { Brand } from '../models/Brand.ts';
 import { Product } from '../models/Product.ts';
+import { ProductVariant } from '../models/ProductVariant.ts';
 
 /**
  * Keyword search — hybrid $text (inverted index) + $regex (prefix autocomplete)
@@ -68,7 +69,7 @@ async function runKeywordSearch(query: string, limit: number) {
     { $unwind: { path: '$brandData', preserveNullAndEmptyArrays: true } },
     { $match: { $or: [...nameConditions, { 'brandData.name': { $regex: brandPattern, $options: 'i' } }] } },
     { $limit: limit },
-    { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, variants: 1, rating: 1, soldCount: 1, discountPercentage: 1, categories: 1 } },
+    { $project: { _id: 1, name: 1, price: 1, description: 1, brand: '$brandData.name', brandId: 1, images: 1, rating: 1, soldCount: 1, discountPercentage: 1, categoryId: 1 } },
   ]).toArray().then((docs: any[]) => docs.map(d => ({ ...d, _source: 'regex' as const })));
 
   // ── Chạy song song ──
@@ -92,19 +93,38 @@ async function runKeywordSearch(query: string, limit: number) {
   }
 
   // ── Format kết quả ──
+  // Product không có field price gốc → lấy giá thấp nhất của biến thể làm giá đại diện.
+  const rawProducts = [...textResults, ...brandProductResults, ...regexResults];
+  const productIdStrings = rawProducts
+    .map((p: any) => (p._id ? p._id.toString() : null))
+    .filter(Boolean) as string[];
+
+  const priceMap = new Map<string, number>();
+  if (productIdStrings.length > 0) {
+    try {
+      const ids = productIdStrings.map(id => new mongoose.Types.ObjectId(id));
+      const priceRows = await ProductVariant.aggregate<{ _id: mongoose.Types.ObjectId; minPrice: number }>([
+        { $match: { productId: { $in: ids }, quantityInStock: { $gt: 0 } } },
+        { $group: { _id: '$productId', minPrice: { $min: '$price' } } },
+      ]);
+      for (const row of priceRows) {
+        if (row._id) priceMap.set(row._id.toString(), row.minPrice);
+      }
+    } catch (_) {}
+  }
+
   const formatProduct = (p: any) => ({
     _id: p._id,
     name: p.name,
-    price: p.price,
+    price: p._id ? (priceMap.get(p._id.toString()) ?? p.price) : p.price,
     description: p.description || '',
     brand: p.brand || (p as any).brandData?.name || '',
     brandId: p.brandId,
     images: p.images || [],
-    variants: p.variants || [],
     rating: p.rating || 0,
     soldCount: p.soldCount || 0,
     discountPercentage: p.discountPercentage || 0,
-    categories: p.categories || [],
+    categoryId: p.categoryId || null,
   });
 
   const allResults = [
@@ -126,7 +146,7 @@ async function runKeywordSearch(query: string, limit: number) {
   };
 }
 
-function extractPriceRange(query: string): { minPrice?: number; maxPrice?: number } | null {
+export function extractPriceRange(query: string): { minPrice?: number; maxPrice?: number } | null {
   const clean = query.toLowerCase();
 
   // Dưới X triệu / X tr / X k
@@ -147,9 +167,9 @@ function extractPriceRange(query: string): { minPrice?: number; maxPrice?: numbe
     return { minPrice: num * multiplier };
   }
 
-  // Từ X đến Y (triệu / tr)
+  // Từ X đến Y (triệu / tr) — chỉ coi là khoảng giá khi có đơn vị tiền hoặc ngữ cảnh "giá"
   const rangeMatch = clean.match(/(?:từ|khoảng|tầm)?\s*(\d+(?:[.,]\d+)?)\s*(?:đến|-|tới)\s*(\d+(?:[.,]\d+)?)\s*(tr|triệu|k|nghìn|ngàn|vnd|đ)?/i);
-  if (rangeMatch) {
+  if (rangeMatch && (rangeMatch[3] || clean.includes('giá'))) {
     const min = parseFloat(rangeMatch[1].replace(',', '.'));
     const max = parseFloat(rangeMatch[2].replace(',', '.'));
     const unit = rangeMatch[3] || 'tr';
@@ -178,10 +198,10 @@ export class SearchService {
 
       const confusionPatterns = [
         /^ủa+$/i, /^hả+$/i, /^gì(\s+vậy)?$/i,
-        /^sao(\s+cơ)?$/i, /^ý(\s+là)?(\s+sao)?/i,
+        /^sao(\s+cơ)?$/i, /^ý(\s+là)?(\s+sao)?$/i,
         /^cái(\s+gì)?$/i, /^đâu(\s+có)?/i,
         /^tại(\s+sao)?$/i, /^là(\s+sao)?$/i,
-        /^ơ(\s+kìa)?/i, /^a(\s+là)?/i,
+        /^ơ(\s+kìa)?$/i, /^a(\s+là)?$/i,
       ];
 
       if (confusionPatterns.some(p => p.test(cleanQuery))) {
@@ -228,12 +248,28 @@ export class SearchService {
         candidates = VectorSearchService.rrfMerge(vectorResults, kwProducts, 60, Math.max(limit * 3, 12));
       }
 
+      // Chỉ gợi ý sản phẩm còn ít nhất 1 biến thể có hàng
+      if (candidates.length > 0) {
+        try {
+          const candIds = candidates
+            .map((c: any) => c._id)
+            .filter(Boolean)
+            .map((id: any) => new mongoose.Types.ObjectId(id.toString()));
+          const inStockIds = await ProductVariant.distinct('productId', {
+            productId: { $in: candIds },
+            quantityInStock: { $gt: 0 },
+          });
+          const inStockSet = new Set(inStockIds.map((id: any) => id.toString()));
+          candidates = candidates.filter((c: any) => c._id && inStockSet.has(c._id.toString()));
+        } catch (_) {}
+      }
+
       // Nếu có yêu cầu về khoảng giá, ưu tiên các sản phẩm phù hợp mức giá đó
       if (priceRange) {
         const { minPrice, maxPrice } = priceRange;
         const matchesPrice = (p: any) => {
-          const pVal = p.price ?? 0;
-          if (pVal === 0) return true;
+          const pVal = p.price;
+          if (typeof pVal !== 'number' || pVal <= 0) return false;
           if (minPrice !== undefined && pVal < minPrice) return false;
           if (maxPrice !== undefined && pVal > maxPrice) return false;
           return true;
@@ -251,7 +287,21 @@ export class SearchService {
               .limit(limit * 3)
               .populate('brandId', 'name')
               .lean();
-            const matchingFallback = fallbackDocs.filter(matchesPrice);
+            // Product không có price gốc → join giá thấp nhất của biến thể còn hàng
+            const fbIds = fallbackDocs.map((d: any) => d._id);
+            const fbPriceRows = fbIds.length > 0
+              ? await ProductVariant.aggregate<{ _id: mongoose.Types.ObjectId; minPrice: number }>([
+                  { $match: { productId: { $in: fbIds }, quantityInStock: { $gt: 0 } } },
+                  { $group: { _id: '$productId', minPrice: { $min: '$price' } } },
+                ])
+              : [];
+            const fbPriceMap = new Map<string, number>();
+            for (const row of fbPriceRows) {
+              if (row._id) fbPriceMap.set(row._id.toString(), row.minPrice);
+            }
+            const matchingFallback = fallbackDocs
+              .map((d: any) => ({ ...d, price: fbPriceMap.get(d._id.toString()) }))
+              .filter(matchesPrice);
             if (matchingFallback.length > 0) {
               candidates = matchingFallback;
             }

@@ -18,33 +18,16 @@ import {
   executeAdminQuery,
 } from './routeExecutors.ts';
 import type { RouteInput, RouteResult } from './queryRouterTypes.ts';
-import { CachedAnswerService } from '../CachedAnswerService.ts';
 
 export class QueryRouterService {
   /**
    * Xử lý message từ user chat hoặc admin chat
    */
   static async route(input: RouteInput): Promise<RouteResult> {
-    const { message, messages, image, userRole } = input;
+    const { message, messages, userRole } = input;
     const startTime = Date.now();
 
     try {
-      // ── Step 0: Kiểm tra cached answer từ feedback trước ──
-      // Chỉ dùng cache cho câu hỏi FAQ/chính sách/hỗ trợ cố định, KHÔNG cache các câu hỏi gợi ý/tư vấn sản phẩm để giữ tính đa dạng
-      const isDynamicRecommendation = /gợi ý|tư vấn|recommend|chọn giúp|nước hoa nào|mùi nào|hương nào/i.test(message || '');
-      if (message && !image && !isDynamicRecommendation) {
-        const cached = await CachedAnswerService.findCachedAnswer(message);
-        if (cached) {
-          const elapsed = Date.now() - startTime;
-          console.log(`✅ [QueryRouter] Cached answer hit (rating: ${cached.rating}) in ${elapsed}ms`);
-          return {
-            type: 'direct',
-            content: cached.answer,
-          };
-        }
-        console.log(`[QueryRouter] No cached answer for: "${message.substring(0, 60)}"`);
-      }
-
       // ── Step 1: Classify route ──
       const classification = await classifyRoute(input);
       const { route, confidence, requiresAdmin } = classification;
@@ -171,8 +154,7 @@ export class QueryRouterService {
       console.error('❌ [QueryRouter] Error:', error);
       return {
         type: 'direct',
-        content: `Xin lỗi, đã có lỗi xảy ra: ${error.message}. Vui lòng thử lại sau.`,
-        error: error.message,
+        content: 'Xin lỗi, đã có lỗi xảy ra khi xử lý yêu cầu của bạn. Vui lòng thử lại sau.',
       };
     }
   }

@@ -68,52 +68,91 @@ export async function createChatStream(
   }
 
   const encoder = new TextEncoder();
-  let textStream: any;
+  const abortController = new AbortController();
+  let canceled = false;
 
-  try {
-    const result = streamText({
-      model: provider.interactions(PRIMARY_MODEL),
-      system: systemPrompt || undefined,
-      messages: vercelMessages,
-    });
-    textStream = result.textStream;
-  } catch (primaryErr) {
-    console.warn(`⚠️ [createChatStream] Primary model ${PRIMARY_MODEL} lỗi, chuyển sang ${FALLBACK_MODEL}:`, primaryErr);
-    try {
-      const fallbackResult = streamText({
+  // streamText() KHÔNG throw đồng bộ — lỗi model (kể cả lỗi giữa stream) surface
+  // trên textStream khi iterate. Vì vậy fallback phải nằm trong vòng for-await,
+  // nếu không try/catch bên ngoài là dead code và user chỉ nhận "system busy".
+  const attempts: { name: string; build: () => any }[] = [
+    {
+      name: PRIMARY_MODEL,
+      build: () => streamText({
+        model: provider.interactions(PRIMARY_MODEL),
+        system: systemPrompt || undefined,
+        messages: vercelMessages,
+        abortSignal: abortController.signal,
+      }).textStream,
+    },
+    {
+      name: FALLBACK_MODEL,
+      build: () => streamText({
         model: provider(FALLBACK_MODEL),
         system: systemPrompt || undefined,
         messages: vercelMessages,
-      });
-      textStream = fallbackResult.textStream;
-    } catch (fallbackErr) {
-      console.error('❌ [createChatStream] Toàn bộ AI models không phản hồi:', fallbackErr);
-      const fallbackMsg = "Dạ hiện tại hệ thống AI đang quá tải một chút, bạn vui lòng đợi trong giây lát rồi nhắn lại giúp mình nhé! Cảm ơn bạn :3";
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(encoder.encode(fallbackMsg));
-            controller.close();
-          },
-        }),
-        { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
-      );
-    }
-  }
+        abortSignal: abortController.signal,
+      }).textStream,
+    },
+  ];
 
-  // Chuyển đổi stream về Response dạng ReadableStream với cơ chế bọc lỗi an toàn
   const readable = new ReadableStream({
     async start(controller) {
-      try {
-        for await (const chunk of textStream) {
-          if (chunk) controller.enqueue(encoder.encode(chunk));
+      // desiredSize === null → stream đã bị close/cancel (client abort),
+      // enqueue lúc này sẽ throw khiến start() reject và mất message.
+      const safeEnqueue = (text: string) => {
+        if (canceled || controller.desiredSize === null) return;
+        controller.enqueue(encoder.encode(text));
+      };
+
+      let emitted = false;
+
+      for (const { name, build } of attempts) {
+        if (canceled) break;
+
+        let textStream: any;
+        try {
+          textStream = build();
+        } catch (buildErr) {
+          console.warn(`⚠️ [createChatStream] Model ${name} lỗi khởi tạo, thử model kế tiếp:`, buildErr);
+          continue;
         }
-        controller.close();
-      } catch (streamErr: any) {
-        console.warn('⚠️ [createChatStream] Lỗi stream chunk:', streamErr?.message || streamErr);
-        controller.enqueue(encoder.encode("\n\n*(Kết nối gặp chút gián đoạn, bạn có thể nhắn lại để mình tư vấn chi tiết hơn nhé :3)*"));
-        controller.close();
+
+        try {
+          for await (const chunk of textStream) {
+            if (canceled) break;
+            if (chunk) {
+              emitted = true;
+              safeEnqueue(chunk);
+            }
+          }
+          if (canceled || emitted) break;
+          // Stream kết thúc mà không có chunk nào → coi như model lỗi, thử fallback
+          console.warn(`⚠️ [createChatStream] Model ${name} trả về stream rỗng, thử model kế tiếp`);
+        } catch (streamErr: any) {
+          if (canceled) break;
+          console.warn(`⚠️ [createChatStream] Lỗi stream trên ${name}:`, streamErr?.message || streamErr);
+          if (emitted) {
+            // Đã gửi một phần nội dung → không đổi model giữa chừng, chỉ báo gián đoạn
+            safeEnqueue("\n\n*(Kết nối gặp chút gián đoạn, bạn có thể nhắn lại để mình tư vấn chi tiết hơn nhé :3)*");
+            break;
+          }
+          // Chưa có output nào → rơi xuống model fallback kế tiếp
+        }
       }
+
+      if (canceled) return;
+      if (!emitted) {
+        console.error('❌ [createChatStream] Toàn bộ AI models không phản hồi');
+        safeEnqueue("Dạ hiện tại hệ thống AI đang quá tải một chút, bạn vui lòng đợi trong giây lát rồi nhắn lại giúp mình nhé! Cảm ơn bạn :3");
+      }
+      if (controller.desiredSize !== null) {
+        try { controller.close(); } catch { /* stream đã bị cancel */ }
+      }
+    },
+    cancel() {
+      // Client ngắt kết nối → dừng vòng sinh token phía Gemini, tránh trả phí vô ích
+      canceled = true;
+      abortController.abort();
     },
   });
 

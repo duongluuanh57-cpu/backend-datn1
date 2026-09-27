@@ -9,11 +9,10 @@ export interface VectorSearchResult {
   brand: string;
   brandId: string;
   image?: string;
-  variants: any[];
   rating: number;
   soldCount: number;
   discountPercentage?: number;
-  categories?: any[];
+  categoryId?: any;
   vectorScore: number;
 }
 
@@ -48,19 +47,41 @@ export class VectorSearchService {
       },
       { $unwind: { path: '$brandData', preserveNullAndEmptyArrays: true } },
       {
+        $lookup: {
+          from: 'product_variants',
+          localField: '_id',
+          foreignField: 'productId',
+          as: 'variantData',
+        },
+      },
+      {
         $project: {
           _id: 1,
           name: 1,
-          price: 1,
+          // Giá cơ sở = min của biến thể CÒN HÀNG (chưa trừ discountPercentage)
+          price: {
+            $min: {
+              $map: {
+                input: {
+                  $filter: {
+                    input: '$variantData',
+                    as: 'v',
+                    cond: { $gt: [{ $ifNull: ['$$v.quantityInStock', 0] }, 0] },
+                  },
+                },
+                as: 'v',
+                in: '$$v.price',
+              },
+            },
+          },
           description: { $ifNull: ['$description', ''] },
           brand: '$brandData.name',
           brandId: 1,
           image: 1,
-          variants: { $ifNull: ['$variants', []] },
           rating: { $ifNull: ['$rating', 0] },
           soldCount: { $ifNull: ['$soldCount', 0] },
           discountPercentage: { $ifNull: ['$discountPercentage', 0] },
-          categories: { $ifNull: ['$categories', []] },
+          categoryId: { $ifNull: ['$categoryId', null] },
           vectorScore: 1,
         },
       },

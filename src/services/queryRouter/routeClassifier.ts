@@ -11,22 +11,23 @@ import { normalize } from '../../utils/textNormalizer.ts';
 import type { RouteType, RouteClassification, RouteInput } from './queryRouterTypes.ts';
 
 // ── PATTERNS ──────────────────────────────────────────────────────────────
+// Patterns không dấu vì được test trên normalize(message)
 const greetingPatterns = [
-  /^(xin )?chào/i, /^hi+$/i, /^hello+$/i, /^hey+$/i,
+  /^(xin )?chao/i, /^hi+$/i, /^hello+$/i, /^hey+$/i,
   /^good (morning|afternoon|evening)/i,
-  /^(chúc )?buổi (sáng|chiều|tối)/i,
-  /^(bạn|mình) (có )?khỏe/i,
-  /^(có ai|ai đó) (ở đây|không)/i,
-  /^(cảm ơn|thanks|thank you)/i,
-  /^tạm biệt|bye|goodbye/i,
+  /^(chuc )?buoi (sang|chieu|toi)/i,
+  /^(ban|minh) (co )?khoe/i,
+  /^(co ai|ai do) (o day|khong)/i,
+  /^(cam on|thanks|thank you)/i,
+  /^tam biet|bye|goodbye/i,
 ];
 
 const confusionPatterns = [
-  /^ủa+$/i, /^hả+$/i, /^gì(\s+vậy)?$/i,
-  /^sao(\s+cơ)?$/i, /^ý(\s+là)?(\s+sao)?/i,
-  /^cái(\s+gì)?$/i, /^đâu(\s+có)?/i,
-  /^tại(\s+sao)?$/i, /^là(\s+sao)?$/i,
-  /^ơ(\s+kìa)?/i, /^a(\s+là)?/i,
+  /^ua+$/i, /^ha+$/i, /^gi(\s+vay)?$/i,
+  /^sao(\s+co)?$/i, /^y(\s+la)?(\s+sao)?$/i,
+  /^cai(\s+gi)?$/i, /^dau(\s+co)?$/i,
+  /^tai(\s+sao)?$/i, /^la(\s+sao)?$/i,
+  /^o(\s+kia)?$/i, /^a(\s+la)?$/i,
 ];
 
 /** Check greeting fast path */
@@ -86,7 +87,7 @@ async function llmRouteClassify(
       system: `Bạn là router AI. Nhiệm vụ: phân loại câu hỏi của user vào ĐÚNG 1 route.
 
 QUY TẮC:
-- Tạo/thêm/sửa/xóa sản phẩm, tạo brand, quản lý sản phẩm → admin_query
+- Tạo/thêm/sửa/xóa sản phẩm, bật/ẩn brand, quản lý sản phẩm → admin_query
 - Thống kê, báo cáo, doanh thu, đơn hàng → admin_query
 - Mùi hương/cảm xúc/mô tả → vector_search
 - Tên/hãng/giá/thông tin cụ thể → sql_search
@@ -167,7 +168,7 @@ export async function classifyRoute(input: RouteInput): Promise<RouteClassificat
   // ── Fast path 4: Admin intent keywords ──
   // Nếu user là ADMIN và message chứa từ khóa quản trị → admin_query ngay
   if (userRole === 'ADMIN') {
-    const adminKeywords = /tạo|thêm|xóa|sửa|cập nhật|đổi|thống kê|báo cáo|doanh thu|đơn hàng|brand|hãng\s+\w+|sản phẩm\s+mới|quản lý|sản phẩm|product|danh mục|category|tag|người dùng|user|voucher|mã giảm giá|bao nhiêu|mấy|có mấy|liệt kê|danh sách|kể tên|đếm|tổng|thương hiệu|brand/i;
+    const adminKeywords = /tao|them|xoa|sua|cap nhat|doi|thong ke|bao cao|doanh thu|don hang|brand|hang\s+\w+|san pham\s+moi|quan ly|san pham|product|danh muc|category|tag|nguoi dung|user|voucher|ma giam gia|bao nhieu|may|co may|liet ke|danh sach|ke ten|dem|tong|thuong hieu/i;
     if (adminKeywords.test(cleanText)) {
       console.log(`🔀 [QueryRouter] Admin keyword detected → admin_query (rule-based)`);
       return { route: 'admin_query', confidence: 1.0, requiresAdmin: true };

@@ -3,19 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock dependencies
 vi.mock('../../../services/SearchService.ts', () => ({
   SearchService: {
-    hybridSearch: vi.fn().mockResolvedValue({ products: [], mode: 'vector', documents: [] }),
-  },
-}));
-
-vi.mock('../../../services/ContentSearchService.ts', () => ({
-  ContentSearchService: {
-    search: vi.fn().mockResolvedValue([]),
-  },
-}));
-
-vi.mock('../../../services/CachedAnswerService.ts', () => ({
-  CachedAnswerService: {
-    findCachedAnswer: vi.fn().mockResolvedValue(null),
+    hybridSearch: vi.fn().mockResolvedValue({ products: [], mode: 'vector' }),
   },
 }));
 

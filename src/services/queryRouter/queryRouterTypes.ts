@@ -52,7 +52,6 @@ export interface RouteClassification {
 /** Context cho từng route */
 export interface RouteContext {
   products: any[];
-  documents: any[];
   mode: string;
   storeOverview: string;
   historyContext: string;

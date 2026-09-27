@@ -33,21 +33,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     try { await redis.set(cacheKey, JSON.stringify(vector), 'EX', 86400); } catch {}
     return vector;
   } catch (error) {
-    console.warn('⚠️ [Embedding] Using deterministic fallback:', error);
-    const hash = crypto.createHash('sha256').update(processed).digest();
-    const dims = 768;
-    const vec = new Array(dims);
-    let sum = 0;
-    for (let i = 0; i < dims; i++) {
-      const seed = hash[(i * 31) % 32] ^ hash[(i * 7 + 13) % 32];
-      const val = (seed / 128) - 1;
-      vec[i] = val;
-      sum += val * val;
-    }
-    const norm = Math.sqrt(sum);
-    for (let i = 0; i < dims; i++) {
-      vec[i] /= norm;
-    }
-    return vec;
+    // KHÔNG trả vector giả từ hash: Atlas nearest-neighbour trên vector nhiễu
+    // sẽ gợi ý sản phẩm ngẫu nhiên mà user không thể phân biệt được.
+    // Trả [] → caller tự degrade (SearchService .catch(() => []) → keyword-only,
+    // Product.ts post-save guard `vector.length > 0`).
+    console.warn('⚠️ [Embedding] Gemini embedding failed, returning empty vector (degrade to keyword search):', error);
+    return [];
   }
 }
