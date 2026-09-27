@@ -19,6 +19,23 @@ export const TAG_RULES = {
   limitedMaxTotalStock: 20,
 } as const;
 
+/**
+ * Nhận diện Tag Limited — viết một lần để sync tag, vòng đời discount và luồng ghi tag
+ * không mỗi nơi một regex rồi lệch nhau.
+ */
+export const LIMITED_TAG_QUERY = {
+  status: 'active',
+  $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
+};
+
+/** Slug tag Giới hạn mà section homepage đọc. */
+export const LIMITED_TAG_SLUGS: string[] = ['limited', 'gioi-han', 'gioi-han-dac-biet'];
+
+/** 'limited' / 'Limited Edition' / slug do AI hay form gửi về đều tính là bản giới hạn. */
+export function isLimitedTagRef(value: unknown): boolean {
+  return String(value ?? '').toLowerCase().includes('limited');
+}
+
 /** Mốc thời gian: sản phẩm tạo sau ngày này còn được coi là hàng mới. */
 export function newCutoffDate(now: Date = new Date()): Date {
   return new Date(now.getTime() - TAG_RULES.newWithinDays * 24 * 60 * 60 * 1000);

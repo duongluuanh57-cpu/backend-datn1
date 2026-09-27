@@ -5,12 +5,15 @@ import './Tag.ts';
  *
  * Thay thế cho mảng tags[] trong Product document.
  * Một sản phẩm có thể có nhiều tag, một tag có thể thuộc nhiều sản phẩm.
+ *
+ * `source` phân biệt link do máy đặt và do người chọn:
+ * - 'auto'   : sync theo luật dữ liệu (tagRules) tạo ra, luật đổi là bị gỡ.
+ * - 'manual' : admin/AI thẩm định rồi chọn — sync không được phép gỡ.
  */
 export interface IProductTag extends Document {
   productId: mongoose.Types.ObjectId; // Reference to Product
   tagId: mongoose.Types.ObjectId;     // Reference to Tag
-  createdAt: Date;
-  updatedAt: Date;
+  source: 'auto' | 'manual';
 }
 
 const ProductTagSchema = new Schema<IProductTag>(
@@ -27,9 +30,14 @@ const ProductTagSchema = new Schema<IProductTag>(
       required: true,
       index: true,
     },
+    source: {
+      type: String,
+      enum: ['auto', 'manual'],
+      default: 'auto',
+    },
   },
   {
-    timestamps: true,
+    timestamps: false,
     collection: 'product_tags',
   }
 );

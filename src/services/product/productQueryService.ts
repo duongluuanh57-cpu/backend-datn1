@@ -15,7 +15,7 @@ import { bySizeAsc } from './productHelpers.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
 import { FlashSaleService } from '../FlashSaleService.ts';
-import { findHotProductIds, findLimitedProductIds, newCutoffDate } from './tagRules.ts';
+import { findHotProductIds, findLimitedProductIds, newCutoffDate, LIMITED_TAG_QUERY, LIMITED_TAG_SLUGS } from './tagRules.ts';
 
 export class ProductQueryService {
   private static CACHE_TTL = 300;
@@ -131,13 +131,21 @@ export class ProductQueryService {
       }
 
       // 2. Sản phẩm còn trong hạn New -> Gán Tag New, isNewArrival = true
+      // Hàng Limited đứng ngoài: đã Mang tag Giới hạn thì không bị gán lại New,
+      // nếu không hai vòng sync sẽ ghi đè nhau mỗi chu kỳ.
+      const limitedTag = await Tag.findOne(LIMITED_TAG_QUERY).lean();
+      const limitedHolders = limitedTag
+        ? new Set((await ProductTag.distinct('productId', { tagId: limitedTag._id })).map(String))
+        : new Set<string>();
+
       const recentProducts = await Product.find({
         status: 'active',
         createdAt: { $gte: newCutoff },
       }).select('_id').lean();
 
-      if (recentProducts.length > 0) {
-        const recentIds = recentProducts.map(p => p._id);
+      const recentIds = recentProducts.map(p => p._id).filter(id => !limitedHolders.has(id.toString()));
+
+      if (recentIds.length > 0) {
         for (const pId of recentIds) {
           const hasNew = await ProductTag.exists({ productId: pId, tagId: newTag._id });
           if (!hasNew) {
@@ -183,7 +191,7 @@ export class ProductQueryService {
     if (productIds.length === 0) return [];
 
     const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-    const limitedProductIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
+    const limitedProductIds = await this.getProductIdsByTagSlugs(LIMITED_TAG_SLUGS);
     const excludedIds = [...fsProductIds, ...limitedProductIds];
 
     const select = 'name brandId image categoryId discountPercentage soldCount createdAt status isNewArrival';
@@ -271,10 +279,7 @@ export class ProductQueryService {
     this.lastSyncLimitedTime = now;
 
     try {
-      const limitedTag = await Tag.findOne({
-        status: 'active',
-        $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
-      }).lean();
+      const limitedTag = await Tag.findOne(LIMITED_TAG_QUERY).lean();
 
       // Tag Limited là dữ liệu cố định của web; nếu thiếu thì không tự tạo.
       if (!limitedTag) return;
@@ -291,9 +296,12 @@ export class ProductQueryService {
       const qualifyingIds = (await findLimitedProductIds())
         .filter(id => !fsProductIds.some((fsId: any) => fsId.equals(id)));
 
-      // Gỡ tag của sản phẩm không còn khan hiếm, gán cho sản phẩm mới đạt luật.
+      // Chỉ gỡ link do máy đặt. Link admin/AI thẩm định rồi chọn (source='manual') là
+      // ý đồ con người — luật tồn kho không được phép xóa nó. `$ne` chứ không phải
+      // `source: 'auto'` vì link tạo trước khi có cột source không mang field nào.
       await ProductTag.deleteMany({
         tagId: limitedTag._id,
+        source: { $ne: 'manual' },
         productId: { $nin: qualifyingIds },
       });
 
@@ -304,13 +312,15 @@ export class ProductQueryService {
       const existingSet = new Set(existingLimitedLinks.map(l => l.productId.toString()));
       const toInsert = qualifyingIds
         .filter(id => !existingSet.has(id.toString()))
-        .map(productId => ({ productId, tagId: limitedTag._id }));
+        .map(productId => ({ productId, tagId: limitedTag._id, source: 'auto' }));
 
       if (toInsert.length > 0) {
         await ProductTag.insertMany(toInsert, { ordered: false }).catch(() => {});
       }
 
-      const limitedProductIds = qualifyingIds;
+      // Thẩm định Exclusive: mọi sản phẩm đang Mang tag Limited (cả auto lẫn manual)
+      // đều không được đồng thời mang tag New.
+      const limitedProductIds = await ProductTag.distinct('productId', { tagId: limitedTag._id });
 
       // Đảm bảo mọi sản phẩm mang tag Limited KHÔNG bao giờ có tag New
       if (newTag && limitedProductIds.length > 0) {
@@ -337,7 +347,7 @@ export class ProductQueryService {
     this.syncLimitedTags().catch(err => console.warn('syncLimitedTags error:', err));
 
     const fsProductIds = await FlashSaleService.getActiveFlashSaleProductIds();
-    const productIds = await this.getProductIdsByTagSlugs(['limited', 'gioi-han', 'gioi-han-dac-biet']);
+    const productIds = await this.getProductIdsByTagSlugs(LIMITED_TAG_SLUGS);
     let productsRaw: any[] = [];
     if (productIds.length > 0) {
       const filteredProductIds = productIds.filter(id => !fsProductIds.some(fsId => fsId.equals(id)));
@@ -383,7 +393,7 @@ export class ProductQueryService {
   static async getPublicProducts(type: 'trending' | 'new' | 'limited', filters: any = {}): Promise<any[]> {
     this.syncDiscountsOnRead();
     const { brand, capacity, priceRange, minPrice, maxPrice, sortBy = 'newest', limit = 20, filterTag } = filters;
-    const tagSlugsMap: Record<string, string[]> = { trending: ['trending', 'thinh-hanh', 'ban-chay', 'hot'], new: ['new', 'san-pham-moi'], limited: ['limited', 'gioi-han', 'gioi-han-dac-biet'] };
+    const tagSlugsMap: Record<string, string[]> = { trending: ['trending', 'thinh-hanh', 'ban-chay', 'hot'], new: ['new', 'san-pham-moi'], limited: LIMITED_TAG_SLUGS };
     let slugs = tagSlugsMap[type] || [];
     if (filterTag) {
       const additional = filterTag.split(',').map((s: string) => s.trim().toLowerCase().replace(/\s+/g, '-')).filter(Boolean);

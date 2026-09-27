@@ -5,7 +5,7 @@ import { ProductTag } from '../../models/ProductTag.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 import { redis } from '../../config/redis.ts';
 import { FlashSaleService } from '../FlashSaleService.ts';
-import { TAG_RULES } from './tagRules.ts';
+import { TAG_RULES, LIMITED_TAG_QUERY } from './tagRules.ts';
 
 /**
  * DiscountLifecycleService — MÔ HÌNH TRUNG TÂM duy nhất gán discount theo Tag.
@@ -134,10 +134,7 @@ async function findNewTag() {
 async function findExcludedIds(): Promise<Set<string>> {
   const fsIds = await FlashSaleService.getActiveFlashSaleProductIds().catch(() => [] as any[]);
   const [limitedTag, saleTags] = await Promise.all([
-    Tag.findOne({
-      status: 'active',
-      $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
-    }).lean().catch(() => null),
+    Tag.findOne(LIMITED_TAG_QUERY).lean().catch(() => null),
     Tag.find({
       status: 'active',
       $or: [{ slug: /^sale$/i }, { slug: /^giam-gia$/i }, { slug: /^flash-sale$/i }],
@@ -242,10 +239,7 @@ export class DiscountLifecycleService {
     }
 
     // ── 2. Limited: khan hiếm 0-5% ──
-    const limitedTag = await Tag.findOne({
-      status: 'active',
-      $or: [{ slug: /^limited$/i }, { name: /^limited$/i }, { name: /^phiên bản giới hạn$/i }],
-    }).lean().catch(() => null);
+    const limitedTag = await Tag.findOne(LIMITED_TAG_QUERY).lean().catch(() => null);
     if (limitedTag) {
       const limLinks = await ProductTag.find({ tagId: limitedTag._id }).select('productId').lean().catch(() => []);
       if (limLinks.length > 0) {

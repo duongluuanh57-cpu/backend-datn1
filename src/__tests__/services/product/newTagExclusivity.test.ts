@@ -28,6 +28,7 @@ vi.mock('../../../models/ProductTag.ts', () => ({
     create: vi.fn().mockResolvedValue({}),
     deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
     insertMany: vi.fn().mockResolvedValue([]),
+    distinct: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -77,10 +78,11 @@ const ALL_TAGS = [
 function mockTagFindOne() {
   (Tag.findOne as any).mockImplementation((q: any) => ({
     lean: async () => {
-      const sig = String(q?.$or?.[0]?.slug || '') + String(q?.$or?.[1]?.name || '');
+      const sig = (q?.$or ?? []).map((c: any) => `${c.slug} ${c.name}`).join(' ');
       if (sig.includes('standard')) return ALL_TAGS[1];
+      if (sig.includes('limited')) return ALL_TAGS[2];
       if (sig.includes('new')) return ALL_TAGS[0];
-      return ALL_TAGS[1];
+      return null;
     },
   }));
   (Tag.find as any).mockImplementation(() => ({ lean: async () => ALL_TAGS }));
