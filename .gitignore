@@ -4,9 +4,15 @@ dist
 .DS_Store
 *.log
 coverage
+backups
 .vscode
 .idea
 .antigravity
 .gemini
 # Lock files
 pnpm-workspace.yaml
+.backups
+# Script một lần thả ở gốc repo
+/fix3.js
+/fix_rev*.ps1
+/fix_review.ps1
