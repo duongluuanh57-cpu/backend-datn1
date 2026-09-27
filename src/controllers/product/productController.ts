@@ -6,6 +6,16 @@ import { Brand } from '../../models/Brand.ts';
 
 export class ProductController {
   /**
+   * Danh sách này vốn trả toàn bộ (homepage cần đủ), nên `?limit=` trước đây bị im lặng bỏ qua.
+   * Có truyền limit thì phải ăn thật, nhưng chặn trần để không ai gọi `?limit=100000`.
+   */
+  private static applyListLimit<T>(list: T[], rawLimit?: string): T[] {
+    const n = Number(rawLimit);
+    if (!rawLimit || !Number.isFinite(n) || n <= 0) return list;
+    return list.slice(0, Math.min(Math.floor(n), 100));
+  }
+
+  /**
    * GET /api/products/new
    */
   static async getNewProducts(req: FastifyRequest, reply: FastifyReply) {
@@ -25,7 +35,10 @@ export class ProductController {
   static async getLimitedProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
       const products = await ProductService.getLimitedProducts();
-      return reply.status(200).send({ success: true, data: products });
+      return reply.status(200).send({
+        success: true,
+        data: ProductController.applyListLimit(products, (req.query as any)?.limit),
+      });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
     }
@@ -96,7 +109,10 @@ export class ProductController {
   static async getSaleProducts(req: FastifyRequest, reply: FastifyReply) {
     try {
       const products = await ProductService.getSaleProducts();
-      return reply.status(200).send({ success: true, data: products });
+      return reply.status(200).send({
+        success: true,
+        data: ProductController.applyListLimit(products, (req.query as any)?.limit),
+      });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
     }
@@ -205,7 +221,7 @@ export class ProductController {
   static async getProductImages(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const images = await ProductImage.find({ productId: id }).sort({ createdAt: 1 });
+      const images = await ProductImage.find({ productId: id }).sort({ _id: 1 });
       return reply.status(200).send({ success: true, data: images.map(img => img.url) });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });
@@ -243,38 +259,4 @@ export class ProductController {
       return reply.status(500).send({ success: false, message: error.message });
     }
   }
-
-  /**
-   * GET /api/products/top-brands-by-views
-   * Aggregates product viewCount by brand, returns top brands sorted by total views
-   */
-  static async getTopBrandsByViews(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const query = req.query as { limit?: string };
-      const limit = query.limit ? Math.min(parseInt(query.limit, 10), 50) : 20;
-
-      const agg = await Product.aggregate([
-        { $group: { _id: '$brandId', totalViews: { $sum: '$viewCount' }, productCount: { $sum: 1 } } },
-        { $sort: { totalViews: -1 } },
-        { $limit: limit },
-      ]);
-
-      const brandIds = agg.map(a => a._id).filter(Boolean);
-      const brands = await Brand.find({ _id: { $in: brandIds } }).select('name').lean() as any[];
-      const brandNameMap = new Map<string, string>();
-      for (const b of brands) brandNameMap.set(b._id.toString(), b.name);
-
-      const data = agg.map(a => ({
-        brandId: a._id,
-        brandName: brandNameMap.get(a._id?.toString()) || 'Unknown',
-        totalViews: a.totalViews,
-        productCount: a.productCount,
-      }));
-
-      return reply.status(200).send({ success: true, data });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
 }

@@ -201,3 +201,45 @@ describe('AI generate sản phẩm Limited', () => {
     expect(data.variants[0].quantityInStock).toBe(6);
   });
 });
+
+describe('AI generate — chặn mô tả viết lệch tên sản phẩm', () => {
+  async function runGenerate(description: string) {
+    store.aiResponse = JSON.stringify({
+      name: 'Creed Aventus Absolu Limited Edition EDP',
+      brand: 'Creed',
+      description,
+      variants: [{ size: '100ml', price: 9800000, quantityInStock: 6 }],
+    });
+    const reply = fakeReply();
+    await generateProduct(
+      {
+        body: {
+          name: 'Creed Aventus Absolu Limited Edition EDP',
+          availableTags: ['Limited'],
+          availableBrands: ['Creed'],
+          availableCategories: [],
+        },
+      } as any,
+      reply
+    );
+    return reply.payload;
+  }
+
+  it('mô tả kể về chai khác (đúng case "Creed Spring Flower") bị bỏ kèm cảnh báo', async () => {
+    const payload = await runGenerate(
+      '**Mô tả hương thơm:** Creed Spring Flower EDP là hiện thân của sự tươi mới, dịu dàng với đào và hoa hồng.'
+    );
+
+    expect(payload.data.description).toBe('');
+    expect(payload.warnings).toHaveLength(1);
+  });
+
+  it('mô tả đúng tên chai thì giữ nguyên, không cảnh báo', async () => {
+    const good =
+      '**Mô tả hương thơm:** Creed Aventus Absolu mở đầu bằng dứa và quả mọng, kết thúc bằng gỗ khói và long diên hương.';
+    const payload = await runGenerate(good);
+
+    expect(payload.data.description).toBe(good);
+    expect(payload.warnings).toEqual([]);
+  });
+});

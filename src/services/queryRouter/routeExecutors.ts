@@ -37,6 +37,12 @@ function buildChatMessages(history: any[], message: string) {
   return chatMessages;
 }
 
+/**
+ * Ví dụ id trong prompt từng là `[CARD:123]`, model bắt chước và tự đặt `creed_001`;
+ * FE chỉ nhận ObjectId 24 ký tự nên khách thấy nguyên token thô trên màn hình.
+ */
+const CARD_ID_RULE = `QUY TẮC THẺ SẢN PHẨM: chỉ được chèn [CARD:<id>] và [BUY_FLOW:<id>] với <id> SAO CHÉP NGUYÊN VĂN từ danh sách sản phẩm bên dưới (24 ký tự 0-9a-f, ví dụ [CARD:6a0d769c8b1bfc212bc79709]). KHÔNG được tự nghĩ ra id, KHÔNG viết hoa id. Nếu danh sách sản phẩm rỗng thì TUYỆT ĐỐI không nêu tên sản phẩm nào và không nêu giá nào — chỉ được nói thật là chưa tìm thấy sản phẩm phù hợp và hỏi khách tiêu chí khác.`;
+
 let cachedStoreOverview: { data: string; expiresAt: number } | null = null;
 
 async function getStoreOverview(): Promise<string> {
@@ -151,7 +157,7 @@ PHẠM VI HOẠT ĐỘNG:
 - Hỗ trợ khách chọn loại sản phẩm và thêm sản phẩm vào giỏ hàng.
 - Không trả lời tin tức, tài liệu, chính sách hoặc câu hỏi ngoài phạm vi sản phẩm; nếu ngoài phạm vi, hãy nhờ khách liên hệ bộ phận phù hợp.
 
-QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]) để giao diện hiển thị khung sản phẩm cho khách hàng.
+${CARD_ID_RULE}
 
 QUY TẮC MUA HÀNG & CHỌN LOẠI SẢN PHẨM: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó (ví dụ "tôi muốn mua sản phẩm này", "tôi muốn mua chai này", "thêm vào giỏ hàng chai Chloe", "đặt mua chai Boss", "lấy chai 1", "cho vào giỏ hàng", v.v.):
 - BẮT BUỘC chèn cú pháp [BUY_FLOW:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời.
@@ -177,7 +183,7 @@ QUY TẮC TRA CỨU THƯƠNG HIỆU & XUẤT XỨ: Khi người dùng hỏi về
     contextStr = `TRẠNG THÁI: Người dùng nhập nội dung không rõ ràng. Hãy lịch sự hỏi lại họ cần tìm gì, KHÔNG đề xuất sản phẩm cụ thể.`;
   } else if (ctx.products.length === 0) {
     if (ctx.storeOverview) {
-      contextStr = `TRẠNG THÁI: Chưa tìm thấy sản phẩm cụ thể đang mở bán. Nhưng bạn CÓ danh sách thương hiệu và xuất xứ trong storeOverview. Dùng storeOverview để trả lời các câu hỏi về hãng, xuất xứ (ví dụ hãng Việt Nam, Pháp, Ý...). Nếu khách hỏi sản phẩm cụ thể mà chưa có thì báo là hiện tại chưa có sản phẩm cụ thể của hãng đó lên kệ.`;
+      contextStr = `TRẠNG THÁI: Chưa tìm thấy sản phẩm cụ thể đang mở bán. Nhưng bạn CÓ danh sách thương hiệu và xuất xứ trong storeOverview. Dùng storeOverview để trả lời các câu hỏi về hãng, xuất xứ (ví dụ hãng Việt Nam, Pháp, Ý...). Nếu khách hỏi sản phẩm cụ thể mà chưa có thì báo là hiện tại chưa có sản phẩm cụ thể của hãng đó lên kệ. Danh sách sản phẩm RỖNG → không được nêu tên chai nào, giá nào, và không được viết [CARD:] với id tự đặt.`;
     } else {
       contextStr = `TRẠNG THÁI: Không tìm thấy sản phẩm phù hợp. Xin lỗi lịch sự. KHÔNG đề xuất sản phẩm.`;
     }
@@ -329,7 +335,7 @@ export async function executeGraphSearch(
 Trả lời ngắn gọn, thân thiện, dùng icon :3.
 
 Bạn đang ở chế độ GỢI Ý. Hãy tư vấn nhiệt tình, đề xuất sản phẩm phù hợp dựa trên nhu cầu của khách.
-QUY TẮC HIỂN THỊ CARD SẢN PHẨM: Khi đề xuất, giới thiệu hoặc nhắc đến bất kỳ sản phẩm nào có trong danh sách, bạn BẮT BUỘC phải chèn định dạng [CARD:id_sản_phẩm] ngay sau tên sản phẩm (ví dụ: Paco Rabanne Million Gold [CARD:123]).
+${CARD_ID_RULE}
 QUY TẮC MUA HÀNG & THÊM VÀO GIỎ: Khi người dùng nói muốn mua, đặt mua, lấy hàng, hoặc thêm vào giỏ hàng một sản phẩm nào đó, bạn KHÔNG được tuyên bố đã thực hiện bất kỳ thao tác nào (tuyệt đối KHÔNG nói "đã thêm vào giỏ hàng"). Bạn PHẢI hỏi trước khách muốn chọn loại sản phẩm (Chiết chai / Fullbox) và dung tích, đồng thời BẮT BUỘC chèn cú pháp [BUY_FLOW:id_sản_phẩm] và [CARD:id_sản_phẩm] vào câu trả lời để khách bấm chọn ở nút bên dưới.
 
 ${ctx.products.length > 0 ? `SẢN PHẨM KHỚP:\n${ctx.products.map(p => {

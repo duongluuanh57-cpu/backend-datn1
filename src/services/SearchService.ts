@@ -5,8 +5,57 @@ import { Product } from '../models/Product.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
 
 /**
+ * Từ khách hay nói nhưng không phân biệt được sản phẩm nào ("cho tôi xem chai ...").
+ * Dùng để chọn từ khóa đáng tin cho cả recall lẫn ranking.
+ */
+const SEARCH_NOISE_WORDS = new Set([
+  'cho', 'toi', 'tôi', 'xem', 'hay', 'nay', 'nao', 'nào', 'giup', 'giúp', 'minh', 'mình',
+  'ban', 'bạn', 'cai', 'cái', 'sp', 'san', 'sản', 'pham', 'phẩm', 'nuoc', 'nước',
+  'hoa', 'chai', 'lo', 'loai', 'loại', 'co', 'có', 'con', 'còn', 'dang', 'đang', 'lam', 'làm',
+  'lieu', 'liệt', 'ke', 'kê', 'kem', 'kèm', 'gia', 'giá', 'bao', 'nhieu', 'nhiêu',
+  'muon', 'muốn', 'can', 'cần', 'tim', 'tìm', 'goi', 'gợi',
+]);
+
+function searchTokens(query: string): { all: string[]; distinctive: string[] } {
+  const all = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ''))
+    .filter((w) => w.length >= 2);
+  const distinctive = all.filter((w) => w.length >= 3 && !SEARCH_NOISE_WORDS.has(w));
+  return { all, distinctive };
+}
+
+/**
+ * Hạng theo mức khớp tên: soldCount đang bằng 0 toàn catalogue nên sort theo nó cho ra thứ tự
+ * ngẫu nhiên, và hybridSearch lại xáo thêm → chai khách gọi đích danh bị cắt mất.
+ */
+function rankByQueryRelevance<T extends { name?: unknown; brand?: unknown; soldCount?: unknown }>(
+  items: T[],
+  query: string
+): T[] {
+  const { distinctive } = searchTokens(query);
+  const phrase = query.toLowerCase();
+  const score = (it: T) => {
+    const name = String(it?.name ?? '').toLowerCase();
+    const brand = String(it?.brand ?? '').toLowerCase();
+    let s = 0;
+    for (const w of distinctive) {
+      if (name.includes(w)) s += 2;
+      else if (brand.includes(w)) s += 1;
+    }
+    if (name.length > 3 && phrase.includes(name)) s += 4;
+    return s;
+  };
+  return items
+    .map((it, i) => ({ it, i, s: score(it), sold: Number(it?.soldCount) || 0 }))
+    .sort((a, b) => b.s - a.s || b.sold - a.sold || a.i - b.i)
+    .map((x) => x.it);
+}
+
+/**
  * Keyword search — hybrid $text (inverted index) + $regex (prefix autocomplete)
- * 
+ *
  * Chiến lược:
  * 1. Dùng $text search trên Product (inverted index) — nhanh, chính xác
  * 2. Dùng $text search trên Brand (inverted index) — tìm brand
@@ -20,6 +69,14 @@ async function runKeywordSearch(query: string, limit: number) {
 
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const BUFFER = 2;
+  const { distinctive } = searchTokens(cleanQuery);
+
+  // Tên sản phẩm hay bắt đầu bằng "Nước hoa ..." nên từ khóa chính phải tìm ở giữa chuỗi,
+  // không chỉ ở đầu — nếu không "Creed Eladaria" trong "Nước hoa Creed Eladaria EDP" trượt trắng.
+  // Regex không neo thì quét cả collection nên giới hạn số nhánh $or.
+  const nameConditions = distinctive.length > 0
+    ? distinctive.slice(0, 6).map(word => ({ name: { $regex: escapeRegex(word), $options: 'i' } }))
+    : queryWords.slice(0, 6).map(word => ({ name: { $regex: '^' + escapeRegex(word), $options: 'i' } }));
 
   // ── 1. Text search trên Product (inverted index) ──
   const textSearchProducts = Product.find(
@@ -56,11 +113,7 @@ async function runKeywordSearch(query: string, limit: number) {
     .then((docs: any[]) => docs.map(d => ({ ...d, _source: 'brand' as const })))
     .catch(() => []);
 
-  // ── 3. $regex prefix cho autocomplete ──
-  const nameConditions = queryWords.map(word => ({
-    name: { $regex: '^' + escapeRegex(word), $options: 'i' },
-  }));
-
+  // ── 3. $regex cho autocomplete + tìm từ khóa giữa tên (nameConditions ở trên) ──
   const regexSearch = mongoose.connection.db!.collection('products').aggregate([
     { $match: { $or: nameConditions, status: 'active' } },
     { $sort: { soldCount: -1, rating: -1 } },
@@ -141,7 +194,7 @@ async function runKeywordSearch(query: string, limit: number) {
   }
 
   return {
-    products: Array.from(seen.values()).slice(0, limit),
+    products: rankByQueryRelevance(Array.from(seen.values()), cleanQuery).slice(0, limit),
     brands: brandResults.map((b: any) => ({ _id: b._id, name: b.name, origin: b.origin })),
   };
 }
@@ -309,18 +362,9 @@ export class SearchService {
         }
       }
 
-      // Đa dạng hóa kết quả: Nếu có nhiều sản phẩm phù hợp, chọn ngẫu nhiên trong nhóm top candidates
-      let finalProducts = candidates;
-      if (candidates.length > limit) {
-        const topPool = candidates.slice(0, Math.min(candidates.length, limit + 6));
-        for (let i = topPool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [topPool[i], topPool[j]] = [topPool[j], topPool[i]];
-        }
-        finalProducts = topPool.slice(0, limit);
-      } else {
-        finalProducts = candidates.slice(0, limit);
-      }
+      // Xáo trộn ngẫu nhiên ở đây từng khiến chai khách gọi đích danh biến mất khỏi top 4
+      // (và làm cùng một câu hỏi cho hai câu trả lời khác nhau). Giờ xếp hạng theo mức khớp tên.
+      const finalProducts = rankByQueryRelevance(candidates, cleanQuery).slice(0, limit);
 
       return { products: finalProducts, brands: kwBrands, mode: 'specific' };
     } catch (error: any) {
