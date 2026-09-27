@@ -111,15 +111,39 @@ describe("planExecutor", () => {
         { id: 2, tool: "generate_product", args: { name: "X" }, dependsOn: [1], description: "Step 2", condition },
       ],
     });
+    const ran = async (condition: string) => {
+      const result = await executePlan(planWith(condition));
+      return result.results[1].skipped !== true;
+    };
 
     it("so sánh đúng thì step vẫn chạy", async () => {
-      const result = await executePlan(planWith('$1.data.name === "Trending"'));
-      expect(result.results[1].skipped).toBeFalsy();
+      expect(await ran('$1.data.name === "Trending"')).toBe(true);
     });
 
-    it("so sánh sai thì step bị bỏ qua", async () => {
-      const result = await executePlan(planWith("$1.data.name === 'Khac'"));
-      expect(result.results[1].skipped).toBe(true);
+    it("REGRESSION: condition dùng cú pháp $step_N phải resolve được như trong args", async () => {
+      // Decomposer được dạy "$step_N...", condition chỉ nhận "$N..." sẽ coi cả biểu thức
+      // là chữ thường → step bị bỏ mà plan vẫn báo thành công.
+      expect(await ran('$step_1.data.name === "Trending"')).toBe(true);
+    });
+
+    it("literal nháy đơn vẫn so sánh được", async () => {
+      expect(await ran("$1.data.name === 'Trending'")).toBe(true);
+      expect(await ran("$1.data.name === 'Khac'")).toBe(false);
+    });
+
+    it("toán tử nằm trong giá trị có dấu nháy escape không bị tách nhầm", async () => {
+      const { searchTrending } = await import("../../../services/agent/adminTools.ts");
+      (searchTrending as any).mockResolvedValueOnce({
+        success: true, data: { name: 'A"B' }, message: "Found trending",
+      });
+      // JSON.stringify của value là "A\"B" — bộ tách cũ lật sai trạng thái chuỗi tại
+      // dấu \" rồi coi " === " ở trong chuỗi là toán tử ngoài cùng.
+      expect(await ran('$1.data.name === "A\\"B"')).toBe(true);
+    });
+
+    it("một mình tham chiếu bước được hiểu là truthiness của giá trị", async () => {
+      expect(await ran("$step_1.data.name")).toBe(true);
+      expect(await ran("$step_1.data.khongTonTai")).toBe(false);
     });
 
     it("REGRESSION: condition là mã nguồn không được thực thi (trước đây eval bằng new Function)", async () => {
@@ -128,24 +152,44 @@ describe("planExecutor", () => {
       expect(result.results[1].skipped).toBe(true);
       expect((globalThis as any).__pwned).toBeUndefined();
     });
+
+    it("REGRESSION: condition nhiều mệnh đề / chuỗi lạ thì bỏ step, không đoán", async () => {
+      expect(await ran('$1.data.name === "Trending" && $1.success === true')).toBe(false);
+      expect(await ran("xóa hết sản phẩm cũ")).toBe(false);
+    });
+
+    it("REGRESSION: path điều kiện không được leo prototype chain", async () => {
+      expect(await ran('$1.constructor.name === "Object"')).toBe(false);
+    });
   });
 
   describe("resolveArg (via executePlan)", () => {
+    const refPlan = (ref: string): DecomposedPlan => ({
+      isComplex: true,
+      rawMessage: "Multi step",
+      steps: [
+        { id: 1, tool: "search_trending", args: { brand: "Dior", limit: 5 }, dependsOn: [], description: "Step 1" },
+        { id: 2, tool: "generate_product", args: { name: ref, brand: "Dior" }, dependsOn: [1], description: "Step 2 uses step 1" },
+      ],
+    });
+
     it("should resolve $step_N.data.field references", async () => {
-      const plan: DecomposedPlan = {
-        isComplex: true,
-        rawMessage: "Multi step",
-        steps: [
-          { id: 1, tool: "search_trending", args: { brand: "Dior", limit: 5 }, dependsOn: [], description: "Step 1" },
-          { id: 2, tool: "generate_product", args: { name: "$step_1.data.name", brand: "Dior" }, dependsOn: [1], description: "Step 2 uses step 1" },
-        ],
-      };
-      const result = await executePlan(plan);
+      const result = await executePlan(refPlan("$step_1.data.name"));
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
       const { createProductFromName } = await import("../../../services/agent/adminTools.ts");
       expect(createProductFromName).toHaveBeenCalledWith(
         "Trending",
+        expect.objectContaining({ brand: "Dior" })
+      );
+    });
+
+    it("REGRESSION: arg trỏ vào prototype phải giữ nguyên chữ, không lấy được giá trị", async () => {
+      await executePlan(refPlan("$step_1.constructor.name"));
+      const { createProductFromName } = await import("../../../services/agent/adminTools.ts");
+      expect(createProductFromName).not.toHaveBeenCalledWith("Object", expect.anything());
+      expect(createProductFromName).toHaveBeenCalledWith(
+        "$step_1.constructor.name",
         expect.objectContaining({ brand: "Dior" })
       );
     });

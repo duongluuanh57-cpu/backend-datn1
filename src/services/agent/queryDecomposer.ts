@@ -88,7 +88,7 @@ OUTPUT FORMAT — TRẢ VỀ ĐÚNG JSON (không markdown, không giải thích)
 
 LƯU Ý QUAN TRỌNG:
 - Khi 1 step generate_product cần kết quả từ step search_trending trước đó, dùng cú pháp tham chiếu: "$step_N.data.products[0].name" để chỉ tên sản phẩm đầu tiên từ step N.
-- condition dùng để skip step nếu điều kiện không thỏa. Để null nếu không có condition.
+- condition dùng để skip step nếu điều kiện không thỏa. Chỉ được viết ĐÚNG MỘT phép so sánh giữa giá trị của bước trước và một literal, VD "$step_1.data.existed === true"; không dùng &&, ||, phép gọi hàm hay biểu thức toán học. Để null nếu không có condition.
 - dependsOn là mảng ID của các step cần hoàn thành trước.
 
 ADMIN MESSAGE: "${message}"

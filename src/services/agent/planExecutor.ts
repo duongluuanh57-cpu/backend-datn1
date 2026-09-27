@@ -63,17 +63,41 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
 };
 
 /**
+ * Tham chiếu tới kết quả một bước: `$1.data.x` hoặc `$step_1.data.x`.
+ * Decomposer được dạy cú pháp `$step_N`, nên args và condition phải nhận cả hai —
+ * bên nào chỉ nhận `$N` sẽ âm thầm coi tham chiếu là chữ thường.
+ */
+const STEP_REF_PATH = String.raw`\$(?:step_)?(\d+)\.([a-zA-Z0-9_.[\]]+)`;
+
+/**
+ * Đi theo `path` trên dữ liệu của một bước. Key không phải own-property coi như
+ * không tồn tại: `__proto__`/`constructor` dẫn ra prototype chain, không phải dữ liệu
+ * mà mô hình được quyền chọn.
+ */
+function walkStepPath(root: any, path: string): { found: boolean; value: any } {
+  let current: any = root;
+  for (const part of path.replace(/\[(\d+)\]/g, '.$1').split('.')) {
+    if (current === null || current === undefined || !Object.hasOwn(current, part)) {
+      return { found: false, value: undefined };
+    }
+    current = current[part];
+  }
+  return { found: true, value: current };
+}
+
+/**
  * Resolve tham chiếu $step_N.field trong args
  * VD: "$step_2.data.products[0].name" → giá trị thực từ results
  */
 function resolveArg(value: any, results: Map<number, ToolResult>): any {
   if (typeof value !== 'string') return value;
 
+  // Args là cả một chuỗi tham chiếu nên path lấy tới hết; condition thì path phải chặn
+  // lớp ký tự vì nó nằm giữa biểu thức.
   const refMatch = value.match(/^\$(?:step_)?(\d+)\.(.+)$/);
   if (!refMatch) return value;
 
   const stepId = parseInt(refMatch[1], 10);
-  const path = refMatch[2];
 
   const result = results.get(stepId);
   if (!result) {
@@ -81,14 +105,8 @@ function resolveArg(value: any, results: Map<number, ToolResult>): any {
     return value;
   }
 
-  // Navigate path: "data.products[0].name"
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
-  let current: any = result;
-  for (const part of parts) {
-    if (current === null || current === undefined) return value;
-    current = current[part];
-  }
-  return current ?? value;
+  const walked = walkStepPath(result, refMatch[2]);
+  return walked.value ?? value;
 }
 
 /**
@@ -104,22 +122,30 @@ function resolveArgs(args: Record<string, any>, results: Map<number, ToolResult>
 
 /**
  * Evaluate condition string với kết quả hiện có
- * VD: "$1.data.existed === true" → boolean
+ * VD: "$step_1.data.existed === true" → boolean
  *
  * KHÔNG dùng eval/new Function: `condition` là chuỗi do mô hình viết ra, nên bất kỳ
  * thứ gì gửi được tới decomposer (kể cả prompt injection từ dữ liệu sản phẩm) sẽ thành
- * lệnh thực thi trên server. Ở đây chỉ chấp nhận đúng một phép so sánh.
+ * lệnh thực thi trên server. Ở đây chỉ chấp nhận đúng một phép so sánh, hoặc một tham
+ * chiếu bước duy nhất (truthiness của giá trị).
  */
 const COMPARISON_OPS = ['===', '!==', '==', '!=', '>=', '<=', '>', '<'] as const;
 type ComparisonOp = (typeof COMPARISON_OPS)[number];
 
-/** Tách `lhs OP rhs` ở mức ngoài cùng; ký tự nằm trong chuỗi JSON không được tính. */
+/**
+ * Tách `lhs OP rhs` ở mức ngoài cùng. Toán tử nằm trong chuỗi — kể cả dấu nháy đã được
+ * `JSON.stringify` escape thành `\"` — là nội dung dữ liệu, không phải toán tử.
+ */
 function splitComparison(expr: string): [string, ComparisonOp, string] | null {
-  let inString = false;
+  let quote: string | null = null;
   for (let i = 0; i < expr.length; i++) {
     const ch = expr[i];
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
+    if (quote) {
+      if (ch === '\\') i++; // ký tự sau backslash thuộc về nội dung chuỗi
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
     for (const op of COMPARISON_OPS) {
       if (expr.startsWith(op, i)) return [expr.slice(0, i), op, expr.slice(i + op.length)];
     }
@@ -127,11 +153,13 @@ function splitComparison(expr: string): [string, ComparisonOp, string] | null {
   return null;
 }
 
-/** Giá trị hai vế sau khi thay $N.field luôn là JSON; token trần được coi là chuỗi. */
+/** Giá trị hai vế sau khi thay tham chiếu luôn là JSON; token trần được coi là chuỗi. */
 function toConditionValue(token: string): unknown {
   const t = token.trim();
   if (t === 'undefined') return undefined;
-  try { return JSON.parse(t); } catch { return t; }
+  try { return JSON.parse(t); } catch { /* không phải JSON — có thể là chuỗi nháy đơn */ }
+  const single = /^'([\s\S]*)'$/.exec(t);
+  return single ? single[1] : t;
 }
 
 function compareValues(lhs: unknown, op: ComparisonOp, rhs: unknown): boolean {
@@ -153,29 +181,27 @@ function compareValues(lhs: unknown, op: ComparisonOp, rhs: unknown): boolean {
 
 function evaluateCondition(condition: string, results: Map<number, ToolResult>): boolean {
   try {
-    // Replace $N.field với giá trị thực
+    // Replace $N.field / $step_N.field với giá trị thực
     let expr = condition;
-    const refRegex = /\$(\d+)\.([a-zA-Z0-9_.\[\]]+)/g;
+    const refRegex = new RegExp(STEP_REF_PATH, 'g');
     expr = expr.replace(refRegex, (_match, stepId: string, path: string) => {
-      const sid = parseInt(stepId, 10);
-      const result = results.get(sid);
+      const result = results.get(parseInt(stepId, 10));
       if (!result) return 'undefined';
-
-      const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.');
-      let current: any = result;
-      for (const part of parts) {
-        if (current === null || current === undefined) return 'undefined';
-        // Không đi lên prototype chain — `__proto__`/`constructor` không phải dữ liệu bước.
-        if (!Object.hasOwn(current, part)) return 'undefined';
-        current = current[part];
-      }
-      return JSON.stringify(current);
+      const walked = walkStepPath(result, path);
+      if (!walked.found || walked.value === undefined) return 'undefined';
+      return JSON.stringify(walked.value);
     });
 
     const parsed = splitComparison(expr);
     if (!parsed) {
-      console.warn(`⚠️ [PlanExecutor] Condition không đúng dạng so sánh: "${condition}" → bỏ qua step`);
-      return false;
+      // Không có toán tử: chỉ chấp nhận đúng một tham chiếu bước (`$step_1.data.existed`),
+      // khi đó điều kiện nghĩa là truthiness của giá trị. Chuỗi lạ vẫn phải chặn — step bị
+      // bỏ qua có thể là delete_product, không được mở cửa chỉ vì không hiểu điều kiện.
+      if (!new RegExp(`^${STEP_REF_PATH}$`).test(condition.trim())) {
+        console.warn(`⚠️ [PlanExecutor] Condition không đúng dạng so sánh: "${condition}" → bỏ qua step`);
+        return false;
+      }
+      return Boolean(toConditionValue(expr));
     }
     return compareValues(toConditionValue(parsed[0]), parsed[1], toConditionValue(parsed[2]));
   } catch (err) {
