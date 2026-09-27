@@ -103,7 +103,7 @@ const typeDefs = `#graphql
   }
 
   type NavbarData {
-    trending: [Product!]
+    suggestions: [Product!]
     brandNames: [String!]
   }
 
@@ -471,12 +471,15 @@ const resolvers = {
     },
 
     navbar: async () => {
-      const [trending, brands] = await Promise.all([
-        ProductService.getTrendingProducts(),
+      const [suggested, brands] = await Promise.all([
+        // Danh sách gợi ý lúc bỏ trống ô tìm kiếm. Không lấy getTrendingProducts: luật Bán chạy
+        // đòi soldCount >= 15 + rating >= 4.5, catalog hiện tại chưa có chai nào đạt (max soldCount = 1),
+        // nên ô tìm kiếm sẽ trống trơn. 'Mới về' là dữ liệu thật và luôn có.
+        ProductService.getNewProducts(8),
         BrandService.getAllBrands(),
       ]);
       return {
-        trending: (trending || []).slice(0, 8).map(mapProduct),
+        suggestions: (suggested || []).slice(0, 8).map(mapProduct),
         brandNames: (brands || []).map((b: any) => b.name).filter(Boolean),
       };
     },
