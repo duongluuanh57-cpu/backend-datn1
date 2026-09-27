@@ -9,7 +9,7 @@ import { Category } from '../../models/Category.ts';
 import { Review } from '../../models/Review.ts';
 import { ProductImage } from '../../models/ProductImage.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
-import { formatMultipleProducts, getDefaultVariant } from './productFormatterService.ts';
+import { formatMultipleProducts, getDefaultVariant, getDisplayVariant } from './productFormatterService.ts';
 import { DiscountLifecycleService } from './discountLifecycleService.ts';
 import { bySizeAsc } from './productHelpers.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
@@ -856,8 +856,9 @@ export class ProductQueryService {
     const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
     const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
 
-    const defaultVariant = getDefaultVariant(variants) || variants[0];
-    const rawVariantPrice = defaultVariant?.price || (product as any).price || (product as any).originalPrice || 0;
+    const buyableVariant = getDefaultVariant(variants);
+    const displayVariant = getDisplayVariant(variants) || variants[0];
+    const rawVariantPrice = displayVariant?.price || 0;
 
     let extraDiscount = 0;
     let fsStockLimit = 0;
@@ -867,16 +868,17 @@ export class ProductQueryService {
     if (activeFS) {
       const fsItem = (activeFS.items || []).find((it: any) => it.productId?.toString() === id.toString());
       if (fsItem) {
-        extraDiscount = fsItem.extraDiscountPercentage || 0;
         fsStockLimit = fsItem.stockLimit || 0;
         fsSoldCount = fsItem.soldCount || 0;
         isFS = true;
+        // Ngân sách flash-sale đã bán hết thì phần giảm thêm không còn hiệu lực.
+        const exhausted = fsStockLimit > 0 && fsSoldCount >= fsStockLimit;
+        extraDiscount = exhausted ? 0 : (fsItem.extraDiscountPercentage || 0);
       }
     }
 
-    const quantityInStock = variants.length > 0
-      ? variants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0)
-      : ((product as any).quantityInStock ?? (product as any).stock ?? 1);
+    // Tồn kho chỉ nằm trên ProductVariant — Product không có cột stock nào, không được bịa số 1.
+    const quantityInStock = variants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0);
 
     const baseDiscount = (product as any).discountPercentage || (product as any).discount || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
@@ -917,7 +919,7 @@ export class ProductQueryService {
           isDefault: v.isDefault,
         };
       }),
-      defaultVariantSize: defaultVariant?.size || '100ml',
+      defaultVariantSize: displayVariant?.size || '',
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
       tag: productTag,
       quantityInStock,

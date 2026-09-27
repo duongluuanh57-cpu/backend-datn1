@@ -7,30 +7,34 @@ import { Tag } from '../../models/Tag.ts';
 import { Category } from '../../models/Category.ts';
 import { Review } from '../../models/Review.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
-import { resolveCategoryNames } from './productHelpers.ts';
 
 function parseCapacity(size: string | undefined): number {
   if (!size) return 0;
   return parseInt(String(size).replace(/\D/g, ''), 10) || 0;
 }
 
-export function getDefaultVariant(productVariants: any[]): any {
-  if (!productVariants || productVariants.length === 0) return null;
-  // Sắp xếp các biến thể theo dung tích lớn nhất trước (descending)
-  const sorted = [...productVariants].sort((a: any, b: any) => {
-    const capA = parseCapacity(a.size);
-    const capB = parseCapacity(b.size);
-    if (capA !== capB) return capB - capA;
-    return (b.sortOrder ?? 0) - (a.sortOrder ?? 0);
-  });
-  // Ưu tiên biến thể có dung tích lớn nhất còn hàng
-  const inStockVariant = sorted.find((v: any) => v.quantityInStock === undefined || v.quantityInStock > 0);
-  return inStockVariant || sorted[0];
+function sortByCapacityDesc(productVariants: any[]): any[] {
+  // Dung tích lớn nhất trước (descending)
+  return [...productVariants].sort((a: any, b: any) => parseCapacity(b.size) - parseCapacity(a.size));
 }
 
-function getPriceFromVariants(product: any, productVariants: any[], discountPercentage?: number): number {
-  const inStockVariant = getDefaultVariant(productVariants);
-  let price = inStockVariant ? inStockVariant.price : (product.price || product.originalPrice || product.original_price || 0);
+/**
+ * Biến thể mặc định để BÁN: dung tích lớn nhất còn hàng.
+ * Hết hàng toàn bộ → null, không trả biến thể 0 tồn kho để người mua không chọn phải size mua được.
+ */
+export function getDefaultVariant(productVariants: any[]): any {
+  if (!productVariants || productVariants.length === 0) return null;
+  return sortByCapacityDesc(productVariants).find((v: any) => (v.quantityInStock ?? 0) > 0) || null;
+}
+
+/** Biến thể để HIỂN THỊ GIÁ: còn hàng trước, sold out thì lấy biến thể lớn nhất cho giá không phải là 0. */
+export function getDisplayVariant(productVariants: any[]): any {
+  if (!productVariants || productVariants.length === 0) return null;
+  return getDefaultVariant(productVariants) || sortByCapacityDesc(productVariants)[0];
+}
+
+function getPriceFromVariants(productVariants: any[], discountPercentage?: number): number {
+  let price = getDisplayVariant(productVariants)?.price ?? 0;
   if (discountPercentage && discountPercentage > 0) {
     price = price * (1 - discountPercentage / 100);
   }
@@ -62,26 +66,21 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   if (products.length === 0) return [];
 
   const productIds = products.map(p => p._id.toString());
-  const allVariantIds = products.flatMap(p =>
-    (p.variants || []).map((v: any) => (v && (v._id ? v._id.toString() : v.toString()))).filter(Boolean)
-  ).filter(id => id && id !== '[object Object]');
 
-  const oldCatIds = products
-    .filter(p => !(p.categories as any[])?.length && (p as any).categoryId)
-    .map(p => (p as any).categoryId).filter(Boolean);
+  const catIds = products
+    .map(p => ((p as any).categoryId?._id || (p as any).categoryId))
+    .filter((id: any) => id && mongoose.Types.ObjectId.isValid(String(id)))
+    .map((id: any) => new mongoose.Types.ObjectId(String(id)));
 
   // Chạy song song 6 truy vấn độc lập bằng Promise.all với populate trực tiếp tagId
   const [images, variants, tagLinks, catDocs, reviewAgg, activeFlashSales] = await Promise.all([
     ProductImage.find({ productId: { $in: productIds } }).select('url productId').lean() as Promise<any[]>,
     ProductVariant.find({
-      $or: [
-        ...(allVariantIds.length > 0 ? [{ _id: { $in: allVariantIds.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) } }] : []),
-        { productId: { $in: productIds.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) } },
-      ],
-    }).select('productId size price sortOrder quantityInStock type isDefault').sort({ sortOrder: 1 }).lean() as Promise<any[]>,
+      productId: { $in: productIds.map(id => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id) },
+    }).select('productId size price quantityInStock isDefault').lean() as Promise<any[]>,
     ProductTag.find({ productId: { $in: productIds } }).populate({ path: 'tagId', model: Tag, select: 'slug status' }).select('productId tagId').lean() as Promise<any[]>,
-    oldCatIds.length > 0
-      ? Category.find({ _id: { $in: oldCatIds } }).select('name').lean() as Promise<any[]>
+    catIds.length > 0
+      ? Category.find({ _id: { $in: catIds } }).select('name slug status').lean() as Promise<any[]>
       : Promise.resolve([]),
     Review.aggregate([
       { $match: { productId: { $in: productIds.map(id => new mongoose.Types.ObjectId(id)) }, status: 'visible' } },
@@ -97,10 +96,8 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     imageMap.get(pId)!.push(img.url);
   }
 
-  const variantById = new Map<string, any>();
   const variantsByProductId = new Map<string, any[]>();
   for (const v of variants) {
-    variantById.set(v._id.toString(), v);
     if (v.productId) {
       const pIdStr = v.productId.toString();
       if (!variantsByProductId.has(pIdStr)) variantsByProductId.set(pIdStr, []);
@@ -118,8 +115,8 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     }
   }
 
-  const oldCatMap = new Map<string, string>();
-  for (const cat of catDocs) oldCatMap.set(cat._id.toString(), cat.name);
+  const catById = new Map<string, any>();
+  for (const cat of catDocs) catById.set(cat._id.toString(), cat);
 
   const reviewMap = new Map<string, { count: number; avg: number }>();
   for (const r of reviewAgg) reviewMap.set(r._id.toString(), { count: r.count, avg: Math.round(r.avg * 10) / 10 });
@@ -128,11 +125,13 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   for (const fs of activeFlashSales) {
     for (const item of (fs.items || [])) {
       if (item.productId) {
+        // Ngân sách flash-sale đã bán hết (soldCount >= stockLimit) thì không còn giảm giá thêm.
+        const exhausted = item.stockLimit > 0 && (item.soldCount || 0) >= item.stockLimit;
         flashSaleMap.set(item.productId.toString(), {
           id: fs._id.toString(),
           name: fs.name,
           status: fs.status,
-          extraDiscountPercentage: item.extraDiscountPercentage || 0,
+          extraDiscountPercentage: exhausted ? 0 : (item.extraDiscountPercentage || 0),
         });
       }
     }
@@ -141,18 +140,10 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
   return products.map(product => {
     const pId = product._id.toString();
     const productImages = imageMap.get(pId) || [];
-    let productVariants = (product.variants || [])
-      .map((v: any) => {
-        if (v && typeof v === 'object' && v.price !== undefined) return v;
-        const vIdStr = v && (v._id ? v._id.toString() : v.toString());
-        return variantById.get(vIdStr);
-      }).filter(Boolean);
-    if (productVariants.length === 0 && variantsByProductId.has(pId)) {
-      productVariants = variantsByProductId.get(pId)!;
-    }
+    const productVariants = variantsByProductId.get(pId) || [];
     const reviewStats = reviewMap.get(pId);
-    let reviewsCount = reviewStats?.count ?? (product as any).reviewsCount ?? 0;
-    const avgRating = reviewStats?.avg ?? (product as any).avgRating ?? 0;
+    let reviewsCount = reviewStats?.count ?? 0;
+    const avgRating = reviewStats?.avg ?? 0;
     // Bảo vệ logic thương mại: Số đánh giá không bao giờ được lớn hơn số lượt bán
     const pSoldCount = (product as any).soldCount || 0;
     if (reviewsCount > pSoldCount) {
@@ -164,19 +155,20 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     const rawTagSlugs: string[] = tagMap.get(pId) || (product as any).tag?.split(',').map((s: string) => s.trim()) || [];
     const productTag = rawTagSlugs.join(', ') || (product as any).tag || '';
 
-    const defaultVar = getDefaultVariant(productVariants);
+    const buyableVariant = getDefaultVariant(productVariants);
+    const displayVar = getDisplayVariant(productVariants);
     const extraDiscount = (fsInfo && fsInfo.status === 'active') ? (fsInfo.extraDiscountPercentage || 0) : 0;
 
-    const quantityInStock = productVariants.length > 0
-      ? productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0)
-      : (product.quantityInStock ?? product.stock ?? 1);
+    // Tồn kho chỉ nằm trên ProductVariant — Product không có cột stock nào, không được bịa số 1.
+    const quantityInStock = productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0);
 
     const baseDiscount = product.discountPercentage || product.discount || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
 
     const availableVariants = productVariants.map((v: any) => {
       const num = parseInt(String(v.size || '').replace(/\D/g, ''), 10) || 0;
-      const type = v.type || (num > 0 && num < 50 ? 'decant' : 'fullbox');
+      // type không còn là cột DB — luôn suy ra từ size (<50ml = decant).
+      const type = num > 0 && num < 50 ? 'decant' : 'fullbox';
       return {
         _id: v._id?.toString(),
         size: v.size,
@@ -188,6 +180,15 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
       };
     });
 
+    const catIdRaw = (product as any).categoryId?._id || (product as any).categoryId;
+    const catIdStr = catIdRaw ? String(catIdRaw) : '';
+    const categoryDoc = catIdStr ? catById.get(catIdStr) : undefined;
+    const category = categoryDoc
+      ? { _id: categoryDoc._id, name: categoryDoc.name, slug: categoryDoc.slug, status: categoryDoc.status }
+      : ((product as any).categoryId && typeof (product as any).categoryId === 'object'
+        ? { _id: (product as any).categoryId._id, name: (product as any).categoryId.name, slug: (product as any).categoryId.slug, status: (product as any).categoryId.status }
+        : null);
+
     return {
       ...product,
       brand: (product.brandId as any)?.name || '',
@@ -197,10 +198,11 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
       availableVariants,
       tag: productTag,
       isNewArrival: (product as any).isNewArrival ?? false,
-      categories: resolveCategoryNames(product, {} as Record<string, any[]>, oldCatMap.get((product as any).categoryId?.toString())),
-      price: getPriceFromVariants(product, productVariants, totalDiscount),
-      originalPrice: defaultVar?.price || 0,
-      defaultVariantSize: defaultVar?.size || '100ml',
+      categoryId: catIdStr || null,
+      category,
+      price: getPriceFromVariants(productVariants, totalDiscount),
+      originalPrice: displayVar?.price || 0,
+      defaultVariantSize: buyableVariant?.size || '',
       discount: totalDiscount,
       discountPercentage: totalDiscount,
       quantityInStock,
@@ -226,38 +228,12 @@ export async function getEffectiveProductDiscounts(
     .map(id => (typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id));
   if (validIds.length === 0) return result;
 
-  const [products, variants, tagLinks, activeFlashSales] = await Promise.all([
+  const [products, activeFlashSales] = await Promise.all([
     Product.find({ _id: { $in: validIds } })
-      .select('createdAt discountPercentage quantityInStock stock tag')
-      .lean(),
-    ProductVariant.find({ productId: { $in: validIds } })
-      .select('productId quantityInStock')
-      .lean(),
-    ProductTag.find({ productId: { $in: validIds } })
-      .populate({ path: 'tagId', model: Tag, select: 'slug status' })
-      .select('productId tagId')
+      .select('_id discountPercentage')
       .lean(),
     getCachedActiveFlashSales(),
   ]);
-
-  const tagMap = new Map<string, string[]>();
-  for (const link of tagLinks) {
-    const pId = link.productId.toString();
-    const tagDoc = link.tagId as any;
-    if (tagDoc && tagDoc.status === 'active' && tagDoc.slug) {
-      if (!tagMap.has(pId)) tagMap.set(pId, []);
-      tagMap.get(pId)!.push(tagDoc.slug);
-    }
-  }
-
-  const variantsByProductId = new Map<string, any[]>();
-  for (const v of variants) {
-    if (v.productId) {
-      const pIdStr = v.productId.toString();
-      if (!variantsByProductId.has(pIdStr)) variantsByProductId.set(pIdStr, []);
-      variantsByProductId.get(pIdStr)!.push(v);
-    }
-  }
 
   const flashSaleMap = new Map<string, number>();
   for (const fs of activeFlashSales) {
@@ -276,7 +252,7 @@ export async function getEffectiveProductDiscounts(
   for (const product of products) {
     const pId = product._id.toString();
     const extraDiscount = flashSaleMap.get(pId) || 0;
-    const baseDiscount = product.discountPercentage || (product as any).discount || 0;
+    const baseDiscount = product.discountPercentage || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
     result.set(pId, totalDiscount);
   }

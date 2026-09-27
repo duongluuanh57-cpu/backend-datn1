@@ -167,8 +167,9 @@ function resolveLargestVariantSize(p: any): string {
   const variants = p.availableVariants || p.variants;
   if (Array.isArray(variants) && variants.length > 0) {
     const sorted = [...variants].sort((a: any, b: any) => parseCapacity(b.size) - parseCapacity(a.size));
-    const inStock = sorted.find((v: any) => v.quantityInStock === undefined || v.quantityInStock > 0);
-    return (inStock || sorted[0])?.size || '100ml';
+    const inStock = sorted.find((v: any) => (v.quantityInStock ?? 0) > 0);
+    // Size không có thật thì trả rỗng — bịa '100ml' khiến chat/checkout gửi size không tồn tại.
+    return (inStock || sorted[0])?.size || '';
   }
   if (typeof p.size === 'string' && p.size) {
     const tokens = p.size.split(',').map((s: string) => s.split(':')[0].trim()).filter(Boolean);
@@ -177,8 +178,7 @@ function resolveLargestVariantSize(p: any): string {
       return tokens[0];
     }
   }
-  if (p.defaultVariantSize) return p.defaultVariantSize;
-  return '100ml';
+  return p.defaultVariantSize || '';
 }
 
 function mapProduct(p: any) {
