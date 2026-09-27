@@ -8,11 +8,11 @@ import type { FastifyInstance } from 'fastify';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
 import compress from '@fastify/compress';
+import { ACCESS_COOKIE } from './utils/auth.ts';
 
 import { authRoutes } from './routes/auth.routes.ts';
-import { aiRoutes } from './routes/ai.routes.ts';
-import { visitsRoutes } from './routes/visits.routes.ts';
 import { oauthRoutes } from './routes/oauth.routes.ts';
+import { aiRoutes } from './routes/ai.routes.ts';
 import { productRoutes } from './routes/product.routes.ts';
 import { userRoutes } from './routes/user.routes.ts';
 import { brandRoutes } from './routes/brand.routes.ts';
@@ -23,21 +23,16 @@ import { paymentRoutes } from './routes/payment.routes.ts';
 import { vnpayRoutes } from './routes/vnpay.routes.ts';
 import { miniGameRoutes } from './routes/mini-game.routes.ts';
 import { flashSaleRoutes } from './routes/flashSaleRoutes.ts';
-import './models/Payment.ts';
 import './models/PaymentMethod.ts';
 import './models/PendingPayment.ts';
+import './models/DailySpin.ts';
 import './models/Favorite.ts';
-import './models/Cart.ts';
 import { userAddressRoutes } from './routes/user-address.routes.ts';
 
 import { categoryRoutes } from './routes/category.routes.ts';
-import { contentRoutes } from './routes/content.routes.ts';
+
+import { dashboardRoutes } from './routes/dashboard.routes.ts';
 import { funnelRoutes } from './routes/funnel.routes.ts';
-import { dailySummaryRoutes } from './routes/dailySummary.routes.ts';
-import { startDailySummaryCron } from './cron/dailySummary.ts';
-import { startDiscountLifecycleCron } from './cron/discountLifecycleCron.ts';
-import { startNewsAutoPilotCron } from './cron/newsAutoPilotCron.ts';
-import { startFlashSaleCron } from './services/FlashSaleService.ts';
 import { favoriteRoutes } from './routes/favorite.routes.ts';
 import { cartRoutes } from './routes/cart.routes.ts';
 import { adminRoutes } from './routes/admin.routes.ts';
@@ -54,6 +49,8 @@ import { register } from './config/metrics.ts';
 import { graphqlRoute } from './graphql/route.ts';
 import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
+import { originGuard } from './middleware/originGuard.ts';
+import { getAllowedOrigins } from './config/origins.ts';
 import { rateLimitKey, rateLimitMax } from './utils/rateLimit.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
 
@@ -85,18 +82,23 @@ export function buildApp(): FastifyInstance {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || ['http://localhost:3000', 'https://lessence-livid.vercel.app', 'https://frontend-datn-tau.vercel.app'];
   app.register(multipart, {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
+  // CORS + origin guard dùng chung danh sách trong config/origins.ts — lệch nhau là
+  // hoặc FE bị chặn oan, hoặc cookie cross-site mở đường cho CSRF.
   app.register(cors, {
-    origin: allowedOrigins,
+    origin: getAllowedOrigins(),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Products', 'X-Requested-With'],
     exposedHeaders: ['X-Products'],
   });
+
+  // Cookie session phải là SameSite=None để chạy được với topology FE/site khác API,
+  // nên không còn lớp chặn cross-site của SameSite=Lax nữa — bù lại bằng check Origin.
+  app.addHook('preHandler', originGuard);
 
   app.register(helmet, { contentSecurityPolicy: false });
   app.register(compress, {
@@ -115,7 +117,15 @@ export function buildApp(): FastifyInstance {
         url.startsWith('/api/tags')
       ) {
         if (!reply.hasHeader('Cache-Control')) {
-          reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+          // Route admin dùng chung prefix với route public (`GET /api/products` là danh
+          // sách admin, trả cả draft). Có session thì câu trả lời là dữ liệu riêng —
+          // dán `public` cho phép proxy/browser giữ lại rồi phát cho người khác.
+          const cookies = (request as any).cookies ?? {};
+          const hasSession = Boolean(request.headers.authorization) || Boolean(cookies[ACCESS_COOKIE]);
+          reply.header(
+            'Cache-Control',
+            hasSession ? 'private, no-store' : 'public, max-age=60, stale-while-revalidate=300'
+          );
         }
       }
     }
@@ -153,26 +163,19 @@ export function buildApp(): FastifyInstance {
   app.register(userAddressRoutes, { prefix: '/api/user-addresses' });
   app.register(voucherRoutes, { prefix: '/api/vouchers' });
   app.register(paymentRoutes, { prefix: '/api/payments' });
-  app.register(visitsRoutes, { prefix: '/api/visits' });
   app.register(categoryRoutes, { prefix: '/api/categories' });
-  app.register(contentRoutes, { prefix: '/api/content' });
   app.register(favoriteRoutes, { prefix: '/api/favorites' });
   app.register(cartRoutes, { prefix: '/api/cart' });
   app.register(vnpayRoutes, { prefix: '/api/payments' });
-  app.register(funnelRoutes, { prefix: '/api/funnel' });
+
   app.register(miniGameRoutes, { prefix: '/api/mini-games' });
   app.register(flashSaleRoutes, { prefix: '/api/flash-sales' });
-  app.register(dailySummaryRoutes, { prefix: '/api/admin' });
+  app.register(dashboardRoutes, { prefix: '/api/admin' });
+  app.register(funnelRoutes, { prefix: '/api/funnel' });
   app.register(mediaRoutes, { prefix: '/api/media' });
   app.register(reviewRoutes, { prefix: '/api/reviews' });
   app.register(newsRoutes, { prefix: '/api' });
   app.register(supportTicketRoutes, { prefix: '/api/support-tickets' });
-
-  // Start background cron jobs
-  startDailySummaryCron();
-  startDiscountLifecycleCron();
-  startFlashSaleCron();
-  startNewsAutoPilotCron();
 
   // Admin API & SSE — prefix /admin
   app.register(adminRoutes, { prefix: '/admin' });

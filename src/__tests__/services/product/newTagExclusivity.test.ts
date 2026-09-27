@@ -125,10 +125,36 @@ describe('Luật loại trừ New / Standard', () => {
 
     await ProductMutationService.updateProduct(pid, { tag: 'New, Standard' });
 
-    expect(ProductTag.deleteMany).toHaveBeenCalledWith({ productId: pid });
+    // Không còn "xóa sạch rồi ghi lại": chỉ xóa link nằm ngoài tập tag vừa chọn.
+    const del = (ProductTag.deleteMany as any).mock.calls[0][0];
+    expect(del.productId).toBe(pid);
+    expect(del.tagId.$nin).toHaveLength(1);
     const inserted = (ProductTag.insertMany as any).mock.calls[0][0];
     expect(inserted).toHaveLength(1);
     expect(inserted[0].tagId.toString()).toBe(NEW_TAG_ID.toString());
+    // Link do admin chọn là ý đồ con người -> manual, sync tồn kho không được gỡ.
+    expect(inserted[0].source).toBe('manual');
+  });
+
+  it('admin gửi chuỗi tag không khớp tag nào: KHÔNG wiped toàn bộ link', async () => {
+    const pid = oid().toString();
+    (Product.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
+    (Product.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
+
+    await ProductMutationService.updateProduct(pid, { tag: 'Không Tồn Tại' });
+
+    expect(ProductTag.deleteMany).not.toHaveBeenCalled();
+    expect(ProductTag.insertMany).not.toHaveBeenCalled();
+  });
+
+  it('admin gửi tag rỗng: mới là lệnh gỡ hết tag', async () => {
+    const pid = oid().toString();
+    (Product.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
+    (Product.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
+
+    await ProductMutationService.updateProduct(pid, { tag: '' });
+
+    expect(ProductTag.deleteMany).toHaveBeenCalledWith({ productId: pid });
   });
 
   it('admin cập nhật tag Limited kèm Standard: giữ nguyên cả hai', async () => {

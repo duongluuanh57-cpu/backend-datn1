@@ -441,36 +441,32 @@ export class ProductQueryService {
 
   static async getSaleProducts(): Promise<any[]> {
     this.syncDiscountsOnRead();
-    const cacheKey = `products:sale:tag:v3`;
+    const cacheKey = `products:sale:tag:v4`;
     try { const cached = await redis.get(cacheKey); if (cached) return JSON.parse(cached); } catch (err) { console.warn('Redis error in getSaleProducts:', err); }
 
     let flashSaleProducts: any[] = [];
     try {
       const activeFS = await FlashSaleService.getActiveFlashSale();
-      if (activeFS && activeFS.items && activeFS.items.length > 0) {
-        flashSaleProducts = activeFS.items
-          .filter((it: any) => it.product || it.productId)
-          .map((it: any) => {
-            const p = it.product || it.productId;
-            const extra = it.extraDiscountPercentage || 0;
-            const baseDiscount = p.discountPercentage || p.discount || 0;
-            const totalDiscount = Math.min(100, baseDiscount + extra);
-
-            const rawBasePrice = p.originalPrice || (baseDiscount > 0 ? Math.round((p.price || 0) / (1 - baseDiscount / 100)) : (p.price || 0));
-            const flashSalePrice = totalDiscount > 0 ? Math.round(rawBasePrice * (1 - totalDiscount / 100)) : rawBasePrice;
-
-            return {
-              ...p,
-              price: flashSalePrice,
-              originalPrice: rawBasePrice,
-              discount: totalDiscount,
-              discountPercentage: totalDiscount,
-              isFlashSale: true,
-              extraDiscountPercentage: extra,
-              stockLimit: it.stockLimit || 0,
-              soldCount: it.soldCount || 0,
-            };
-          });
+      // Map id sản phẩm -> item của đợt sale (mang stockLimit/soldCount riêng, không phải
+      // số của Product).
+      const itemByProductId = new Map<string, any>();
+      for (const it of (activeFS?.items || [])) {
+        const rawId = it?.product?._id ?? it?.product ?? it?.productId;
+        if (rawId && mongoose.Types.ObjectId.isValid(String(rawId))) itemByProductId.set(String(rawId), it);
+      }
+      if (itemByProductId.size > 0) {
+        const fsDocs = await Product.find({
+          _id: { $in: [...itemByProductId.keys()].map(id => new mongoose.Types.ObjectId(id)) },
+          status: 'active',
+        }).populate('brandId').populate('categoryId').lean();
+        // Giá bán của hàng flash sale phải đi qua formatter: giá gốc nằm trên ProductVariant
+        // và phần giảm thêm chỉ được tính khi ngân sách sale chưa cạn. Cộng % thủ công trên
+        // Product raw trước đây cho ra giá 0 vì cột price không còn tồn tại.
+        const formatted = await formatMultipleProducts(fsDocs);
+        flashSaleProducts = formatted.map((p: any) => {
+          const item = itemByProductId.get(String(p._id));
+          return item ? { ...p, isFlashSale: true, stockLimit: item.stockLimit || 0, soldCount: item.soldCount || 0 } : p;
+        });
       }
     } catch (fsErr) {
       console.warn('Error fetching Flash Sale active products:', fsErr);
@@ -775,7 +771,7 @@ export class ProductQueryService {
     const validIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).slice(0, 20).map(id => new mongoose.Types.ObjectId(id));
     if (!validIds.length) return [];
     const productsRaw = await Product.find({ _id: { $in: validIds }, status: 'active' })
-      .select('name slug brandId image images thumbnail categoryId price originalPrice original_price discountPercentage soldCount createdAt status')
+      .select('name slug brandId image categoryId discountPercentage soldCount createdAt status')
       .populate('brandId')
       .populate('categoryId')
       .lean();
@@ -784,7 +780,8 @@ export class ProductQueryService {
 
   static async suggestProducts(query: string, limit: number = 8): Promise<{ products: any[]; brands: any[] }> {
     if (!query || !query.trim()) {
-      const randomProducts = await Product.aggregate([{ $match: { status: 'active' } }, { $sample: { size: limit } }, { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } }, { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } }, { $project: { name: 1, image: 1, brand: '$brand.name' } }]);
+      const sampleSize = Math.min(20, Math.max(1, Number(limit) || 8));
+      const randomProducts = await Product.aggregate([{ $match: { status: 'active' } }, { $sample: { size: sampleSize } }, { $lookup: { from: 'brands', localField: 'brandId', foreignField: '_id', as: 'brand' } }, { $unwind: { path: '$brand', preserveNullAndEmptyArrays: true } }, { $project: { _id: 1, name: 1, image: 1, brand: '$brand.name' } }]);
       const formatted = await formatMultipleProducts(randomProducts);
       return { products: formatted.map((p: any) => ({ _id: p._id, name: p.name, price: p.price, image: p.image || '', brand: p.brand || '' })), brands: [] };
     }
@@ -830,7 +827,7 @@ export class ProductQueryService {
   static async getProductById(id: string): Promise<any | null> {
     if (!id || !mongoose.Types.ObjectId.isValid(id)) return null;
 
-    const cacheKey = `product:detail:${id}`;
+    const cacheKey = `product:detail:v2:${id}`;
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
@@ -842,12 +839,18 @@ export class ProductQueryService {
     if (!product) return null;
 
     // Chạy song song 5 truy vấn độc lập
+    const fsNow = new Date();
     const [images, variants, tagLinks, activeFS, reviewStats] = await Promise.all([
       ProductImage.find({ productId: id }).lean(),
       ProductVariant.find({ productId: id }).lean().then((vs: any[]) => vs.sort(bySizeAsc)),
       ProductTag.find({ productId: id }).populate({ path: 'tagId', model: 'Tag', select: 'name slug status' }).lean(),
+      // Chỉ đợt ĐANG chạy mới được giảm giá trang chi tiết. `status` một mình không đủ:
+      // cờ được cron lật, nên một đợt `scheduled` vẫn còn nguyên hạn giảm giá nếu chỉ
+      // lọc theo status — phải kẹp thêm cửa thời gian.
       FlashSale.findOne({
-        status: { $in: ['active', 'scheduled'] },
+        status: 'active',
+        startDate: { $lte: fsNow },
+        endDate: { $gt: fsNow },
         'items.productId': new mongoose.Types.ObjectId(id),
       }).lean(),
       Review.aggregate([
@@ -861,7 +864,7 @@ export class ProductQueryService {
       .map(l => (l.tagId as any)?.slug)
       .filter(Boolean);
 
-    const productTag = rawTagSlugs.join(', ') || (product as any).tag || '';
+    const productTag = rawTagSlugs.join(', ');
 
     const reviewsCount = reviewStats.length > 0 ? reviewStats[0].count : 0;
     const avgRating = reviewStats.length > 0 ? Math.round(reviewStats[0].avg * 10) / 10 : 0;
@@ -890,7 +893,7 @@ export class ProductQueryService {
     // Tồn kho chỉ nằm trên ProductVariant — Product không có cột stock nào, không được bịa số 1.
     const quantityInStock = variants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0);
 
-    const baseDiscount = (product as any).discountPercentage || (product as any).discount || 0;
+    const baseDiscount = (product as any).discountPercentage || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
     let computedPrice = rawVariantPrice;
     if (computedPrice > 0 && totalDiscount > 0) {
@@ -929,7 +932,9 @@ export class ProductQueryService {
           isDefault: v.isDefault,
         };
       }),
-      defaultVariantSize: displayVariant?.size || '',
+      // Size mặc định để MUA: biến thể còn hàng. Để trống khi cạn hết để client không
+      // chọn bừa một dung tích tồn 0.
+      defaultVariantSize: buyableVariant?.size || '',
       size: variants.map(v => `${v.size}:${v.price}`).join(', '),
       tag: productTag,
       quantityInStock,

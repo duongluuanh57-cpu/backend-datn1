@@ -10,13 +10,11 @@
  */
 import { ProductService } from '../ProductService.ts';
 import { Product } from '../../models/Product.ts';
+import { ProductVariant } from '../../models/ProductVariant.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Tag } from '../../models/Tag.ts';
 import { Category } from '../../models/Category.ts';
-import { BrandService } from '../BrandService.ts';
 import { AIService } from '../AIService.ts';
-import { generateProduct } from '../../controllers/aiCatalog/generateProductController.ts';
-import { generateBrand } from '../../controllers/aiCatalog/generateBrandController.ts';
 
 /** Kiểu dữ liệu trả về từ các tool */
 export interface ToolResult {
@@ -47,11 +45,20 @@ const defaultDeps: AdminToolDeps = {
     return product || null;
   },
   findProductsByName: async (query, limit = 5) => {
-    return Product.find({ name: { $regex: query, $options: 'i' } })
-      .select('name brandId price')
+    // Escape trước khi đưa vào $regex: chuỗi này đến từ mô hình, không phải từ mình.
+    const escaped = String(query ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const products = await Product.find({ name: { $regex: escaped, $options: 'i' } })
+      .select('name brandId')
       .populate('brandId', 'name')
       .limit(limit)
       .lean();
+    // Product không còn cột price — giá phải lấy từ biến thể, nếu không admin thấy "giá 0".
+    const priceRows = await ProductVariant.aggregate([
+      { $match: { productId: { $in: products.map(p => p._id) } } },
+      { $group: { _id: '$productId', minPrice: { $min: '$price' } } },
+    ]);
+    const priceById = new Map(priceRows.map((r: any) => [String(r._id), Number(r.minPrice) || 0]));
+    return products.map(p => ({ ...p, price: priceById.get(String(p._id)) || 0 }));
   },
   createProduct: (data) => ProductService.createProduct(data),
   updateProduct: (id, data) => ProductService.updateProduct(id, data),
@@ -68,87 +75,20 @@ const defaultDeps: AdminToolDeps = {
 };
 
 /** Resolve deps — merge injected deps over defaults */
-function resolve(maybeDeps?: AdminToolDeps): AdminToolDeps {
-  return { ...defaultDeps, ...(maybeDeps || {}) };
+function resolve(maybeDeps?: AdminToolDeps): Required<AdminToolDeps> {
+  return { ...defaultDeps, ...(maybeDeps || {}) } as Required<AdminToolDeps>;
 }
 
 /**
- * createProductFromName — Dùng AI generate toàn bộ thông tin từ tên, rồi create
+ * createProductFromName — Tạo sản phẩm từ tên với thông số cơ bản
  */
 export async function createProductFromName(
   name: string,
   overrides?: { price?: number; brand?: string; discountPercentage?: number },
   deps?: AdminToolDeps
 ): Promise<ToolResult> {
-  const { createProduct, getBrands, getTags, getCategories } = resolve(deps);
+  const { createProduct, getBrands } = resolve(deps);
   try {
-    // Build context data từ DB
-    const [allBrands, allTags, allCategories] = await Promise.all([
-      getBrands!(),
-      getTags!(),
-      getCategories!(),
-    ]);
-
-    // Gọi generateProduct internal (dùng AI để sinh full product info)
-    // Dùng generateProduct trực tiếp với mock req/reply
-    let generatedInfo: any = null;
-
-    // Tạo mock req
-    const mockReq: any = {
-      body: {
-        name,
-        availableBrands: allBrands.map((b: any) => b.name),
-        availableTags: allTags.map((t: any) => t.name),
-        availableCategories: allCategories.map((c: any) => c.name),
-        availableGenders: ['male', 'female', 'unisex'],
-        availableSizes: ['5ml', '10ml', '20ml', '50ml', '100ml', '150ml', '200ml'],
-        ...overrides,
-      },
-      user: {},
-    };
-
-    let mockReplyData: any = null;
-    const mockReply: any = {
-      status: function (code: number) {
-        return {
-          send: function (data: any) {
-            mockReplyData = { status: code, ...data };
-            return mockReply;
-          },
-        };
-      },
-      send: function (data: any) {
-        mockReplyData = { status: 200, ...data };
-        return mockReply;
-      },
-    };
-
-    await generateProduct(mockReq, mockReply);
-
-    if (!mockReplyData || !mockReplyData.success) {
-      return {
-        success: false,
-        message: mockReplyData?.error || mockReplyData?.message || 'AI không thể tạo thông tin sản phẩm',
-      };
-    }
-
-    generatedInfo = mockReplyData.data;
-
-    // Gán lại name từ tham số gốc (AI trong generateProductController không trả ra field "name" trong JSON)
-    generatedInfo.name = name;
-
-    // Chuyển categories, tag từ array → string nếu cần (tránh lỗi .split is not a function)
-    if (Array.isArray(generatedInfo.categories)) {
-      generatedInfo.categories = generatedInfo.categories.join(', ');
-    }
-    if (Array.isArray(generatedInfo.tag)) {
-      generatedInfo.tag = generatedInfo.tag.join(', ');
-    }
-
-    // Merge overrides
-    if (overrides?.price) generatedInfo.price = overrides.price;
-    if (overrides?.discountPercentage) generatedInfo.discountPercentage = overrides.discountPercentage;
-
     // Kiểm tra sản phẩm trùng tên (case-insensitive)
     const existingProducts = await Product.find({
       name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
@@ -161,23 +101,41 @@ export async function createProductFromName(
       };
     }
 
-    // Brand phải có sẵn trong DB (đã được resolve từ generateProductController)
-    if (!generatedInfo.brandId) {
-      return { success: false, message: `Hãng "${generatedInfo.brand || 'Không rõ'}" không tồn tại trong hệ thống. Vui lòng tạo hãng thủ công trước.` };
+    // Build basic product data
+    const price = Number(overrides?.price) || 0;
+    const productData: any = {
+      name,
+      slug: name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+      discountPercentage: overrides?.discountPercentage || 0,
+      description: '',
+      status: 'draft',
+      // Giá và tồn kho KHÔNG phải cột của Product — không có biến thể thì sản phẩm tạo ra
+      // hiển thị giá 0 và không mua được.
+      variants: [{ size: '50ml', price, quantityInStock: 0 }],
+    };
+
+    // Find brand by name if provided
+    if (overrides?.brand) {
+      const brand = await Brand.findOne({
+        name: { $regex: `^${overrides.brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+        status: 'active',
+      });
+      if (brand) {
+        productData.brandId = brand._id;
+      } else {
+        return { success: false, message: `Hãng "${overrides.brand}" không tồn tại trong hệ thống. Vui lòng chọn một brand đang hoạt động.` };
+      }
     }
 
-    // Gọi ProductService.createProduct
-    const newProduct = await ProductService.createProduct(generatedInfo);
+    const newProduct = await createProduct(productData);
 
     return {
       success: true,
-      message: `Đã tạo sản phẩm "${newProduct.name}" thành công!`,
+      message: `Đã tạo bản nháp "${newProduct.name}"` +
+        (price > 0 ? ` giá ${price.toLocaleString('vi-VN')}đ` : ' — CHƯA có giá, phải bổ sung dung tích/biến thể trước khi bán') + '!',
       data: {
         id: newProduct._id,
         name: newProduct.name,
-        price: generatedInfo.price,
-        brand: generatedInfo.brand,
-        tags: generatedInfo.tag,
         url: `/admin/products/${newProduct._id}`,
       },
     };
@@ -202,15 +160,32 @@ export async function updateProductFields(
       return { success: false, message: `Không tìm thấy sản phẩm với ID: ${id}` };
     }
 
-    const updated = await updateProduct!(id, fields);
+    // Chỉ những key có thật trên schema Product mới ghi được; Mongoose strict mode âm thầm
+    // vứt key lạ, nên lọc ở đây để không báo "đã cập nhật price/tags" trong khi không có gì đổi.
+    const writable = new Set(Object.keys(Product.schema.paths));
+    const applied: Record<string, any> = {};
+    const rejected: string[] = [];
+    for (const [key, value] of Object.entries(fields || {})) {
+      if (writable.has(key.split('.')[0])) applied[key] = value;
+      else rejected.push(key);
+    }
+    if (Object.keys(applied).length === 0) {
+      const hint = rejected.includes('price') || rejected.includes('tags')
+        ? ' Giá và tag giờ nằm ở bảng biến thể / ProductTag, không còn là cột của sản phẩm.'
+        : '';
+      return { success: false, message: `Không có field nào cập nhật được: ${rejected.join(', ') || '(trống)'}.${hint}` };
+    }
+
+    const updated = await updateProduct!(id, applied);
     if (!updated) {
       return { success: false, message: `Không thể cập nhật sản phẩm ${id}` };
     }
 
-    const changedFields = Object.keys(fields).join(', ');
+    const changedFields = Object.keys(applied).join(', ');
+    const skippedNote = rejected.length > 0 ? ` (bỏ qua ${rejected.join(', ')} — không phải cột của Product)` : '';
     return {
       success: true,
-      message: `Đã cập nhật sản phẩm "${existing.name}" (${changedFields})`,
+      message: `Đã cập nhật sản phẩm "${existing.name}" (${changedFields})${skippedNote}`,
       data: {
         id: updated._id || id,
         name: existing.name,
@@ -260,10 +235,11 @@ export async function findProductsByName(
   limit = 5
 ): Promise<ToolResult> {
   try {
+    const escaped = String(query ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const products = await Product.find({
-      name: { $regex: query, $options: 'i' },
+      name: { $regex: escaped, $options: 'i' },
     })
-      .select('name brandId price')
+      .select('name brandId')
       .populate('brandId', 'name')
       .limit(limit)
       .lean();
@@ -272,11 +248,18 @@ export async function findProductsByName(
       return { success: false, message: `Không tìm thấy sản phẩm nào khớp với "${query}"` };
     }
 
+    // Product không còn cột price — lấy giá thấp nhất trong các biến thể của từng sản phẩm.
+    const priceRows = await ProductVariant.aggregate([
+      { $match: { productId: { $in: products.map(p => p._id) } } },
+      { $group: { _id: '$productId', minPrice: { $min: '$price' } } },
+    ]);
+    const priceById = new Map(priceRows.map((r: any) => [String(r._id), Number(r.minPrice) || 0]));
+
     const list = products.map((p: any) => ({
       id: p._id,
       name: p.name,
       brand: p.brandId?.name || '',
-      price: p.price,
+      price: priceById.get(String(p._id)) || 0,
     }));
 
     return {
@@ -287,70 +270,6 @@ export async function findProductsByName(
   } catch (error: any) {
     console.error('❌ [AdminTool findProductsByName] Error:', error);
     return { success: false, message: `Lỗi tìm kiếm: ${error.message}` };
-  }
-}
-
-/**
- * ensureBrand — Kiểm tra brand tồn tại, nếu chưa có → AI generate + lưu DB
- *
- * Dùng cho Query Decomposition: 1 tool gói gọn logic check + create if missing.
- * Tận dụng generateBrandController (AI sinh origin + description) + BrandService (lưu DB).
- */
-export async function ensureBrand(
-  name: string
-): Promise<ToolResult> {
-  try {
-    // 1. Check exists (case-insensitive exact match)
-    const existing = await Brand.findOne({
-      name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-    }).lean();
-
-    if (existing) {
-      return {
-        success: true,
-        message: `Hãng "${existing.name}" đã tồn tại.`,
-        data: { brandId: existing._id, name: existing.name, existed: true },
-      };
-    }
-
-    // 2. Generate brand info bằng generateBrandController (internal mock req/reply)
-    let mockReplyData: any = null;
-    const mockReq: any = {
-      body: { name },
-      user: {},
-    };
-    const mockReply: any = {
-      status: (code: number) => ({
-        send: (data: any) => { mockReplyData = { status: code, ...data }; return mockReply; },
-      }),
-      send: (data: any) => { mockReplyData = { status: 200, ...data }; return mockReply; },
-    };
-
-    await generateBrand(mockReq, mockReply);
-
-    if (!mockReplyData?.success || !mockReplyData.data) {
-      return {
-        success: false,
-        message: `AI không thể generate thông tin cho hãng "${name}": ${mockReplyData?.message || 'Unknown error'}`,
-      };
-    }
-
-    const { origin } = mockReplyData.data;
-
-    // 3. Lưu brand qua BrandService
-    const newBrand = await BrandService.createBrand(
-      { name, origin: origin || '', logo: '', status: 'active', featured: false },
-    );
-
-    console.log(`✅ [ensureBrand] Created brand "${newBrand.name}" (ID: ${newBrand._id})`);
-    return {
-      success: true,
-      message: `Đã tạo hãng "${newBrand.name}" thành công! (Xuất xứ: ${origin || 'Chưa rõ'})`,
-      data: { brandId: newBrand._id, name: newBrand.name, existed: false, origin },
-    };
-  } catch (error: any) {
-    console.error('❌ [AdminTool ensureBrand] Error:', error);
-    return { success: false, message: `Lỗi ensure brand: ${error.message}` };
   }
 }
 

@@ -175,18 +175,20 @@ export class ProductMutationService {
           return !t || !isStandardTag(t);
         });
       }
-      // Xóa tags cũ rồi insert lại. Link Limited đánh dấu 'manual' vì đó là lựa chọn
-      // của admin — sync tồn kho không được tự ý gỡ.
-      await ProductTag.deleteMany({ productId: id });
-      if (tagIds.length > 0) {
-        const limitedTagIds = new Set(
-          allActiveTags.filter(t => isLimitedTagRef(t.slug) || isLimitedTagRef(t.name)).map(t => t._id.toString())
-        );
-        await ProductTag.insertMany(tagIds.map(tagId => ({
-          productId: id,
-          tagId,
-          source: limitedTagIds.has(tagId.toString()) ? 'manual' : 'auto',
-        })));
+      // Link ghi ra từ request này là lựa chọn của admin/AI nên mang 'manual' — sync tồn
+      // kho không được tự ý gỡ, không riêng gì Limited.
+      // Chỉ xoá link mà request không nhắc tới: chuỗi tag không khớp tag nào trong DB là
+      // một tra cứu thất bại, không phải lệnh "bỏ hết tag của sản phẩm".
+      if (tagSlugs.length === 0) {
+        await ProductTag.deleteMany({ productId: id });
+      } else if (tagIds.length > 0) {
+        await ProductTag.deleteMany({ productId: id, tagId: { $nin: tagIds } });
+        const remainingLinks = await ProductTag.find({ productId: id }).select('tagId').lean();
+        const remainingTagIds = new Set(remainingLinks.map(l => String(l.tagId)));
+        const toInsert = tagIds.filter(tagId => !remainingTagIds.has(tagId.toString()));
+        if (toInsert.length > 0) {
+          await ProductTag.insertMany(toInsert.map(tagId => ({ productId: id, tagId, source: 'manual' })));
+        }
       }
     }
 
@@ -640,20 +642,9 @@ export class ProductMutationService {
  */
 export async function clearProductCache(productId?: string): Promise<void> {
   try {
-    const keysToDelete: string[] = [
-      'homepage:v7',
-      'products:new:tag:v5',
-      'products:new:tag:v6',
-      'products:new:v6:15',
-      'products:limited:tag:v4',
-      'products:limited:tag:v6',
-      'products:trending:tag:v5',
-      'products:trending:v6:15',
-      'products:sale:tag:v3',
-    ];
-    if (productId) {
-      keysToDelete.push(`product:detail:${productId}`, `products:${productId}`);
-    }
+    // Không liệt kê key tĩnh theo tên: mọi key đều đã bị pattern scan bên dưới quét
+    // trúng, còn tên version thì đổi liên tục nên danh sách này luôn hỏng.
+    const keysToDelete: string[] = [];
     const patterns = [
       'homepage:*',
       'products:new:*',
@@ -665,6 +656,10 @@ export async function clearProductCache(productId?: string): Promise<void> {
       'products:suggest:*',
       'graphql:*',
     ];
+    if (productId) {
+      // `*` giữa để bắt mọi phiên bản của key chi tiết, chỉ đúng sản phẩm vừa sửa.
+      patterns.push(`product:detail:*:${productId}`);
+    }
     // redis.keys block toàn server (O(N)) — dùng scan không block
     for (const pattern of patterns) {
       try {

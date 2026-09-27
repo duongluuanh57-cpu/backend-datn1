@@ -14,7 +14,6 @@ import {
   updateProductFields,
   deleteProductById,
   findProductsByName,
-  ensureBrand,
   searchTrending,
 } from './adminTools.ts';
 import type { ToolResult } from './adminTools.ts';
@@ -58,9 +57,6 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
   find_products: async (args) => {
     return findProductsByName(args.query, args.limit || 5);
   },
-  ensure_brand: async (args) => {
-    return ensureBrand(args.name);
-  },
   search_trending: async (args) => {
     return searchTrending(args.brand, args.query, args.limit || 5);
   },
@@ -73,7 +69,7 @@ const TOOL_EXECUTORS: Record<string, ToolExecutor> = {
 function resolveArg(value: any, results: Map<number, ToolResult>): any {
   if (typeof value !== 'string') return value;
 
-  const refMatch = value.match(/^\$(\d+)\.(.+)$/);
+  const refMatch = value.match(/^\$(?:step_)?(\d+)\.(.+)$/);
   if (!refMatch) return value;
 
   const stepId = parseInt(refMatch[1], 10);
@@ -109,7 +105,52 @@ function resolveArgs(args: Record<string, any>, results: Map<number, ToolResult>
 /**
  * Evaluate condition string với kết quả hiện có
  * VD: "$1.data.existed === true" → boolean
+ *
+ * KHÔNG dùng eval/new Function: `condition` là chuỗi do mô hình viết ra, nên bất kỳ
+ * thứ gì gửi được tới decomposer (kể cả prompt injection từ dữ liệu sản phẩm) sẽ thành
+ * lệnh thực thi trên server. Ở đây chỉ chấp nhận đúng một phép so sánh.
  */
+const COMPARISON_OPS = ['===', '!==', '==', '!=', '>=', '<=', '>', '<'] as const;
+type ComparisonOp = (typeof COMPARISON_OPS)[number];
+
+/** Tách `lhs OP rhs` ở mức ngoài cùng; ký tự nằm trong chuỗi JSON không được tính. */
+function splitComparison(expr: string): [string, ComparisonOp, string] | null {
+  let inString = false;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    for (const op of COMPARISON_OPS) {
+      if (expr.startsWith(op, i)) return [expr.slice(0, i), op, expr.slice(i + op.length)];
+    }
+  }
+  return null;
+}
+
+/** Giá trị hai vế sau khi thay $N.field luôn là JSON; token trần được coi là chuỗi. */
+function toConditionValue(token: string): unknown {
+  const t = token.trim();
+  if (t === 'undefined') return undefined;
+  try { return JSON.parse(t); } catch { return t; }
+}
+
+function compareValues(lhs: unknown, op: ComparisonOp, rhs: unknown): boolean {
+  const lo = typeof lhs === 'object' && lhs !== null ? JSON.stringify(lhs) : lhs;
+  const ro = typeof rhs === 'object' && rhs !== null ? JSON.stringify(rhs) : rhs;
+  switch (op) {
+    case '===': return lo === ro;
+    case '!==': return lo !== ro;
+    // eslint-disable-next-line eqeqeq
+    case '==': return lo == ro;
+    // eslint-disable-next-line eqeqeq
+    case '!=': return lo != ro;
+    case '>': return (lo as number) > (ro as number);
+    case '>=': return (lo as number) >= (ro as number);
+    case '<': return (lo as number) < (ro as number);
+    case '<=': return (lo as number) <= (ro as number);
+  }
+}
+
 function evaluateCondition(condition: string, results: Map<number, ToolResult>): boolean {
   try {
     // Replace $N.field với giá trị thực
@@ -124,17 +165,22 @@ function evaluateCondition(condition: string, results: Map<number, ToolResult>):
       let current: any = result;
       for (const part of parts) {
         if (current === null || current === undefined) return 'undefined';
+        // Không đi lên prototype chain — `__proto__`/`constructor` không phải dữ liệu bước.
+        if (!Object.hasOwn(current, part)) return 'undefined';
         current = current[part];
       }
       return JSON.stringify(current);
     });
 
-    // eslint-disable-next-line no-new-func
-    const fn = new Function(`return (${expr})`);
-    return !!fn();
+    const parsed = splitComparison(expr);
+    if (!parsed) {
+      console.warn(`⚠️ [PlanExecutor] Condition không đúng dạng so sánh: "${condition}" → bỏ qua step`);
+      return false;
+    }
+    return compareValues(toConditionValue(parsed[0]), parsed[1], toConditionValue(parsed[2]));
   } catch (err) {
     console.warn(`⚠️ [PlanExecutor] Condition eval error: "${condition}" → ${err}`);
-    return true; // default: execute step nếu không parse được condition
+    return false; // condition không hiểu được thì KHÔNG chạy step (step có thể là delete)
   }
 }
 

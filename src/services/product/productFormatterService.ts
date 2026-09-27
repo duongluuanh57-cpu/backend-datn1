@@ -152,8 +152,10 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
 
     const fsInfo = flashSaleMap.get(pId);
     const flashSaleDisplay = fsInfo ? `${fsInfo.name}${fsInfo.extraDiscountPercentage ? ' (-' + fsInfo.extraDiscountPercentage + '%)' : ''}` : '';
-    const rawTagSlugs: string[] = tagMap.get(pId) || (product as any).tag?.split(',').map((s: string) => s.trim()) || [];
-    const productTag = rawTagSlugs.join(', ') || (product as any).tag || '';
+    // Tag chỉ còn một nguồn sự thật: bảng trung gian ProductTag. `product.tag` không phải
+    // cột của Product nên đọc nó chỉ hồi sinh dữ liệu cũ đã bị xoá một nửa.
+    const rawTagSlugs: string[] = tagMap.get(pId) || [];
+    const productTag = rawTagSlugs.join(', ');
 
     const buyableVariant = getDefaultVariant(productVariants);
     const displayVar = getDisplayVariant(productVariants);
@@ -162,7 +164,7 @@ export async function formatMultipleProducts(products: any[]): Promise<any[]> {
     // Tồn kho chỉ nằm trên ProductVariant — Product không có cột stock nào, không được bịa số 1.
     const quantityInStock = productVariants.reduce((sum: number, v: any) => sum + (v.quantityInStock || 0), 0);
 
-    const baseDiscount = product.discountPercentage || product.discount || 0;
+    const baseDiscount = product.discountPercentage || 0;
     const totalDiscount = Math.min(100, baseDiscount + extraDiscount);
 
     const availableVariants = productVariants.map((v: any) => {

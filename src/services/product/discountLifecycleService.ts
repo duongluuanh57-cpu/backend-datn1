@@ -414,14 +414,22 @@ export class DiscountLifecycleService {
     return result;
   }
 
-  /** Xóa cache các section đọc discount. Detail cache hết hạn sau ~5 phút. */
+  /** Xóa cache các section đọc discount. */
   static async clearDiscountCaches(): Promise<number> {
+    // Quét theo prefix, không gắn số version vào pattern: key thật lên version liên tục
+    // (`products:trending:v11` → `v12`) nên pattern cũ âm thầm không xoá gì cả, giá giảm
+    // vẫn phục vụ từ cache sai cả sau khi sync đã đổi.
     const patterns = [
-      'products:new:tag:all:v2:*',
       'homepage:*',
-      'products:seasonal:v7:*',
-      'products:trending:v11:*',
-      'products:limited:tag:v6',
+      'products:new:*',
+      'products:limited:*',
+      'products:trending:*',
+      'products:sale:*',
+      'products:public:*',
+      'products:seasonal:*',
+      'products:suggest:*',
+      'product:detail:*',
+      'graphql:*',
     ];
     let total = 0;
     for (const pattern of patterns) {
@@ -435,6 +443,12 @@ export class DiscountLifecycleService {
         }
       } while (cursor !== '0');
     }
+    // Trang chủ còn một lớp cache in-memory riêng trong từng process — sạch redis chưa
+    // chắc UI đã đổi ngay.
+    try {
+      const { invalidateHomepageCache } = await import('../../graphql/schema.ts');
+      invalidateHomepageCache();
+    } catch (_) {}
     return total;
   }
 }

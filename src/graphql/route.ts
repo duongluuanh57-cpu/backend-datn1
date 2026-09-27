@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 import { schema } from './schema.ts';
 import { execute, parse, visit } from 'graphql';
+import { ACCESS_COOKIE } from '../utils/auth.ts';
 
 export async function graphqlRoute(app: FastifyInstance) {
   // GraphQL rate limit — 50 req/phút/IP
@@ -26,7 +27,13 @@ export async function graphqlRoute(app: FastifyInstance) {
       return reply.status(400).send({ errors: [{ message: 'No query provided' }] });
     }
 
-    const isPublicQuery = !req.headers.authorization && !query.includes('mutation');
+    // Only anonymous, read-only queries are cacheable. `cartAndFavorites` authenticates
+    // from the httpOnly cookie, so a request carrying that cookie is private even with
+    // no Authorization header — caching it under a user-independent key would serve one
+    // user's cart/favorites to everyone replaying the same query.
+    const cookies = (req as any).cookies ?? {};
+    const isAuthenticated = Boolean(req.headers.authorization) || Boolean(cookies[ACCESS_COOKIE]);
+    const isPublicQuery = !isAuthenticated && !query.includes('mutation');
     const queryHash = isPublicQuery
       ? (await import('node:crypto')).createHash('md5').update(`${query}:${JSON.stringify(variables || {})}`).digest('hex')
       : null;

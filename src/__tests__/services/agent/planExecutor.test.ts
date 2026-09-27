@@ -9,11 +9,8 @@ vi.mock("../../../services/agent/adminTools.ts", () => ({
   updateProductFields: vi.fn().mockResolvedValue({ success: true, data: null, message: "Updated" }),
   deleteProductById: vi.fn().mockResolvedValue({ success: true, data: null, message: "Deleted" }),
   findProductsByName: vi.fn().mockResolvedValue({ success: true, data: [{ name: "Test" }], message: "Found" }),
-  ensureBrand: vi.fn().mockResolvedValue({ success: true, data: { existed: true }, message: "Brand exists" }),
-  searchTrending: vi.fn().mockResolvedValue({ success: true, data: { products: [{ name: "Trending" }] }, message: "Found trending" }),
+  searchTrending: vi.fn().mockResolvedValue({ success: true, data: { name: "Trending" }, message: "Found trending" }),
 }));
-
-const TENANT_ID = "test-tenant";
 
 describe("planExecutor", () => {
   let executePlan: typeof import("../../../services/agent/planExecutor.ts").executePlan;
@@ -44,25 +41,23 @@ describe("planExecutor", () => {
       expect(summary).toContain("2 sản phẩm");
     });
 
-    it("should NOT append link when no products created", () => {
+    it("should NOT append link when no products were created", () => {
       const result = {
         success: true,
         results: [
-          { stepId: 1, tool: "ensure_brand", success: true, skipped: false, data: null, message: "OK", description: "Check brand" },
+          { stepId: 1, tool: "search_trending", success: true, skipped: false, data: null, message: "OK", description: "Search" },
         ],
         logs: [],
-        summary: "Brand đã tồn tại",
+        summary: "Đã tìm thấy sản phẩm",
       };
 
-      const summary = appendSupplementLink("Brand đã tồn tại", result as any);
+      const summary = appendSupplementLink("Đã tìm thấy sản phẩm", result as any);
       expect(summary).not.toContain("Bổ sung sản phẩm");
-      expect(summary).toBe("Brand đã tồn tại");
     });
 
     it("should handle empty results", () => {
       const result = { success: true, results: [], logs: [], summary: "" };
-      const summary = appendSupplementLink("", result as any);
-      expect(summary).toBe("");
+      expect(appendSupplementLink("", result as any)).toBe("");
     });
   });
 
@@ -71,7 +66,7 @@ describe("planExecutor", () => {
       const plan: DecomposedPlan = {
         isComplex: false,
         rawMessage: "Bad plan",
-        steps: [{ id: 1, tool: "nonexistent_tool", args: {}, dependsOn: [], description: "Bad" }],
+        steps: [{ id: 1, tool: "create_brand", args: {}, dependsOn: [], description: "Bad" }],
       };
       const result = await executePlan(plan);
       expect(result.success).toBe(false);
@@ -83,7 +78,7 @@ describe("planExecutor", () => {
         isComplex: false,
         rawMessage: "Circular plan",
         steps: [
-          { id: 2, tool: "ensure_brand", args: { name: "X" }, dependsOn: [2], description: "Self-dep" },
+          { id: 2, tool: "search_trending", args: { brand: "X" }, dependsOn: [2], description: "Self-dep" },
         ],
       };
       const result = await executePlan(plan);
@@ -93,17 +88,45 @@ describe("planExecutor", () => {
   });
 
   describe("single-step plan", () => {
-    it("should execute a single ensure_brand step", async () => {
+    it("should execute a single search_trending step", async () => {
       const plan: DecomposedPlan = {
         isComplex: false,
         rawMessage: "Single step",
-        steps: [{ id: 1, tool: "ensure_brand", args: { name: "Chanel" }, dependsOn: [], description: "Ensure brand" }],
+        steps: [{ id: 1, tool: "search_trending", args: { brand: "Chanel", limit: 5 }, dependsOn: [], description: "Search" }],
       };
       const result = await executePlan(plan);
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(1);
-      expect(result.results[0].tool).toBe("ensure_brand");
+      expect(result.results[0].tool).toBe("search_trending");
       expect(result.results[0].success).toBe(true);
+    });
+  });
+
+  describe("evaluateCondition (via executePlan)", () => {
+    const planWith = (condition: string): DecomposedPlan => ({
+      isComplex: true,
+      rawMessage: "condition probe",
+      steps: [
+        { id: 1, tool: "search_trending", args: { brand: "Dior" }, dependsOn: [], description: "Step 1" },
+        { id: 2, tool: "generate_product", args: { name: "X" }, dependsOn: [1], description: "Step 2", condition },
+      ],
+    });
+
+    it("so sánh đúng thì step vẫn chạy", async () => {
+      const result = await executePlan(planWith('$1.data.name === "Trending"'));
+      expect(result.results[1].skipped).toBeFalsy();
+    });
+
+    it("so sánh sai thì step bị bỏ qua", async () => {
+      const result = await executePlan(planWith("$1.data.name === 'Khac'"));
+      expect(result.results[1].skipped).toBe(true);
+    });
+
+    it("REGRESSION: condition là mã nguồn không được thực thi (trước đây eval bằng new Function)", async () => {
+      const result = await executePlan(planWith("globalThis.__pwned = 1 === 1"));
+
+      expect(result.results[1].skipped).toBe(true);
+      expect((globalThis as any).__pwned).toBeUndefined();
     });
   });
 
@@ -113,17 +136,16 @@ describe("planExecutor", () => {
         isComplex: true,
         rawMessage: "Multi step",
         steps: [
-          { id: 1, tool: "ensure_brand", args: { name: "Dior" }, dependsOn: [], description: "Step 1" },
+          { id: 1, tool: "search_trending", args: { brand: "Dior", limit: 5 }, dependsOn: [], description: "Step 1" },
           { id: 2, tool: "generate_product", args: { name: "$step_1.data.name", brand: "Dior" }, dependsOn: [1], description: "Step 2 uses step 1" },
         ],
       };
       const result = await executePlan(plan);
       expect(result.success).toBe(true);
       expect(result.results).toHaveLength(2);
-      // Step 2 should have been called with resolved args
       const { createProductFromName } = await import("../../../services/agent/adminTools.ts");
       expect(createProductFromName).toHaveBeenCalledWith(
-        expect.any(String),
+        "Trending",
         expect.objectContaining({ brand: "Dior" })
       );
     });

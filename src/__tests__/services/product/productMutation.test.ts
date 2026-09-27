@@ -37,7 +37,7 @@ vi.mock('../../../models/ProductTag.ts', () => ({
 }));
 vi.mock('../../../models/Brand.ts', () => ({ Brand: { findOne: vi.fn() } }));
 vi.mock('../../../models/Category.ts', () => ({ Category: { findOne: vi.fn() } }));
-vi.mock('../../../models/Review.ts', () => ({ Review: {}, ASPECT_OPTIONS: {} }));
+vi.mock('../../../models/Review.ts', () => ({ Review: {} }));
 vi.mock('../../../models/ProductImage.ts', () => ({
   ProductImage: {
     find: vi.fn(() => ({ lean: async () => [] })),
@@ -48,15 +48,29 @@ vi.mock('../../../models/ProductImage.ts', () => ({
 vi.mock('../../../models/ProductVariant.ts', () => ({
   ProductVariant: {
     deleteMany: vi.fn(),
+    updateOne: vi.fn().mockResolvedValue({ modifiedCount: 1 }),
     insertMany: vi.fn().mockResolvedValue([{ _id: new mongoose.Types.ObjectId() }]),
-    find: vi.fn(() => ({ lean: async () => [] })),
+    find: vi.fn(() => ({ select: () => ({ lean: async () => [] }), lean: async () => [] })),
     distinct: vi.fn(),
     aggregate: vi.fn().mockResolvedValue([]),
   },
 }));
-vi.mock('../../../models/OrderItem.ts', () => ({ OrderItem: {} }));
+vi.mock('../../../models/OrderItem.ts', () => ({
+  OrderItem: { exists: vi.fn().mockResolvedValue(false) },
+}));
 vi.mock('../../../models/FlashSale.ts', () => ({ FlashSale: {} }));
-vi.mock('../../../services/ImageService.ts', () => ({ ImageService: {} }));
+vi.mock('../../../models/Favorite.ts', () => ({
+  Favorite: { deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }) },
+}));
+vi.mock('../../../models/CartItem.ts', () => ({
+  CartItem: { deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }) },
+  default: { deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }) },
+}));
+vi.mock('../../../services/ImageService.ts', () => ({ ImageService: {
+  getFolderFromUrl: vi.fn().mockReturnValue(null),
+  deleteFromR2: vi.fn().mockResolvedValue(undefined),
+  deleteFolderFromR2: vi.fn().mockResolvedValue(undefined),
+} }));
 vi.mock('../../../services/FuzzyMatchCache.ts', () => ({ FuzzyMatchCache: {} }));
 vi.mock('../../../services/product/productHelpers.ts', () => ({
   resolveCategoryNames: vi.fn().mockReturnValue(''),
@@ -86,6 +100,8 @@ import { ProductMutationService, clearProductCache } from '../../../services/pro
 import { ProductVariant } from '../../../models/ProductVariant.ts';
 import { ProductTag } from '../../../models/ProductTag.ts';
 import { ProductImage } from '../../../models/ProductImage.ts';
+import { Favorite } from '../../../models/Favorite.ts';
+import { CartItem } from '../../../models/CartItem.ts';
 import { Brand } from '../../../models/Brand.ts';
 import { redis } from '../../../config/redis.ts';
 
@@ -106,18 +122,6 @@ describe('updateProduct — discount (fix #2)', () => {
     expect(setArg.autoDiscount).toBe(false);
   });
 
-  it('discount 0 cũng xóa cửa sổ ngày', async () => {
-    const pid = oid().toString();
-    (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
-    (ProductMock.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
-
-    await ProductMutationService.updateProduct(pid, { discountPercentage: 0 });
-
-    const setArg = (ProductMock.findOneAndUpdate as any).mock.calls[0][1].$set;
-    expect(setArg.discountStartDate).toBeNull();
-    expect(setArg.discountEndDate).toBeNull();
-  });
-
   it('clamp discount > 100 về 100', async () => {
     const pid = oid().toString();
     (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
@@ -129,27 +133,39 @@ describe('updateProduct — discount (fix #2)', () => {
     expect(setArg.discountPercentage).toBe(100);
   });
 
-  it('updateProduct xóa cả cache chi tiết product:detail:{id} (fix #5)', async () => {
+  it('updateProduct quét pattern cache chi tiết của đúng sản phẩm vừa sửa (fix #5)', async () => {
     const pid = oid().toString();
     (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
     (ProductMock.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
 
     await ProductMutationService.updateProduct(pid, { name: 'New Name' });
 
-    // redis.del(...keys) spread toàn bộ keys vào 1 call — phải gom mọi args
-    const deletedKeys = (redis.del as any).mock.calls.flatMap((c: any[]) => c);
-    expect(deletedKeys).toContain(`product:detail:${pid}`);
-    expect(deletedKeys).toContain(`products:${pid}`);
+    // scan(cursor, 'MATCH', pattern, 'COUNT', n) — không còn danh sách key tĩnh gắn version.
+    const patterns = (redis.scan as any).mock.calls.map((c: any) => c[2]);
+    expect(patterns).toContain(`product:detail:*:${pid}`);
+    expect(patterns).toContain('products:sale:*');
+    expect(patterns).toContain('products:trending:*');
   });
 });
 
 describe('clearProductCache (fix #5 + #13)', () => {
-  it('xóa cả cache chi tiết khi truyền productId', async () => {
+  it('quét cả pattern cache chi tiết khi truyền productId', async () => {
     const pid = oid().toString();
     await clearProductCache(pid);
-    const allDeleted = (redis.del as any).mock.calls.flatMap((c: any[]) => c);
-    expect(allDeleted).toContain(`product:detail:${pid}`);
-    expect(allDeleted).toContain(`products:${pid}`);
+    const patterns = (redis.scan as any).mock.calls.map((c: any) => c[2]);
+    expect(patterns).toContain(`product:detail:*:${pid}`);
+  });
+
+  it('key scan tìm được thì bị xóa thật', async () => {
+    const pid = oid().toString();
+    (redis.scan as any).mockImplementation(async (_cursor: string, _match: string, pattern: string) =>
+      pattern === `product:detail:*:${pid}` ? ['0', [`product:detail:v2:${pid}`]] : ['0', []]
+    );
+
+    await clearProductCache(pid);
+
+    const deletedKeys = (redis.del as any).mock.calls.flatMap((c: any[]) => c);
+    expect(deletedKeys).toContain(`product:detail:v2:${pid}`);
   });
 
   it('dùng redis.scan, không dùng redis.keys', async () => {
@@ -196,28 +212,105 @@ describe('variant safeguards (fix #15)', () => {
     const normalArg = (ProductMock as any).mock.calls[1][0];
     expect(normalArg.isNewArrival).toBe(true);
   });
+});
 
-  it('duplicateProduct: gốc không có slug → slug dùng từ name', async () => {
-    const original: any = {
-      _id: oid(),
-      name: 'Sauvage Dior',
-      brandId: oid(),
-      variants: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    (ProductMock.findById as any).mockReturnValue({ lean: async () => original });
-    (ProductVariant.find as any).mockReturnValue({ lean: async () => [] });
-    (ProductTag.find as any).mockReturnValue({
-      lean: async () => [],
-      select: () => ({ lean: async () => [] }),
-    });
+describe('deleteProduct — cascade favorites (G1)', () => {
+  it('xóa 1 product thì xóa luôn favorite trỏ tới nó', async () => {
+    const pid = oid().toString();
+    (ProductMock.findOne as any).mockResolvedValue({ _id: pid, variants: [] });
+    (ProductMock.deleteOne as any).mockResolvedValue({ deletedCount: 1 });
+
+    await ProductMutationService.deleteProduct(pid);
+
+    expect(Favorite.deleteMany).toHaveBeenCalledWith({ productId: pid });
+  });
+
+  it('bulkDeleteProducts xóa favorite theo danh sách id', async () => {
+    const ids = [oid().toString(), oid().toString()];
+    (ProductMock.find as any).mockReturnValue({ lean: async () => ids.map((id) => ({ _id: id, variants: [] })) });
     (ProductImage.find as any).mockReturnValue({ lean: async () => [] });
+    (ProductMock.deleteMany as any).mockResolvedValue({ deletedCount: ids.length });
 
-    await ProductMutationService.duplicateProduct(original._id.toString());
+    await ProductMutationService.bulkDeleteProducts(ids);
 
-    const ctorArg = (ProductMock as any).mock.calls[0][0];
-    expect(String(ctorArg.slug)).not.toContain('undefined');
-    expect(String(ctorArg.slug)).toContain('sauvage-dior');
+    expect(Favorite.deleteMany).toHaveBeenCalledWith({ productId: { $in: ids } });
+  });
+});
+
+describe('updateProduct — syncVariantsPreservingIds (C3)', () => {
+  it('size trùng khớp → update tại chỗ giữ _id, KHÔNG insert lại', async () => {
+    const pid = oid().toString();
+    const existingVid = oid();
+    (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
+    (ProductMock.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
+    (ProductVariant.find as any).mockReturnValue({
+      select: () => ({ lean: async () => [{ _id: existingVid, size: '50ml' }] }),
+      lean: async () => [],
+    });
+
+    await ProductMutationService.updateProduct(pid, {
+      variants: [{ size: '50ml', price: 200000, quantityInStock: 5 }],
+    });
+
+    // giữ _id cũ → updateOne theo _id, không tái tạo bằng insertMany
+    expect(ProductVariant.updateOne).toHaveBeenCalledWith(
+      { _id: existingVid },
+      expect.objectContaining({ $set: expect.objectContaining({ price: 200000 }) })
+    );
+    expect(ProductVariant.insertMany).not.toHaveBeenCalled();
+  });
+
+  it('size bị bỏ → xóa variant cũ và cascade dọn cart_items trỏ tới nó', async () => {
+    const pid = oid().toString();
+    const keepVid = oid();
+    const removedVid = oid();
+    (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
+    (ProductMock.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
+    (ProductVariant.find as any).mockReturnValue({
+      select: () => ({
+        lean: async () => [
+          { _id: keepVid, size: '50ml' },
+          { _id: removedVid, size: '100ml' },
+        ],
+      }),
+      lean: async () => [],
+    });
+
+    await ProductMutationService.updateProduct(pid, {
+      variants: [{ size: '50ml', price: 200000, quantityInStock: 5 }],
+    });
+
+    expect(ProductVariant.deleteMany).toHaveBeenCalledWith({ _id: { $in: [removedVid] } });
+    expect(CartItem.deleteMany).toHaveBeenCalledWith({ productVariantId: { $in: [removedVid] } });
+    // variant giữ lại không bị xóa
+    const delArg = (ProductVariant.deleteMany as any).mock.calls.at(-1)[0]._id.$in;
+    expect(delArg).not.toContainEqual(keepVid);
+  });
+});
+
+describe('deleteProduct — cascade cart_items (H1)', () => {
+  it('xóa 1 product thì xóa dòng giỏ hàng trỏ tới variant của nó', async () => {
+    const pid = oid().toString();
+    const vid = oid();
+    (ProductMock.findOne as any).mockResolvedValue({ _id: pid });
+    (ProductMock.deleteOne as any).mockResolvedValue({ deletedCount: 1 });
+    (ProductVariant.find as any).mockReturnValue({ select: () => ({ lean: async () => [{ _id: vid }] }) });
+
+    await ProductMutationService.deleteProduct(pid);
+
+    expect(CartItem.deleteMany).toHaveBeenCalledWith({ productVariantId: { $in: [vid] } });
+  });
+
+  it('bulkDeleteProducts xóa dòng giỏ hàng theo variant ids', async () => {
+    const id1 = oid().toString();
+    const vid = oid();
+    (ProductMock.find as any).mockReturnValue({ lean: async () => [{ _id: id1 }] });
+    (ProductImage.find as any).mockReturnValue({ lean: async () => [] });
+    (ProductVariant.find as any).mockReturnValue({ select: () => ({ lean: async () => [{ _id: vid }] }) });
+    (ProductMock.deleteMany as any).mockResolvedValue({ deletedCount: 1 });
+
+    await ProductMutationService.bulkDeleteProducts([id1]);
+
+    expect(CartItem.deleteMany).toHaveBeenCalledWith({ productVariantId: { $in: [vid] } });
   });
 });

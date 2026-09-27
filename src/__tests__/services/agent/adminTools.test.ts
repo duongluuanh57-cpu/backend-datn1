@@ -3,7 +3,6 @@
  *
  * Test updateProductFields + error handling của dependency injection.
  * createProductFromName cần AI call → skipped in unit test (needs integration test).
- * ensureBrand cần DB + AI → skipped in unit test.
  */
 import { describe, it, expect, vi } from "vitest";
 
@@ -31,12 +30,26 @@ describe("adminTools", () => {
         updateProduct: () => Promise.resolve({ _id: VALID_ID }),
       };
 
-      const result = await updateProductFields(VALID_ID, { price: 3_000_000 }, deps);
+      const result = await updateProductFields(VALID_ID, { description: "Mùi houtre" }, deps);
 
       expect(result.success).toBe(true);
       expect(result.message).toContain("Đã cập nhật sản phẩm");
       expect(result.message).toContain("Old Name");
-      expect(result.data.fields).toContain("price");
+      expect(result.data.fields).toContain("description");
+    });
+
+    it("REGRESSION: từ chối `price` vì Product không còn cột giá (strict mode từng âm thầm vứt)", async () => {
+      const updateProduct = vi.fn(() => Promise.resolve({ _id: VALID_ID }));
+      const deps: AdminToolDeps = {
+        findProductById: () => Promise.resolve({ name: "Old Name" }),
+        updateProduct,
+      };
+
+      const result = await updateProductFields(VALID_ID, { price: 3_000_000 }, deps);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("price");
+      expect(updateProduct).not.toHaveBeenCalled();
     });
 
     it("should handle update failure (returns null)", async () => {
@@ -45,16 +58,17 @@ describe("adminTools", () => {
         updateProduct: () => Promise.resolve(null),
       };
 
-      const result = await updateProductFields(VALID_ID, { price: 1 }, deps);
+      const result = await updateProductFields(VALID_ID, { description: "x" }, deps);
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("Không thể cập nhật");
     });
 
     it("should support multiple field updates", async () => {
+      const updateProduct = vi.fn(async (_id: string, _fields: Record<string, any>) => ({ _id: VALID_ID }));
       const deps: AdminToolDeps = {
         findProductById: () => Promise.resolve({ name: "Multi Field" }),
-        updateProduct: () => Promise.resolve({ _id: VALID_ID }),
+        updateProduct,
       };
 
       const result = await updateProductFields(VALID_ID, {
@@ -64,9 +78,11 @@ describe("adminTools", () => {
       }, deps);
 
       expect(result.success).toBe(true);
-      expect(result.data.fields).toContain("price");
+      // Field thật được ghi, field ma bị loại và nói rõ trong message.
+      expect(updateProduct.mock.calls[0][1]).toEqual({ description: "Updated description", discountPercentage: 20 });
       expect(result.data.fields).toContain("description");
       expect(result.data.fields).toContain("discountPercentage");
+      expect(result.message).toContain("bỏ qua price");
     });
   });
 
