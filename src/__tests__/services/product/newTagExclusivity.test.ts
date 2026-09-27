@@ -28,6 +28,7 @@ vi.mock('../../../models/ProductTag.ts', () => ({
     create: vi.fn().mockResolvedValue({}),
     deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
     insertMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
     distinct: vi.fn().mockResolvedValue([]),
   },
 }));

@@ -23,9 +23,6 @@ const { ProductMock } = vi.hoisted(() => {
 });
 
 vi.mock('../../../models/Product.ts', () => ({ Product: ProductMock }));
-vi.mock('../../../models/Tag.ts', () => ({
-  Tag: { findOne: vi.fn(), find: vi.fn(() => ({ lean: async () => [] })) },
-}));
 vi.mock('../../../models/ProductTag.ts', () => ({
   ProductTag: {
     find: vi.fn(() => ({ lean: async () => [], select: () => ({ lean: async () => [] }) })),
@@ -33,7 +30,11 @@ vi.mock('../../../models/ProductTag.ts', () => ({
     create: vi.fn().mockResolvedValue({}),
     deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
     insertMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
+}));
+vi.mock('../../../models/Tag.ts', () => ({
+  Tag: { findOne: vi.fn(), find: vi.fn(() => ({ lean: async () => [] })) },
 }));
 vi.mock('../../../models/Brand.ts', () => ({ Brand: { findOne: vi.fn() } }));
 vi.mock('../../../models/Category.ts', () => ({ Category: { findOne: vi.fn() } }));
@@ -99,6 +100,7 @@ vi.mock('../../../graphql/schema.ts', () => ({ invalidateHomepageCache: vi.fn() 
 import { ProductMutationService, clearProductCache } from '../../../services/product/productMutationService.ts';
 import { ProductVariant } from '../../../models/ProductVariant.ts';
 import { ProductTag } from '../../../models/ProductTag.ts';
+import { Tag } from '../../../models/Tag.ts';
 import { ProductImage } from '../../../models/ProductImage.ts';
 import { Favorite } from '../../../models/Favorite.ts';
 import { CartItem } from '../../../models/CartItem.ts';
@@ -172,6 +174,45 @@ describe('clearProductCache (fix #5 + #13)', () => {
     await clearProductCache();
     expect(redis.scan).toHaveBeenCalled();
     expect((redis as any).keys).not.toHaveBeenCalled();
+  });
+
+  it('bulkDeleteProducts quét key chi tiết của TỪNG id bị xóa (fix #8)', async () => {
+    const ids = [oid().toString(), oid().toString()];
+    (ProductMock.find as any).mockReturnValue({ lean: async () => ids.map((id) => ({ _id: id, variants: [] })) });
+    (ProductImage.find as any).mockReturnValue({ lean: async () => [] });
+    (ProductMock.deleteMany as any).mockResolvedValue({ deletedCount: ids.length });
+
+    await ProductMutationService.bulkDeleteProducts(ids);
+
+    const patterns = (redis.scan as any).mock.calls.map((c: any) => c[2]);
+    expect(patterns).toContain(`product:detail:*:${ids[0]}`);
+    expect(patterns).toContain(`product:detail:*:${ids[1]}`);
+    // Key `products:<id>` không service nào ghi — xóa nó là ăn gian, trang chi tiết vẫn
+    // served bản đã xóa tới hết TTL.
+    const deletedKeys = (redis.del as any).mock.calls.flatMap((c: any[]) => c);
+    expect(deletedKeys).not.toContain(`products:${ids[0]}`);
+  });
+});
+
+describe('updateProduct — provenance của tag (fix #7)', () => {
+  it('link auto có sẵn mà admin chọn lại bị nâng lên manual', async () => {
+    const pid = oid().toString();
+    const tagId = oid();
+    (ProductMock.findById as any).mockResolvedValue({ _id: pid, name: 'X', brandId: oid() });
+    (ProductMock.findOneAndUpdate as any).mockResolvedValue({ _id: pid });
+    (Tag.find as any).mockReturnValue({ lean: async () => [{ _id: tagId, slug: 'limited', name: 'Limited' }] });
+    // Link đã tồn tại (do sync gán, source 'auto') → notInsert, nhưng phải được nâng cấp.
+    (ProductTag.find as any).mockReturnValue({
+      select: () => ({ lean: async () => [{ tagId }] }),
+      lean: async () => [{ tagId, source: 'auto' }],
+    });
+
+    await ProductMutationService.updateProduct(pid, { tag: 'Limited' });
+
+    expect(ProductTag.updateMany).toHaveBeenCalledWith(
+      { productId: pid, tagId: { $in: [tagId] }, source: { $ne: 'manual' } },
+      { $set: { source: 'manual' } }
+    );
   });
 });
 

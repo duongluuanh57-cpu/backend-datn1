@@ -189,6 +189,13 @@ export class ProductMutationService {
         if (toInsert.length > 0) {
           await ProductTag.insertMany(toInsert.map(tagId => ({ productId: id, tagId, source: 'manual' })));
         }
+        // Link còn lại có thể do sync tự gán ('auto', hoặc đời cũ không có field source).
+        // Admin/AI vừa chọn lại nó thì nó thành quyết định có chủ đích — phải nâng lên
+        // 'manual', nếu không lần sync tồn kho kế tiếp vẫn gỡ đúng tag admin vừa giữ.
+        await ProductTag.updateMany(
+          { productId: id, tagId: { $in: tagIds }, source: { $ne: 'manual' } },
+          { $set: { source: 'manual' } }
+        );
       }
     }
 
@@ -400,12 +407,9 @@ export class ProductMutationService {
       );
       await Promise.all([...imgPromises, ...folderPromises]);
 
-      await clearProductCache();
-      for (const id of ids) {
-        try {
-          await redis.del(`products:${id}`);
-        } catch (_) {}
-      }
+      // Kèm key chi tiết của từng sản phẩm vừa xóa — không truyền id thì `product:detail:*`
+      // không nằm trong danh sách scan, và trang chi tiết vẫn served bản đã xóa tới hết TTL.
+      await clearProductCache(ids);
     }
     return result.deletedCount > 0;
   }
@@ -640,7 +644,7 @@ export class ProductMutationService {
 /**
  * Helper: xóa toàn bộ cache product list, detail và graphql
  */
-export async function clearProductCache(productId?: string): Promise<void> {
+export async function clearProductCache(productId?: string | string[]): Promise<void> {
   try {
     // Không liệt kê key tĩnh theo tên: mọi key đều đã bị pattern scan bên dưới quét
     // trúng, còn tên version thì đổi liên tục nên danh sách này luôn hỏng.
@@ -656,9 +660,10 @@ export async function clearProductCache(productId?: string): Promise<void> {
       'products:suggest:*',
       'graphql:*',
     ];
-    if (productId) {
+    const detailIds = (Array.isArray(productId) ? productId : productId ? [productId] : []).filter(Boolean);
+    for (const pid of detailIds) {
       // `*` giữa để bắt mọi phiên bản của key chi tiết, chỉ đúng sản phẩm vừa sửa.
-      patterns.push(`product:detail:*:${productId}`);
+      patterns.push(`product:detail:*:${pid}`);
     }
     // redis.keys block toàn server (O(N)) — dùng scan không block
     for (const pattern of patterns) {

@@ -447,11 +447,18 @@ export class ProductQueryService {
     let flashSaleProducts: any[] = [];
     try {
       const activeFS = await FlashSaleService.getActiveFlashSale();
+      // `getActiveFlashSale` tự fallback sang đợt `scheduled` gần nhất khi chưa có đợt nào
+      // chạy. Hàng của đợt chưa chạy không được formatter giảm giá, dán badge flash sale
+      // vào là hứa với khách một giá sẽ không tồn tại — chỉ lấy đợt đang chạy thật.
+      const runningFS = activeFS?.status === 'active' ? activeFS : null;
       // Map id sản phẩm -> item của đợt sale (mang stockLimit/soldCount riêng, không phải
       // số của Product).
       const itemByProductId = new Map<string, any>();
-      for (const it of (activeFS?.items || [])) {
-        const rawId = it?.product?._id ?? it?.product ?? it?.productId;
+      for (const it of (runningFS?.items || [])) {
+        // `getActiveFlashSale` populate `items.productId`, nên id nằm một tầng sâu hơn
+        // ("{ productId: { _id, name, … } }"). String(cả document) là "[object Object]"
+        // → isValid fail → mọi item bị âm thầm bỏ qua.
+        const rawId = it?.product?._id ?? it?.productId?._id ?? it?.productId ?? it?.product;
         if (rawId && mongoose.Types.ObjectId.isValid(String(rawId))) itemByProductId.set(String(rawId), it);
       }
       if (itemByProductId.size > 0) {
