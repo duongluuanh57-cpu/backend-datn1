@@ -8,9 +8,10 @@ export async function favoriteRoutes(app: FastifyInstance) {
   await app.register(rateLimit, {
     max: 1000,
     timeWindow: '1 minute',
-    keyGenerator: (request) => {
-      return (request as any).user?._id?.toString() || request.ip;
-    },
+    // rateLimit chạy ở pha onRequest — TRƯỚC authMiddleware — nên req.user chưa tồn tại.
+    // Nhánh `user?._id` cũ chưa bao giờ chạy (req.user chỉ có userId, không có _id).
+    // Key theo IP cho thật lòng; nếu muốn per-user phải dời rateLimit sau auth.
+    keyGenerator: (request) => request.ip,
     errorResponseBuilder: () => ({
       success: false,
       message: 'Vượt quá giới hạn yêu cầu, vui lòng thử lại sau',

@@ -1,12 +1,12 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
-import { Payment } from '../../models/Payment.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
-import { enhanceItemsWithProductData, populateOrderTotals, autoCancelExpiredVNPayOrders, markSoldCounted, unmarkSoldCounted } from './orderHelpers.ts';
+import { enhanceItemsWithProductData, populateOrderTotals, attachShippingInfo, autoCancelExpiredVNPayOrders, countSoldOnConfirm, cancelOrderWithRestore, paidOrderCancelBlockMessage } from './orderHelpers.ts';
+import { RewardService } from '../../services/RewardService.ts';
 
 /**
- * GET /api/orders/admin/all
+ * GET /api/orders/admin/orders
  * Dùng aggregation pipeline thay vì N+1 queries để tối ưu tốc độ
  */
 export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyReply) {
@@ -79,11 +79,22 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
         },
       },
       {
-        $addFields: {
-          userId: { $arrayElemAt: ['$user', 0] },
+        $lookup: {
+          from: 'payment_methods',
+          localField: 'paymentMethodId',
+          foreignField: '_id',
+          as: 'paymentMethodData',
         },
       },
-      { $project: { user: 0 } },
+      {
+        $addFields: {
+          userId: { $arrayElemAt: ['$user', 0] },
+          paymentMethodId: {
+            $ifNull: [{ $arrayElemAt: ['$paymentMethodData', 0] }, '$paymentMethodId'],
+          },
+        },
+      },
+      { $project: { user: 0, paymentMethodData: 0 } },
     ];
 
     const [orders, total] = await Promise.all([
@@ -96,6 +107,7 @@ export async function getAllOrdersForAdmin(req: FastifyRequest, reply: FastifyRe
     if (allItems.length > 0) {
       await enhanceItemsWithProductData(allItems);
     }
+    orders.forEach((o: any) => attachShippingInfo(o));
 
     return reply.status(200).send({
       success: true,
@@ -127,7 +139,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
     })
       .populate('userId', 'username email phoneNumber fullName gender avatar')
       .populate('voucherId')
-      .populate('shippingMethodId')
+      .populate('paymentMethodId', 'name code icon')
       .lean();
 
     if (!order) {
@@ -137,6 +149,7 @@ export async function getOrderByIdForAdmin(req: FastifyRequest, reply: FastifyRe
     const items = await OrderItem.find({ orderId: order._id }).lean();
     await enhanceItemsWithProductData(items);
     populateOrderTotals(order, items);
+    attachShippingInfo(order);
     order.items = items;
 
     return reply.status(200).send({ success: true, data: order });
@@ -155,8 +168,14 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
     const { id } = req.params as { id: string };
     const { status } = req.body as { status: string };
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return reply.status(400).send({ success: false, message: 'Mã đơn hàng không hợp lệ' });
+    }
+
     const orderId = new mongoose.Types.ObjectId(id);
-    const existing = await Order.findById(orderId).lean();
+    const existing = await Order.findById(orderId)
+      .populate('paymentMethodId', 'code')
+      .lean();
 
     if (!existing) {
       return reply.status(404).send({ success: false, message: 'Không tìm thấy đơn hàng' });
@@ -179,15 +198,12 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
       });
     }
 
-    // Khi giao hàng thành công (delivered): tự động đánh dấu đã thanh toán
+    // Khi giao hàng thành công (delivered): tự động đánh dấu đã thanh toán.
+    // Mốc thời gian giao hàng lấy từ `paid_at` (bảng orders không còn delivered_at).
     const updateData: any = { status };
-    if (status === 'delivered') {
+    if (status === 'delivered' && existing.paymentStatus !== 'paid') {
       updateData.paymentStatus = 'paid';
-      updateData.deliveredAt = new Date();
-      await Payment.updateMany(
-        { orderId: orderId },
-        { $set: { status: 'paid', paidAt: new Date() } }
-      );
+      updateData.paidAt = new Date();
     }
 
     const order = await Order.findByIdAndUpdate(
@@ -196,9 +212,19 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
       { new: true }
     ).lean();
 
-    // Khi admin xác nhận đơn (pending → processing): cộng lượt bán
+    // Khi admin xác nhận đơn (pending → processing): cộng lượt bán nếu đơn chưa
+    // từng được tính (COD cộng lúc tạo, online cộng lúc thanh toán).
+    // Lưu ý: paidAt chỉ được set khi status chuyển sang delivered, không phải đang paid.
+    if (status === 'delivered' && order?.userId) {
+      try {
+        await RewardService.syncMembershipTier(String(order.userId));
+      } catch (error) {
+        console.warn('Không đồng bộ được lượt quay thành viên:', error);
+      }
+    }
+
     if (status === 'processing') {
-      await markSoldCounted(orderId);
+      await countSoldOnConfirm(orderId, existing);
     }
 
     return reply.status(200).send({
@@ -218,23 +244,30 @@ export async function updateOrderStatus(req: FastifyRequest, reply: FastifyReply
 export async function cancelOrderByAdmin(req: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = req.params as { id: string };
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return reply.status(400).send({ success: false, message: 'Mã đơn hàng không hợp lệ' });
+    }
+
     const orderId = new mongoose.Types.ObjectId(id);
 
-    const order = await Order.findOneAndUpdate(
-      { _id: orderId, status: 'pending' },
-      { $set: { status: 'cancelled' } },
-      { new: true }
-    ).lean();
+    // Đơn VNPay đã trả tiền vẫn ở status 'pending' cho tới khi admin xác nhận → phải chặn
+    // ở đây, nếu không admin hủy đơn đã thu tiền mà hệ thống không có luồng hoàn tiền.
+    const target = await Order.findById(orderId).select('paymentStatus').lean();
+    const blocked = paidOrderCancelBlockMessage(target);
+    if (blocked) {
+      return reply.status(400).send({ success: false, message: blocked });
+    }
+
+    // CAS status → cancelled trong cancelOrderWithRestore: chỉ luồng thắng mới
+    // hoàn kho, hoàn voucher và trừ lượt bán → không thể hoàn kép.
+    const order = await cancelOrderWithRestore(orderId, {
+      filter: { status: 'pending', paymentStatus: { $ne: 'paid' } },
+    });
 
     if (!order) {
       return reply.status(400).send({ success: false, message: 'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận' });
     }
-
-    await unmarkSoldCounted(orderId);
-
-    // Hoàn kho + hoàn voucher (idempotent)
-    const { StockService } = await import('../../services/cart/StockService.ts');
-    await StockService.restoreOrderResources(orderId);
 
     return reply.status(200).send({ success: true, data: order, message: 'Đã hủy đơn hàng' });
   } catch (error: any) {

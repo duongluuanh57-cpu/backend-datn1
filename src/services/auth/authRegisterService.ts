@@ -2,7 +2,6 @@ import { UserRepository } from '../../repositories/UserRepository.ts';
 import type { RegisterInput } from '../../types/user.types.ts';
 import { hashPassword, generateTokens, toPublicUser } from '../../utils/auth.ts';
 import { ValidationError } from '../../utils/errors.ts';
-import { AuditLog } from '../../models/AuditLog.ts';
 
 export class AuthRegisterService {
   static async register(data: RegisterInput) {
@@ -25,14 +24,6 @@ export class AuthRegisterService {
       role: 'USER',
       memberTier: 'MEMBER',
     });
-
-    AuditLog.create({
-      userId: newUser._id,
-      action: 'REGISTER',
-      resource: 'User',
-      metadata: { email: newUser.email },
-      status: 'SUCCESS'
-    }).catch(() => {});
 
     const tokens = generateTokens(newUser._id.toString(), newUser.role);
 

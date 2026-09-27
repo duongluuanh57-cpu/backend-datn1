@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { UserRepository } from '../repositories/UserRepository.ts';
 import { generateTokens, toPublicUser } from '../utils/auth.ts';
+import { UnauthorizedError } from '../utils/errors.ts';
 import type { IUser } from '../models/User.ts';
 
 // Cấu hình cho từng OAuth Provider
@@ -51,18 +52,26 @@ export class OAuthService {
         grant_type: 'authorization_code',
       }),
     });
-    const { access_token } = await tokenRes.json() as any;
+    const tokenBody = (await tokenRes.json().catch(() => null)) as any;
+    const access_token = tokenBody?.access_token;
+    if (!tokenRes.ok || !access_token) {
+      throw new UnauthorizedError('Google không cấp access_token cho mã ủy quyền này');
+    }
 
     // Bước 2: Dùng access_token lấy thông tin user từ Google
     const profileRes = await fetch(GOOGLE_CONFIG.userInfoUrl, {
       headers: { Authorization: `Bearer ${access_token}` },
     });
-    const profile = await profileRes.json() as any;
-    // profile: { id, email, name, picture }
+    const profile = (await profileRes.json().catch(() => null)) as any;
+    // profile: { id, email, verified_email, name, picture }
+    if (!profileRes.ok || !profile?.id || !profile?.email) {
+      throw new UnauthorizedError('Không đọc được hồ sơ tài khoản Google');
+    }
 
     return OAuthService.findOrCreateUser('google', {
       oauthId: profile.id,
       email: profile.email,
+      emailVerified: profile.verified_email === true,
       username: profile.name?.replace(/\s+/g, '_').toLowerCase() || `user_${profile.id}`,
       avatar: profile.picture,
     });
@@ -89,8 +98,15 @@ export class OAuthService {
    */
   private static async findOrCreateUser(
     provider: 'google',
-    profile: { oauthId: string; email: string; username: string; avatar?: string }
+    profile: { oauthId: string; email: string; emailVerified: boolean; username: string; avatar?: string }
   ) {
+    // Fail-closed: email Google phải được Google xác minh. Nếu không thì
+    // KHÔNG được liên kết (link) vào tài khoản email sẵn có trong DB — ai đó
+    // đăng ký Google account với email tùy ý sẽ thừa hưởng được tài khoản thật.
+    if (!profile.emailVerified) {
+      throw new UnauthorizedError('Email tài khoản Google chưa được xác minh — không thể đăng nhập');
+    }
+
     // Tìm theo oauthId trước
     let user = await UserRepository.findByOAuthId(provider, profile.oauthId);
 

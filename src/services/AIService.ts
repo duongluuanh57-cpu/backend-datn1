@@ -6,7 +6,6 @@
  *   - aiStreamService.ts      → delegate sang aiInteractionService
  *   - aiEmbedding.ts           → delegate sang aiInteractionService
  *   - aiResponseService.ts     → delegate sang aiInteractionService
- *   - aiVisionService.ts       → identifyProduct (giữ lại tạm)
  */
 // Lazy-load các module AI nặng ('ai', '@ai-sdk/google', '@google/generative-ai')
 // để không phải nạp chúng lúc server khởi động — chỉ load khi có request /api/ai/*
@@ -35,10 +34,5 @@ export class AIService {
   static async generateEmbedding(text: string): Promise<number[]> {
     const { generateEmbedding: _generateEmbedding } = await import('./ai/aiEmbedding.ts');
     return _generateEmbedding(text);
-  }
-
-  static async identifyProduct(image: string, prompt: string): Promise<string> {
-    const { identifyProduct: _identifyProduct } = await import('./ai/aiVisionService.ts');
-    return _identifyProduct(image, prompt);
   }
 }

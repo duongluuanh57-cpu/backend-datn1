@@ -5,6 +5,7 @@ import { funnelRoutes } from '../../routes/funnel.routes.ts';
 import { Brand } from '../../models/Brand.ts';
 import { Category } from '../../models/Category.ts';
 import { Product } from '../../models/Product.ts';
+import { ProductVariant } from '../../models/ProductVariant.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { redis } from '../../config/redis.ts';
 
@@ -15,6 +16,8 @@ vi.mock('../../middleware/adminAuthMiddleware.ts', () => ({
 
 const TEST_TENANT = 'default';
 let testBrandId: mongoose.Types.ObjectId;
+let testProductId: mongoose.Types.ObjectId;
+let testOrderId: mongoose.Types.ObjectId;
 let app: ReturnType<typeof Fastify>;
 
 beforeAll(async () => {
@@ -34,10 +37,11 @@ beforeAll(async () => {
   testBrandId = brand._id as mongoose.Types.ObjectId;
 
   // Create test product with views
-  await Product.create({
+  const testProduct = await Product.create({
     name: 'Funnel Product 1',
     brandId: testBrandId,
     brand: 'Funnel Test Brand',
+    categoryId: new mongoose.Types.ObjectId(),
     tenantId: TEST_TENANT,
     description: 'Test',
     viewCount: 100,
@@ -46,21 +50,27 @@ beforeAll(async () => {
     name: 'Funnel Product 2',
     brandId: testBrandId,
     brand: 'Funnel Test Brand',
+    categoryId: new mongoose.Types.ObjectId(),
     tenantId: TEST_TENANT,
     description: 'Test',
     viewCount: 50,
   });
 
-  // Create test OrderItem for purchase aggregation
-  const orderId = new mongoose.Types.ObjectId();
+  testProductId = testProduct._id as mongoose.Types.ObjectId;
+  const testVariant = await ProductVariant.create({
+    productId: testProduct._id,
+    size: '50ml',
+    price: 200000,
+    quantityInStock: 10,
+    isDefault: true,
+  });
+  testOrderId = new mongoose.Types.ObjectId();
   await OrderItem.create({
     tenantId: TEST_TENANT,
-    orderId,
-    productId: new mongoose.Types.ObjectId(),
-    name: 'Sold Item',
+    orderId: testOrderId,
+    productVariantId: testVariant._id,
     price: 200000,
     quantity: 3,
-    brand: 'Funnel Test Brand',
     createdAt: new Date(),
   });
 
@@ -71,10 +81,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.close();
+  try {
+    await app.close();
+  } catch (err) {
+    // ignore: app might already be closed or fastify instance invalid
+  }
+  await OrderItem.deleteMany({ orderId: testOrderId });
+  await ProductVariant.deleteMany({ productId: testProductId });
   await Product.deleteMany({ brandId: testBrandId });
   await Brand.deleteMany({ _id: testBrandId });
-  await OrderItem.deleteMany({ brand: 'Funnel Test Brand' });
 });
 
 describe('Funnel Routes — /api/funnel/data', () => {
@@ -111,6 +126,7 @@ describe('Funnel Routes — /api/funnel/data', () => {
       name: 'Low View Product',
       brandId: brand2._id,
       brand: 'Low View Brand',
+      categoryId: new mongoose.Types.ObjectId(),
       tenantId: TEST_TENANT,
       description: 'Test',
       viewCount: 5,

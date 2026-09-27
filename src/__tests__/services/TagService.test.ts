@@ -4,9 +4,6 @@ vi.mock('../../models/Tag.ts', () => {
   const chain: any = {
     find: vi.fn().mockReturnThis(),
     findOne: vi.fn().mockReturnThis(),
-    create: vi.fn(),
-    deleteOne: vi.fn(),
-    deleteMany: vi.fn(),
     countDocuments: vi.fn(),
     sort: vi.fn().mockReturnThis(),
     skip: vi.fn().mockReturnThis(),
@@ -14,77 +11,74 @@ vi.mock('../../models/Tag.ts', () => {
     lean: vi.fn().mockResolvedValue([]),
     findOneAndUpdate: vi.fn(),
   };
-  const TagMock: any = vi.fn().mockImplementation(function (this: any) {
-    Object.assign(this, chain);
-  });
+  const TagMock: any = vi.fn();
   Object.assign(TagMock, chain);
   return { Tag: TagMock, ITag: {} };
 });
 
+vi.mock('../../models/ProductTag.ts', () => ({
+  ProductTag: {
+    aggregate: vi.fn().mockResolvedValue([]),
+    countDocuments: vi.fn().mockResolvedValue(0),
+    find: vi.fn().mockReturnValue({
+      populate: vi.fn().mockReturnValue({
+        sort: vi.fn().mockReturnValue({
+          skip: vi.fn().mockReturnValue({
+            limit: vi.fn().mockReturnValue({ lean: vi.fn().mockResolvedValue([]) }),
+          }),
+        }),
+      }),
+    }),
+  },
+}));
+
+vi.mock('../../services/FlashSaleService.ts', () => ({
+  FlashSaleService: {
+    clearCache: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 import { TagService } from '../../services/TagService.ts';
 import { Tag } from '../../models/Tag.ts';
+import { FlashSaleService } from '../../services/FlashSaleService.ts';
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('TagService', () => {
-  describe('getAllTags', () => {
-    it('returns only active tags sorted by name', async () => {
-      (Tag.find as any).mockReturnValue({ sort: () => Promise.resolve([{ name: 'A' }]) });
-      const result = await TagService.getAllTags();
-      expect(Tag.find).toHaveBeenCalledWith({ status: 'active' });
-    });
+  it('returns only active tags sorted by name', async () => {
+    (Tag.find as any).mockReturnValue({ sort: () => Promise.resolve([{ name: 'A' }]) });
+    await TagService.getAllTags();
+    expect(Tag.find).toHaveBeenCalledWith({ status: 'active' });
   });
 
-  describe('getPaginatedTags', () => {
-    it('returns paginated result', async () => {
-      (Tag.countDocuments as any).mockResolvedValue(30);
-      (Tag.find as any).mockReturnValue({
-        sort: () => ({ skip: () => ({ limit: () => ({ lean: () => Promise.resolve([{ name: 'X' }]) }) }) }),
-      });
-      const result = await TagService.getPaginatedTags(1, 10);
-      expect(result.total).toBe(30);
-      expect(result.totalPages).toBe(3);
+  it('returns paginated result', async () => {
+    (Tag.countDocuments as any).mockResolvedValue(30);
+    (Tag.find as any).mockReturnValue({
+      sort: () => ({ skip: () => ({ limit: () => ({ lean: () => Promise.resolve([{ name: 'X' }]) }) }) }),
     });
+    const result = await TagService.getPaginatedTags(1, 10);
+    expect(result.total).toBe(30);
+    expect(result.totalPages).toBe(3);
   });
 
-  describe('createTag', () => {
-    it('auto-generates slug from name', async () => {
-      const saveSpy = vi.fn().mockResolvedValue({ name: 'Summer Sale', slug: 'summer-sale' });
-      (Tag as any).mockImplementation(function(this: any) { this.save = saveSpy; });
-      await TagService.createTag({ name: 'Summer Sale' });
-      expect(saveSpy).toHaveBeenCalled();
-    });
+  it('only updates tag status', async () => {
+    (Tag.findOneAndUpdate as any).mockResolvedValue({ _id: 't1', name: 'Limited', status: 'inactive' });
+    const result = await TagService.updateTagStatus('t1', 'inactive');
 
-    it('uses provided slug over auto-generated', async () => {
-      const saveSpy = vi.fn().mockResolvedValue({ name: 'X', slug: 'custom-slug' });
-      (Tag as any).mockImplementation(function(this: any) { this.save = saveSpy; });
-      await TagService.createTag({ name: 'X', slug: 'custom-slug' });
-      expect(saveSpy).toHaveBeenCalled();
-    });
+    expect(Tag.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: 't1' },
+      { $set: { status: 'inactive' } },
+      { new: true }
+    );
+    expect(result?.status).toBe('inactive');
+    expect(FlashSaleService.clearCache).toHaveBeenCalled();
   });
 
-  describe('deleteTag', () => {
-    it('returns true when deleted', async () => {
-      (Tag.deleteOne as any).mockResolvedValue({ deletedCount: 1 });
-      expect(await TagService.deleteTag('t1')).toBe(true);
-    });
-
-    it('returns false when not found', async () => {
-      (Tag.deleteOne as any).mockResolvedValue({ deletedCount: 0 });
-      expect(await TagService.deleteTag('t1')).toBe(false);
-    });
-  });
-
-  describe('bulkDeleteTags', () => {
-    it('returns 0 for empty array', async () => {
-      expect(await TagService.bulkDeleteTags([])).toBe(0);
-    });
-
-    it('returns count of deleted tags', async () => {
-      (Tag.deleteMany as any).mockResolvedValue({ deletedCount: 3 });
-      expect(await TagService.bulkDeleteTags(['t1', 't2', 't3'])).toBe(3);
-    });
+  it('returns null when the tag does not exist', async () => {
+    (Tag.findOneAndUpdate as any).mockResolvedValue(null);
+    await expect(TagService.updateTagStatus('missing', 'active')).resolves.toBeNull();
+    expect(FlashSaleService.clearCache).not.toHaveBeenCalled();
   });
 });

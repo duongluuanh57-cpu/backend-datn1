@@ -142,30 +142,6 @@ export class FlashSaleController {
   }
 
   /**
-   * POST /api/flash-sales/assign-product
-   * Gán / Gỡ nhanh sản phẩm vào đợt Flash Sale
-   */
-  static async assignProduct(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { productId, flashSaleId, extraDiscountPercentage, stockLimit } = req.body as any;
-      if (!productId) {
-        return reply.status(400).send({ success: false, message: 'Thiếu productId' });
-      }
-      const data = await FlashSaleService.assignProduct(productId, flashSaleId, extraDiscountPercentage, stockLimit);
-      return reply.send({
-        success: true,
-        message: flashSaleId ? 'Đã gán sản phẩm vào sự kiện Flash Sale' : 'Đã gỡ sản phẩm khỏi sự kiện Flash Sale',
-        data,
-      });
-    } catch (error: any) {
-      return reply.status(400).send({
-        success: false,
-        message: error.message || 'Lỗi gán sản phẩm vào Flash Sale',
-      });
-    }
-  }
-
-  /**
    * GET /api/flash-sales/suggest-name
    * AI đề xuất tên sự kiện Flash Sale theo thời gian, ngày lễ hoặc từ khóa (kèm khung giờ đề xuất)
    */

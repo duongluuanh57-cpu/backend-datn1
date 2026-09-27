@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyAccessToken } from '../utils/auth.ts';
+import { verifyAccessToken, isSessionRevoked } from '../utils/auth.ts';
 import { UnauthorizedError, ForbiddenError } from '../utils/errors.ts';
 
 /**
@@ -22,7 +22,7 @@ export async function adminAuthMiddleware(req: FastifyRequest, reply: FastifyRep
 
   if (!token) throw new UnauthorizedError('Vui lòng đăng nhập với tài khoản quản trị');
 
-  let decoded: { userId: string; role: string };
+  let decoded: { userId: string; role: string; iat?: number };
   try {
     decoded = verifyAccessToken(token);
   } catch (err: any) {
@@ -30,6 +30,11 @@ export async function adminAuthMiddleware(req: FastifyRequest, reply: FastifyRep
   }
 
   if (decoded.role !== 'ADMIN') throw new ForbiddenError('Bạn không có quyền truy cập trang quản trị');
+
+  // Access token admin sống tới 12 giờ — admin đổi mật khẩu phải cắt được token cũ ngay.
+  if (await isSessionRevoked(decoded.userId, decoded.iat)) {
+    throw new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+  }
 
   (req as any).user = { userId: decoded.userId, role: 'ADMIN' };
   (req as any).token = token;

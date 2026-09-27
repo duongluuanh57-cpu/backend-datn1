@@ -11,8 +11,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       description: "A".repeat(60),
       brandId: "brand123",
       image: "https://example.com/img.jpg",
-      variants: ["var1", "var2"],
-      categories: ["cat1"],
+      variantCount: 2,
+      categoryId: "cat1",
     };
 
     const isFull = !!(
@@ -21,10 +21,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(true);
@@ -36,8 +34,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       description: "",
       brandId: "brand123",
       image: "https://example.com/img.jpg",
-      variants: ["var1"],
-      categories: ["cat1"],
+      variantCount: 1,
+      categoryId: "cat1",
     };
 
     const isFull = !!(
@@ -46,10 +44,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(false);
@@ -61,8 +57,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       description: "A".repeat(60),
       brandId: "brand123",
       image: "",
-      variants: ["var1"],
-      categories: ["cat1"],
+      variantCount: 1,
+      categoryId: "cat1",
     };
 
     const isFull = !!(
@@ -71,10 +67,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(false);
@@ -86,8 +80,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       description: "A".repeat(60),
       brandId: "brand123",
       image: "https://example.com/img.jpg",
-      variants: [],
-      categories: ["cat1"],
+      variantCount: 0,
+      categoryId: "cat1",
     };
 
     const isFull = !!(
@@ -96,23 +90,21 @@ describe("Product Supplement — Auto-switch logic", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(false);
   });
 
-  it("should detect multiple categories as invalid for single category limit", () => {
+  it("should detect missing category as invalid", () => {
     const product = {
-      name: "Multiple Cats",
+      name: "No Category",
       description: "A".repeat(60),
       brandId: "brand123",
       image: "https://example.com/img.jpg",
-      variants: ["var1"],
-      categories: ["cat1", "cat2"],
+      variantCount: 1,
+      categoryId: null,
     };
 
     const isFull = !!(
@@ -121,10 +113,8 @@ describe("Product Supplement — Auto-switch logic", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(false);

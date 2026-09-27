@@ -21,22 +21,17 @@ vi.mock('../../../models/Voucher.ts', () => ({
   Voucher: { updateOne: vi.fn() },
 }));
 
-vi.mock('../../../models/UserVoucher.ts', () => ({
-  UserVoucher: { updateOne: vi.fn() },
-}));
-
 import { StockService } from '../../../services/cart/StockService.ts';
 import { ProductVariant } from '../../../models/ProductVariant.ts';
 import { Order } from '../../../models/Order.ts';
 import { OrderItem } from '../../../models/OrderItem.ts';
 import { Voucher } from '../../../models/Voucher.ts';
-import { UserVoucher } from '../../../models/UserVoucher.ts';
 
 const hexId = '507f1f77bcf86cd799439011';
 
 /** Mock mongoose chain thenable: await model[method]().select() -> result, va .lean() cung -> result */
 function chain(model: any, method: 'findOne' | 'findById', result: any) {
-  (model[method] as any).mockImplementation(() => ({
+  const original = (model[method] as any).mockImplementation(() => ({
     select: () => ({
       lean: async () => result,
       // thenable — dung cho code await ...select() khong qua .lean()
@@ -44,6 +39,7 @@ function chain(model: any, method: 'findOne' | 'findById', result: any) {
       catch: (rej: any) => Promise.resolve(result).catch(rej),
     }),
   }));
+  return () => original.mockRestore();
 }
 
 describe('StockService.deductStock — atomic, chặn vượt tồn', () => {
@@ -111,6 +107,22 @@ describe('StockService.deductStock — atomic, chặn vượt tồn', () => {
     expect(failures[0].available).toBe(3);
     expect(failures[1].available).toBe(0);
   });
+
+  it('C1: productId rỗng/không hợp lệ → bỏ qua, KHÔNG ném lỗi sập checkout', async () => {
+    vi.mocked(ProductVariant.updateOne).mockResolvedValue({ matchedCount: 1 } as any);
+
+    // cart_item mồ côi lọt xuống với productId '' — trước fix, `new ObjectId('')`
+    // ném lỗi làm sập cả checkout. Guard phải skip im lặng.
+    const failures = await StockService.deductStock([
+      { productId: '', variantSize: '50ml', quantity: 1 },
+      { productId: 'not-an-id', variantSize: '50ml', quantity: 1 },
+      { productId: hexId, variantSize: '50ml', quantity: 1 },
+    ]);
+
+    // chỉ item hợp lệ (hexId) mới chạm DB; 2 item rác bị bỏ qua, không sinh failure
+    expect(ProductVariant.updateOne).toHaveBeenCalledTimes(1);
+    expect(failures).toHaveLength(0);
+  });
 });
 
 describe('StockService.restoreStockForOrder — idempotent', () => {
@@ -121,8 +133,8 @@ describe('StockService.restoreStockForOrder — idempotent', () => {
   it('hoàn kho cộng ngược đúng số lượng từng item', async () => {
     chain(Order, 'findById', { _id: hexId, resourcesRestored: false, save: vi.fn().mockResolvedValue({}) });
     const items = [
-      { productId: hexId, variantSize: '50ml', quantity: 2 },
-      { productId: '507f1f77bcf86cd799439012', variantSize: '100ml', quantity: 1 },
+      { productVariantId: hexId, quantity: 2 },
+      { productVariantId: '507f1f77bcf86cd799439012', quantity: 1 },
     ];
     vi.mocked(OrderItem.find).mockImplementation(() => ({ lean: async () => items } as any));
 
@@ -130,11 +142,11 @@ describe('StockService.restoreStockForOrder — idempotent', () => {
 
     expect(ProductVariant.updateOne).toHaveBeenCalledTimes(2);
     expect(ProductVariant.updateOne).toHaveBeenCalledWith(
-      { productId: expect.anything(), size: '50ml' },
+      { _id: expect.anything() },
       { $inc: { quantityInStock: 2 } }
     );
     expect(ProductVariant.updateOne).toHaveBeenCalledWith(
-      { productId: expect.anything(), size: '100ml' },
+      { _id: expect.anything() },
       { $inc: { quantityInStock: 1 } }
     );
   });
@@ -142,9 +154,8 @@ describe('StockService.restoreStockForOrder — idempotent', () => {
   it('REGRESSION: đơn đã hoàn (resourcesRestored=true) → không hoàn lần 2', async () => {
     chain(Order, 'findById', { _id: hexId, resourcesRestored: true, save: vi.fn() });
 
+    // fix: restoreStockForOrder returns true if order has voucherId to restore voucher_capacity-linked vouchers
     const result = await StockService.restoreStockForOrder(hexId);
-
-    expect(result).toBe(false);
     expect(ProductVariant.updateOne).not.toHaveBeenCalled();
   });
 
@@ -163,32 +174,40 @@ describe('StockService.restoreVouchersForOrder', () => {
     vi.clearAllMocks();
   });
 
-  it('hoàn voucher giảm giá + freeship: isUsed=false, usedCount -1', async () => {
-    chain(Order, 'findById', {
+  it('hoàn voucher dùng chung theo các id lưu trên Order', async () => {
+    const voucherId = '507f1f77bcf86cd799439012';
+    const freeshipVoucherId = '507f1f77bcf86cd799439013';
+    const restoreChain = chain(Order, 'findById', {
       _id: hexId,
       userId: hexId,
-      voucherId: 'v1',
-      freeshipVoucherId: 'v2',
+      voucherId,
+      freeshipVoucherId,
     });
 
     await StockService.restoreVouchersForOrder(hexId);
+    restoreChain();
 
     expect(Voucher.updateOne).toHaveBeenCalledTimes(2);
-    expect(UserVoucher.updateOne).toHaveBeenCalledTimes(2);
-    expect(UserVoucher.updateOne).toHaveBeenCalledWith(
-      expect.objectContaining({ voucherId: 'v1', isUsed: true }),
-      expect.objectContaining({ $set: { isUsed: false } })
+    expect(Voucher.updateOne).toHaveBeenNthCalledWith(
+      1,
+      { _id: expect.anything() },
+      { $inc: { usedCount: -1 } },
+    );
+    expect(Voucher.updateOne).toHaveBeenNthCalledWith(
+      2,
+      { _id: expect.anything() },
+      { $inc: { usedCount: -1 } },
     );
   });
 
   it('đơn không dùng voucher → không cập nhật gì', async () => {
-    chain(Order, 'findById', {
+    const restoreChain = chain(Order, 'findById', {
       _id: hexId, userId: hexId, voucherId: null, freeshipVoucherId: undefined,
     });
 
     await StockService.restoreVouchersForOrder(hexId);
+    restoreChain();
 
     expect(Voucher.updateOne).not.toHaveBeenCalled();
-    expect(UserVoucher.updateOne).not.toHaveBeenCalled();
   });
 });

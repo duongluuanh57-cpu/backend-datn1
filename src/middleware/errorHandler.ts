@@ -6,8 +6,13 @@ export function errorHandler(error: FastifyError, request: FastifyRequest, reply
   if ((error as any).code === 'ERR_STREAM_PREMATURE_CLOSE') return;
   const statusCode = (error as any).statusCode || 500;
 
-  // In lỗi ra log của Fastify (Pino)
-  request.log.error(error);
+  // Lỗi 4xx là client sai (body rỗng, validation, 401…) — chỉ warn một dòng, không dump
+  // stack; stack thật chỉ có giá trị khi 5xx.
+  if (statusCode < 500) {
+    request.log.warn({ statusCode, code: (error as any).code }, error.message);
+  } else {
+    request.log.error(error);
+  }
 
   // Nếu là lỗi nghiệp vụ do chúng ta chủ động quăng ra (AppError)
   if (error instanceof AppError) {

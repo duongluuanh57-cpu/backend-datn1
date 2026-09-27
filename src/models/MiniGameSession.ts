@@ -7,13 +7,11 @@ export interface IMiniGameSession extends Document {
   gameType: GameType;
   status: GameStatus;
   reward?: {
-    voucherCode: string;
-    discountType: 'percentage' | 'fixed';
-    discountAmount: number;
+    points: number;
     label?: string;
+    balanceAfter?: number;
   };
   playedAt: Date;
-  expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,13 +30,11 @@ const MiniGameSessionSchema = new Schema<IMiniGameSession>(
       required: true,
     },
     reward: {
-      voucherCode: { type: String },
-      discountType: { type: String, enum: ['percentage', 'fixed'] },
-      discountAmount: { type: Number },
+      points: { type: Number, required: true, min: 0 },
       label: { type: String },
+      balanceAfter: { type: Number, min: 0 },
     },
     playedAt: { type: Date, default: Date.now },
-    expiresAt: { type: Date },
   },
   {
     timestamps: true,

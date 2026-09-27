@@ -1,11 +1,10 @@
 /**
- * productTaxonomyResolver — Resolve tag, brand, category từ AI output sang DB entities
+ * productTaxonomyResolver — Resolve tag và category từ AI output sang DB entities
  */
 import { FuzzyMatchCache } from '../../services/FuzzyMatchCache.ts';
 
 export interface TaxonomyContext {
   allTags: { lookup: Map<string, any>; items: any[] };
-  allBrands: { lookup: Map<string, any>; items: any[] };
   allCategories: { lookup: Map<string, any>; items: any[] };
 }
 
@@ -36,25 +35,6 @@ export function resolveTags(
 
   console.log(`ℹ️ [AI Tag] Sản phẩm là bản thông thường (không phải Limited) → Không gán tag gì hết`);
   return { tagIds: [], tagNames: [] };
-}
-
-/**
- * Resolve brand từ tên AI output → ObjectId trong DB
- */
-export function resolveBrand(
-  brandName: string | undefined,
-  ctx: TaxonomyContext
-): { brandId?: any; brandName?: string } {
-  if (!brandName) return {};
-
-  const matched = FuzzyMatchCache.fuzzyFind(brandName, ctx.allBrands.lookup, (b: any) => b.name);
-  if (matched) {
-    console.log(`✅ Brand resolved: ${matched.name} (ID: ${matched._id})`);
-    return { brandId: matched._id, brandName: matched.name };
-  }
-
-  console.warn(`⚠️ Brand "${brandName}" not found in database, keeping as-is`);
-  return { brandName };
 }
 
 /**

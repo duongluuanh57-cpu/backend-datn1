@@ -1,9 +1,12 @@
 import type { FastifyInstance } from 'fastify';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { UserAddressController } from '../controllers/userAddress/userAddressController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
+import { CreateAddressSchema, UpdateAddressSchema } from '../types/address.types.ts';
 
 export async function userAddressRoutes(app: FastifyInstance) {
-  // Public proxy routes cho tỉnh/thành Việt Nam (tránh CORS và Open-API redirect errors trên deploy)
+  // Public proxy cho tỉnh/huyện/xã VN — FE gọi qua backend để tránh CORS và redirect lỗi
+  // của provinces.open-api.vn trên deploy. Mất 3 route này là bộ chọn địa chỉ ở checkout chết.
   app.get('/provinces', async (_req, reply) => {
     try {
       const res = await fetch('https://provinces.open-api.vn/api/p/');
@@ -36,10 +39,10 @@ export async function userAddressRoutes(app: FastifyInstance) {
     }
   });
 
-  // Protected routes cho user addresses
-  app.get('/', { preHandler: authMiddleware }, UserAddressController.getMyAddresses);
-  app.post('/', { preHandler: authMiddleware }, UserAddressController.createAddress);
-  app.patch('/:id', { preHandler: authMiddleware }, UserAddressController.updateAddress);
-  app.delete('/:id', { preHandler: authMiddleware }, UserAddressController.deleteAddress);
-  app.patch('/:id/set-default', { preHandler: authMiddleware }, UserAddressController.setDefault);
+  const typedApp = app.withTypeProvider<ZodTypeProvider>();
+  typedApp.get('/', { preHandler: authMiddleware }, UserAddressController.getMyAddresses);
+  typedApp.post('/', { preHandler: authMiddleware, schema: { body: CreateAddressSchema } }, UserAddressController.createAddress);
+  typedApp.patch('/:id', { preHandler: authMiddleware, schema: { body: UpdateAddressSchema } }, UserAddressController.updateAddress);
+  typedApp.delete('/:id', { preHandler: authMiddleware }, UserAddressController.deleteAddress);
+  typedApp.patch('/:id/set-default', { preHandler: authMiddleware }, UserAddressController.setDefault);
 }

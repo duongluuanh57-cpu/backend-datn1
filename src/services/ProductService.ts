@@ -70,10 +70,4 @@ export class ProductService {
   static async bulkDeleteProducts(ids: string[]) {
     return _ProductMutationService.bulkDeleteProducts(ids);
   }
-  static async bulkUpdateProducts(ids: string[], updateData: { status?: string; categories?: string[] }) {
-    return _ProductMutationService.bulkUpdateProducts(ids, updateData);
-  }
-  static async duplicateProduct(id: string) {
-    return _ProductMutationService.duplicateProduct(id);
-  }
 }

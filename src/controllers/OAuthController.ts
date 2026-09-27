@@ -2,25 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { OAuthService } from '../services/OAuthService.ts';
 import { redis } from '../config/redis.ts';
 import { ValidationError } from '../utils/errors.ts';
-import { ACCESS_COOKIE, REFRESH_COOKIE } from '../utils/auth.ts';
-
-// Khớp cấu hình cookie với authSessionController
-const isProd = process.env.NODE_ENV === 'production';
-const ACCESS_COOKIE_MAX_AGE = 15 * 60;           // 15 phút (giây)
-const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 ngày (giây)
-const ADMIN_COOKIE_MAX_AGE = 12 * 60 * 60;       // 12 giờ (giây)
-
-const baseCookie = {
-  httpOnly: true,
-  secure: isProd,
-  sameSite: 'lax' as const,
-  path: '/',
-};
-
-function setSessionCookies(reply: FastifyReply, tokens: { accessToken: string; refreshToken: string }) {
-  void reply.setCookie(ACCESS_COOKIE, tokens.accessToken, { ...baseCookie, maxAge: ACCESS_COOKIE_MAX_AGE });
-  void reply.setCookie(REFRESH_COOKIE, tokens.refreshToken, { ...baseCookie, maxAge: REFRESH_COOKIE_MAX_AGE });
-}
+import { setSessionCookies, setAdminCookie } from '../utils/sessionCookies.ts';
 
 export class OAuthController {
   /**
@@ -59,10 +41,7 @@ export class OAuthController {
 
     // Set session cookie trước, rồi redirect về FE với URL sạch
     if (result.user.role === 'ADMIN') {
-      reply.header(
-        'Set-Cookie',
-        `admin_token=${encodeURIComponent(result.tokens.accessToken)}; Path=/; SameSite=Lax; HttpOnly${isProd ? '; Secure' : ''}; Max-Age=${ADMIN_COOKIE_MAX_AGE}`
-      );
+      setAdminCookie(reply, result.tokens.accessToken);
     } else {
       setSessionCookies(reply, result.tokens);
     }

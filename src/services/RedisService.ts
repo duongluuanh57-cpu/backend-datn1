@@ -41,6 +41,18 @@ class RedisService {
   }
 
   /**
+   * Xoá 1 key khỏi cache (dùng khi cần thu hồi dữ liệu đã cache)
+   */
+  async del(key: string): Promise<void> {
+    if (!isRedisAvailable()) return;
+    try {
+      await redis.del(`chat_cache:${key}`);
+    } catch (err) {
+      console.error('[Redis Del Error]', err);
+    }
+  }
+
+  /**
    * Tạo mã băm đơn giản cho câu hỏi
    */
   generateKey(text: string): string {

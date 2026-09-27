@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
 vi.mock('../../models/Voucher.ts', () => {
   const store: any[] = [];
   const mock: any = {
@@ -9,6 +8,7 @@ vi.mock('../../models/Voucher.ts', () => {
     findById: vi.fn().mockResolvedValue(null),
     countDocuments: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
+    updateOne: vi.fn().mockResolvedValue({}),
     deleteOne: vi.fn(),
     sort: vi.fn().mockReturnThis(),
     lean: vi.fn().mockImplementation(function (this: any) {
@@ -21,26 +21,11 @@ vi.mock('../../models/Voucher.ts', () => {
     VoucherType: {},
   };
 });
-
-vi.mock('../../models/UserVoucher.ts', () => ({
-  UserVoucher: {
-    find: vi.fn().mockReturnThis(),
-    findOne: vi.fn().mockReturnThis(),
-    create: vi.fn().mockResolvedValue({}),
-    lean: vi.fn().mockImplementation(function (this: any) {
-      return Promise.resolve(this._result ?? null);
-    }),
-  },
-}));
-
 import { VoucherService } from '../../services/VoucherService.ts';
 import { Voucher } from '../../models/Voucher.ts';
-import { UserVoucher } from '../../models/UserVoucher.ts';
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
-
 function chainWith(result: any) {
   (Voucher.find as any).mockReturnValue({
     sort: () => ({ lean: () => Promise.resolve(result) }),
@@ -49,7 +34,6 @@ function chainWith(result: any) {
     lean: () => Promise.resolve(result),
   });
 }
-
 describe('VoucherService', () => {
   describe('validate', () => {
     it('rejects non-existent voucher', async () => {
@@ -58,138 +42,98 @@ describe('VoucherService', () => {
       expect(result.valid).toBe(false);
       expect(result.message).toContain('không tồn tại');
     });
+    it('rejects voucher without a positive usage limit', async () => {
+      (Voucher.findOne as any).mockReturnValue({
+        lean: () => Promise.resolve({ code: 'X', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 10000 }),
+      });
+      const result = await VoucherService.validate('X', 100_000);
+      expect(result.valid).toBe(false);
+      expect(result.message).toContain('giới hạn');
+    });
 
     it('rejects inactive voucher', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'X', status: 'inactive', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 10000 }),
+        lean: () => Promise.resolve({ code: 'X', status: 'inactive', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 10000 }),
       });
       const result = await VoucherService.validate('X', 100_000);
       expect(result.valid).toBe(false);
       expect(result.message).toContain('vô hiệu hoá');
     });
-
     it('rejects expired voucher', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'X', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2023-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 10000 }),
+        lean: () => Promise.resolve({ code: 'X', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2023-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 10000 }),
       });
       const result = await VoucherService.validate('X', 100_000);
       expect(result.valid).toBe(false);
       expect(result.message).toContain('hết hạn');
     });
-
     it('rejects when minOrderAmount not met', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'X', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 500_000, type: 'fixed', value: 10000 }),
+        lean: () => Promise.resolve({ code: 'X', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 500_000, type: 'fixed', value: 10000 }),
       });
       const result = await VoucherService.validate('X', 100_000);
       expect(result.valid).toBe(false);
       expect(result.message).toContain('tối thiểu');
     });
-
     it('accepts valid fixed voucher and returns discountAmount', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'SAVE', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 50000 }),
+        lean: () => Promise.resolve({ code: 'SAVE', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 0, type: 'fixed', value: 50000 }),
       });
       const result = await VoucherService.validate('SAVE', 200_000);
       expect(result.valid).toBe(true);
       expect(result.discountAmount).toBe(50000);
     });
-
     it('calculates percentage discount capped at maxDiscount', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'PCT', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'percentage', value: 20, maxDiscount: 100_000 }),
+        lean: () => Promise.resolve({ code: 'PCT', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 0, type: 'percentage', value: 20, maxDiscount: 100_000 }),
       });
       const result = await VoucherService.validate('PCT', 1_000_000);
       expect(result.valid).toBe(true);
       expect(result.discountAmount).toBe(100_000);
     });
-
     it('calculates percentage discount without cap', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({ code: 'PCT2', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 0, usedCount: 0, minOrderAmount: 0, type: 'percentage', value: 10, maxDiscount: 0 }),
+        lean: () => Promise.resolve({ code: 'PCT2', status: 'active', startDate: new Date('2020-01-01'), endDate: new Date('2030-01-01'), maxUsage: 100, usedCount: 0, minOrderAmount: 0, type: 'percentage', value: 10, maxDiscount: 0 }),
       });
       const result = await VoucherService.validate('PCT2', 200_000);
       expect(result.valid).toBe(true);
       expect(result.discountAmount).toBe(20_000);
     });
-
-    it('rejects user voucher when personalized expiresAt has passed', async () => {
+    it('rejects legacy minigame-scope vouchers', async () => {
       (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({
-          _id: 'v123',
-          code: 'GAME-FS1',
-          status: 'active',
-          applicableTo: 'minigame',
-          startDate: new Date('2020-01-01'),
-          endDate: new Date('2030-01-01'),
-          type: 'fixed',
-          value: 0,
-          minOrderAmount: 0,
-        }),
+        lean: () => Promise.resolve(null),
       });
-      // Mock UserVoucher that expired yesterday
-      (UserVoucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({
-          userId: 'u1',
-          voucherId: 'v123',
-          isUsed: false,
-          expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-        }),
-      });
-
-      const result = await VoucherService.validate('GAME-FS1', 100_000, 'MEMBER', 'u1');
+      const result = await VoucherService.validate('OLD-GAME', 100_000);
       expect(result.valid).toBe(false);
-      expect(result.message).toContain('hết hạn');
-    });
-
-    it('accepts user voucher when personalized expiresAt is in the future', async () => {
-      (Voucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({
-          _id: 'v123',
-          code: 'GAME-FS1',
-          status: 'active',
-          applicableTo: 'minigame',
-          startDate: new Date('2020-01-01'),
-          endDate: new Date('2030-01-01'),
-          type: 'fixed',
-          value: 30000,
-          minOrderAmount: 0,
-        }),
-      });
-      // Mock UserVoucher that expires in 5 days
-      (UserVoucher.findOne as any).mockReturnValue({
-        lean: () => Promise.resolve({
-          userId: 'u1',
-          voucherId: 'v123',
-          isUsed: false,
-          expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
-        }),
-      });
-
-      const result = await VoucherService.validate('GAME-FS1', 100_000, 'MEMBER', 'u1');
-      expect(result.valid).toBe(true);
-      expect(result.discountAmount).toBe(30000);
     });
   });
-
   describe('create', () => {
-    it('uppercases code and preserves validityDays', async () => {
+    it('uppercases code without a scope field', async () => {
       (Voucher.create as any).mockResolvedValue({ code: 'MYCODE' });
       await VoucherService.create({
         code: 'mycode',
         type: 'fixed',
         value: 10000,
+        maxUsage: 100,
         startDate: '2025-01-01',
         endDate: '2025-12-31',
-        applicableTo: 'minigame',
-        validityDays: 14,
       });
       expect(Voucher.create).toHaveBeenCalledWith(
         expect.objectContaining({
           code: 'MYCODE',
-          validityDays: 14,
         })
       );
+      expect(Voucher.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ applicableTo: expect.anything() })
+      );
+    });
+  });
+
+  describe('incrementUsage', () => {
+    it('hides voucher when the new count reaches maxUsage', async () => {
+      await VoucherService.incrementUsage('v1');
+      const pipeline = (Voucher.updateOne as any).mock.calls[0][1];
+      expect(pipeline[0].$set.status.$cond[1]).toBe('inactive');
     });
   });
 
@@ -198,7 +142,6 @@ describe('VoucherService', () => {
       (Voucher.deleteOne as any).mockResolvedValue({ deletedCount: 1 });
       expect(await VoucherService.delete('v1')).toBe(true);
     });
-
     it('returns false when not found', async () => {
       (Voucher.deleteOne as any).mockResolvedValue({ deletedCount: 0 });
       expect(await VoucherService.delete('v1')).toBe(false);

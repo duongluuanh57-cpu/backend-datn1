@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { ProductService } from '../../services/ProductService.ts';
 import { Product } from '../../models/Product.ts';
+import { ProductVariant } from '../../models/ProductVariant.ts';
 
 export class ProductMutationController {
   /**
@@ -16,9 +17,10 @@ export class ProductMutationController {
       if (!product) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm để cập nhật' });
 
       // ── Auto-switch: kiểm tra đủ thông tin → isSupplemented + status ──
-      const updated = await Product.findById(id).populate('variants').lean();
+      const updated = await Product.findById(id).lean();
       if (updated) {
-        const isFull = !!(updated.name && updated.description && updated.description.length > 50 && updated.brandId && updated.image && updated.variants && updated.variants.length > 0 && updated.categories && updated.categories.length === 1);
+        const variantCount = await ProductVariant.countDocuments({ productId: id });
+        const isFull = !!(updated.name && updated.description && updated.description.length > 50 && updated.brandId && updated.image && variantCount > 0 && updated.categoryId);
         const isSupplemented = updated.aiData?.isSupplemented;
         if (isFull && (!isSupplemented || updated.status !== 'active')) {
           await Product.updateOne({ _id: id }, { $set: { 'aiData.isSupplemented': true, status: 'active' } });
@@ -100,34 +102,5 @@ export class ProductMutationController {
     }
   }
 
-  /**
-   * POST /api/products/:id/duplicate
-   */
-  static async duplicateProduct(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      const duplicated = await ProductService.duplicateProduct(id);
-      if (!duplicated) return reply.status(404).send({ success: false, message: 'Không tìm thấy sản phẩm gốc để nhân bản' });
-      return reply.status(200).send({ success: true, data: duplicated, message: 'Nhân bản sản phẩm thành công!' });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
 
-  /**
-   * POST /api/products/bulk-update
-   */
-  static async bulkUpdateProducts(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { ids, status, categories } = req.body as { ids: string[]; status?: string; categories?: string[] };
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
-      }
-      const success = await ProductService.bulkUpdateProducts(ids, { status, categories });
-      if (!success) return reply.status(400).send({ success: false, message: 'Không thể cập nhật các sản phẩm' });
-      return reply.status(200).send({ success: true, message: `Đã cập nhật thành công ${ids.length} sản phẩm` });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
 }

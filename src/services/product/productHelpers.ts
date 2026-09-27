@@ -17,19 +17,26 @@ export function parseSizes(sizeStr: string): { size: string; price: number; quan
   }).filter(item => item.size);
 }
 
-// Resolve category names from multiple sources (old + new format)
+/** Số ml suy ra từ chuỗi size ('50ml' → 50, 'abc' → 0). */
+export function parseCapacity(size: unknown): number {
+  return parseInt(String(size ?? '').replace(/\D/g, ''), 10) || 0;
+}
+
+/**
+ * Comparator sắp variant theo dung tích tăng dần (30ml → 50ml → 100ml).
+ * Thay cho cột `sortOrder` đã bỏ: thứ tự suy ra trực tiếp từ `size`.
+ */
+export function bySizeAsc(a: any, b: any): number {
+  return parseCapacity(a?.size) - parseCapacity(b?.size);
+}
+
+// Resolve tên danh mục từ product.categoryId (đã populate -> object có .name, hoặc string id).
 export function resolveCategoryNames(
   product: any,
   terms?: Record<string, any[]>,
-  oldCategoryName?: string,
 ): string {
-  if ((product.categories as any[])?.length > 0) {
-    const names = (product.categories as any[]).map((c: any) => c?.name).filter(Boolean);
-    if (names.length > 0) return names.join(', ');
-  }
-  if (oldCategoryName) return oldCategoryName;
-  const fallback = (product as any).categoryId || (product as any).category;
-  if (fallback && typeof fallback === 'string') return fallback;
+  const cat = (product as any).categoryId;
+  if (cat && typeof cat === 'object' && cat.name) return cat.name;
   if (terms?.category?.length) {
     const names = terms.category.map((t: any) => t?.name).filter(Boolean);
     if (names.length > 0) return names.join(', ');

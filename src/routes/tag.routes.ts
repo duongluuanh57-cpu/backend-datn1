@@ -9,9 +9,6 @@ export async function tagRoutes(app: FastifyInstance) {
   app.get('/:id/detail', TagController.getTagDetail);
   app.get('/:id/products', TagController.getTagProducts);
 
-  // Private routes (Admin only)
-  app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN')] }, TagController.createTag);
-  app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN')] }, TagController.updateTag);
-  app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN')] }, TagController.deleteTag);
-  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN')] }, TagController.bulkDeleteTags);
+  // Tag là dữ liệu cố định của web: chỉ cho phép bật/ẩn.
+  app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN')] }, TagController.updateTagStatus);
 }

@@ -22,7 +22,6 @@ export interface ISupportTicket extends Document {
   orderId?: mongoose.Types.ObjectId;
   ticketType: TicketType | string;
   department: Department | string;
-  title: string;
   status: TicketStatus;
   reopened?: boolean;
   closedAt?: Date;
@@ -44,7 +43,6 @@ const SupportTicketSchema = new Schema<ISupportTicket>(
       default: 'cskh', 
       index: true 
     },
-    title: { type: String, required: true, trim: true },
     status: { 
       type: String, 
       enum: ['open', 'in_progress', 'closed'], 

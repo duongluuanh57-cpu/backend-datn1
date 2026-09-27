@@ -3,12 +3,12 @@ import { MiniGameService } from '../services/MiniGameService.ts';
 
 // Ô 3 là trượt. weight = % xác suất (tổng 100)
 const SEGMENTS = [
-  { label: 'Freeship Hỏa tốc', discountType: 'fixed' as const,      discountAmount: 0,  won: true,  weight: 15 },
-  { label: 'Voucher giảm 5%',  discountType: 'percentage' as const, discountAmount: 5,  won: true,  weight: 20 },
-  { label: 'Freeship Hỏa tốc', discountType: 'fixed' as const,      discountAmount: 0,  won: true,  weight: 15 },
-  { label: 'Chúc bạn may mắn', discountType: 'percentage' as const, discountAmount: 0,  won: false, weight: 25 },
-  { label: 'Freeship Hỏa tốc', discountType: 'fixed' as const,      discountAmount: 0,  won: true,  weight: 15 },
-  { label: 'Voucher giảm 10%', discountType: 'percentage' as const, discountAmount: 10, won: true,  weight: 10 },
+  { label: '1.000 xu', rewardPoints: 1000, won: true, weight: 15 },
+  { label: '5.000 xu', rewardPoints: 5000, won: true, weight: 20 },
+  { label: '1.000 xu', rewardPoints: 1000, won: true, weight: 15 },
+  { label: 'Chúc bạn may mắn', rewardPoints: 0, won: false, weight: 25 },
+  { label: '1.000 xu', rewardPoints: 1000, won: true, weight: 15 },
+  { label: '10.000 xu', rewardPoints: 10000, won: true, weight: 10 },
 ];
 
 function pickRandomSegment() {
@@ -45,20 +45,19 @@ export class MiniGameController {
     await MiniGameService.syncUserSpinTurns(req.user!.userId);
     const reward = pickRandomSegment();
     const session = await MiniGameService.saveResult({ ...reward, gameType: 'wheel' }, req.user!.userId);
-    const won = reward.won && !!(session as any).reward?.voucherCode;
+    const points = (session as any).reward?.points ?? reward.rewardPoints ?? 0;
+    const won = reward.won && points > 0;
 
     return reply.send({
       success: true,
       data: {
         won,
-        voucherCode: (session as any).reward?.voucherCode,
-        discountType: reward.discountType,
-        discountAmount: reward.discountAmount,
+        points,
+        balance: (session as any).reward?.balanceAfter,
         label: reward.label,
-        segmentIndex: won ? reward.segmentIndex : 3, // Trượt thì kim dừng ô "May mắn"
-        expiresAt: (session as any).expiresAt,
+        segmentIndex: won ? reward.segmentIndex : 3,
         message: won
-          ? `Chúc mừng! Bạn đã trúng thưởng ${reward.label}!`
+          ? `Chúc mừng! Bạn đã nhận ${points.toLocaleString('vi-VN')} xu.`
           : 'Chúc bạn may mắn lần sau!',
       },
     });

@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UserController } from '../../../controllers/UserController.ts';
 import { AppError, ValidationError } from '../../../utils/errors.ts';
 
-vi.mock('../../../models/AuditLog.ts', () => ({
-  AuditLog: { create: vi.fn().mockResolvedValue({}) },
+vi.mock('../../../models/CartItem.ts', () => ({
+  default: { deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }) },
+  CartItem: { deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }) },
 }));
 
 vi.mock('../../../models/Order.ts', () => ({
@@ -27,6 +28,7 @@ vi.mock('../../../repositories/UserRepository.ts', () => ({
 }));
 
 import { UserRepository } from '../../../repositories/UserRepository.ts';
+import CartItem from '../../../models/CartItem.ts';
 
 function reply() {
   let statusCode = 200;
@@ -38,8 +40,12 @@ function reply() {
   return { reply: r, getStatus: () => statusCode, getBody: () => sentBody };
 }
 
-const adminUser: any = { _id: 'admin1', username: 'boss', email: 'a@a.com', role: 'ADMIN', status: 'active' };
-const normalUser: any = { _id: 'user1', username: 'u1', email: 'u@u.com', role: 'USER', status: 'active', passwordHash: 'h' };
+const ADMIN_ID = '507f1f77bcf86cd799439011';
+const USER_ID = '507f1f77bcf86cd799439012';
+const OTHER_ADMIN_ID = '507f1f77bcf86cd799439013';
+
+const adminUser: any = { _id: ADMIN_ID, username: 'boss', email: 'a@a.com', role: 'ADMIN', status: 'active' };
+const normalUser: any = { _id: USER_ID, username: 'u1', email: 'u@u.com', role: 'USER', status: 'active', passwordHash: 'h' };
 
 describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
   beforeEach(() => {
@@ -49,19 +55,19 @@ describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
   it('khóa USER bằng status=suspended → 200', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
     vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, status: 'suspended', toObject: () => ({ ...normalUser, status: 'suspended' }) } as any);
-    const req = { params: { id: 'user1' }, body: { status: 'suspended' }, user: { userId: 'admin1' } } as any;
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
     const { reply: rep, getStatus, getBody } = reply();
 
     await UserController.updateUser(req, rep);
 
     expect(getStatus()).toBe(200);
-    expect(UserRepository.update).toHaveBeenCalledWith('user1', { status: 'suspended' });
+    expect(UserRepository.update).toHaveBeenCalledWith(USER_ID, { status: 'suspended' });
     expect(getBody().data.passwordHash).toBeUndefined();
   });
 
   it('không cho admin khác sửa ADMIN → 403', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(adminUser);
-    const req = { params: { id: 'admin1' }, body: {}, user: { userId: 'other-admin' } } as any;
+    const req = { params: { id: ADMIN_ID }, body: {}, user: { userId: OTHER_ADMIN_ID } } as any;
     const { reply: rep } = reply();
 
     await expect(UserController.updateUser(req, rep)).rejects.toThrow(AppError);
@@ -70,7 +76,7 @@ describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
 
   it('không cho khóa ADMIN (kể cả tự khóa) → 403', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(adminUser);
-    const req = { params: { id: 'admin1' }, body: { status: 'suspended' }, user: { userId: 'admin1' } } as any;
+    const req = { params: { id: ADMIN_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
     const { reply: rep } = reply();
 
     await expect(UserController.updateUser(req, rep)).rejects.toThrow(AppError);
@@ -79,7 +85,7 @@ describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
 
   it('không cho đổi role của ADMIN → 403', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(adminUser);
-    const req = { params: { id: 'admin1' }, body: { role: 'USER' }, user: { userId: 'admin1' } } as any;
+    const req = { params: { id: ADMIN_ID }, body: { role: 'USER' }, user: { userId: ADMIN_ID } } as any;
     const { reply: rep } = reply();
 
     await expect(UserController.updateUser(req, rep)).rejects.toThrow(AppError);
@@ -88,7 +94,7 @@ describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
 
   it('user không tồn tại → 404', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(null);
-    const req = { params: { id: 'ghost' }, body: { status: 'suspended' }, user: { userId: 'admin1' } } as any;
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
     const { reply: rep } = reply();
 
     await expect(UserController.updateUser(req, rep)).rejects.toThrow(AppError);
@@ -98,13 +104,52 @@ describe('UserController.updateUser — khóa tài khoản (lock-only)', () => {
   it('cho nâng USER lên ADMIN qua PATCH (đường duy nhất) → 200', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
     vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, role: 'ADMIN', toObject: () => ({ ...normalUser, role: 'ADMIN' }) } as any);
-    const req = { params: { id: 'user1' }, body: { role: 'ADMIN' }, user: { userId: 'admin1' } } as any;
+    const req = { params: { id: USER_ID }, body: { role: 'ADMIN' }, user: { userId: ADMIN_ID } } as any;
     const { reply: rep, getStatus } = reply();
 
     await UserController.updateUser(req, rep);
 
     expect(getStatus()).toBe(200);
-    expect(UserRepository.update).toHaveBeenCalledWith('user1', { role: 'ADMIN' });
+    expect(UserRepository.update).toHaveBeenCalledWith(USER_ID, { role: 'ADMIN' });
+  });
+});
+
+describe('UserController.updateUser — I6 dọn giỏ hàng khi khóa', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('chuyển active → suspended → xóa cart_items của user', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, status: 'suspended', toObject: () => ({ ...normalUser, status: 'suspended' }) } as any);
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(CartItem.deleteMany).toHaveBeenCalledWith({ userId: USER_ID });
+  });
+
+  it('update không đổi status → KHÔNG đụng cart_items', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, toObject: () => ({ ...normalUser }) } as any);
+    const req = { params: { id: USER_ID }, body: { username: 'đổi tên' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(CartItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('user đã suspended sẵn, set suspended lại → KHÔNG xóa lại (idempotent)', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue({ ...normalUser, status: 'suspended' });
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, status: 'suspended', toObject: () => ({ ...normalUser, status: 'suspended' }) } as any);
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(CartItem.deleteMany).not.toHaveBeenCalled();
   });
 });
 
@@ -112,6 +157,7 @@ describe('UpdateUserSchema — validate enum ở route', () => {
   it('từ chối role/status rác và body rỗng', async () => {
     const { UpdateUserSchema } = await import('../../../types/user.types.ts');
     expect(UpdateUserSchema.safeParse({ status: 'banned' }).success).toBe(false);
+    expect(UpdateUserSchema.safeParse({ status: 'inactive' }).success).toBe(false);
     expect(UpdateUserSchema.safeParse({ role: 'SUPERUSER' }).success).toBe(false);
     expect(UpdateUserSchema.safeParse({}).success).toBe(false);
     expect(UpdateUserSchema.safeParse({ status: 'suspended' }).success).toBe(true);

@@ -2,12 +2,15 @@ import { getGeminiClient, PRIMARY_MODEL } from './aiClient.ts';
 
 export type ModerationCategory = 'profanity' | 'offensive' | 'hate' | 'spam' | 'other' | 'none';
 
-// Chỉ những nhóm này mới khóa vĩnh viễn (admin không thể duyệt lại)
-export const LOCKED_MODERATION_CATEGORIES: ModerationCategory[] = ['profanity', 'offensive', 'hate'];
+export interface ModerationResult {
+  isAppropriate: boolean;
+  reason?: string;
+  category: ModerationCategory;
+  /** false = AI không kiểm được (hỏng API/parse) → nội dung CHƯA qua kiểm duyệt, tính là true cũng sai */
+  checked: boolean;
+}
 
-export async function moderateContent(
-  text: string
-): Promise<{ isAppropriate: boolean; reason?: string; category: ModerationCategory }> {
+export async function moderateContent(text: string): Promise<ModerationResult> {
   try {
     const client = getGeminiClient();
     const model = client.getGenerativeModel({
@@ -37,11 +40,13 @@ Nội dung bình luận cần kiểm duyệt:
     return {
       isAppropriate: !!parsed.isAppropriate,
       reason: parsed.reason || '',
-      category
+      category,
+      checked: true
     };
   } catch (error: any) {
     console.error('❌ [AI Moderation Error]:', error.message);
-    // Fallback to true (appropriate) to avoid blocking user flow on external API errors
-    return { isAppropriate: true, category: 'none' };
+    // Không auto-approve: AI là trọng tài duy nhất (admin không còn duyệt tay), nên "chưa
+    // kiểm được" phải được báo ra ngoài để từ chối tạo review thay vì publish ẩn danh.
+    return { isAppropriate: true, reason: '', category: 'none', checked: false };
   }
 }

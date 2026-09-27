@@ -24,12 +24,9 @@ export class UserRepository {
     return User.findById(id).lean();
   }
 
-  /**
-   * Lay user kem cac truong bao mat mac dinh bi select:false
-   * (passwordChangedAt — dung de vo hieu hoa refresh token cu khi doi mat khau).
-   */
   static async findByIdWithSecurity(id: string): Promise<IUser | null> {
-    return User.findById(id).select('+passwordChangedAt').lean() as Promise<IUser | null>;
+    // Hiện tại không còn field select:false liên quan đến bảo mật.
+    return User.findById(id).lean();
   }
 
   static async update(id: string, data: Partial<IUser>): Promise<IUser | null> {

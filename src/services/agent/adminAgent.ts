@@ -15,7 +15,6 @@ import {
   updateProductFields,
   deleteProductById,
   findProductsByName,
-  ensureBrand,
   searchTrending,
 } from './adminTools.ts';
 import type { ToolResult } from './adminTools.ts';
@@ -121,13 +120,12 @@ HÀNH ĐỘNG:
 - "sửa/cập nhật giá X thành Y" → update_product
 - "xóa sản phẩm X" → delete_product
 - "tìm sản phẩm X" → find_products
-- "có hãng X chưa" / "tạo hãng X" → ensure_brand
 - "nước hoa trending" / "xu hướng" → search_trending
 - Không rõ intent → hỏi ngắn gọn`,
       messages: chatMessages,
       tools: {
         create_product: {
-          description: 'Tạo sản phẩm mới từ tên. AI sẽ tự động sinh toàn bộ thông tin (mô tả, giá, hãng, tags, size, ...)',
+          description: 'Tạo sản phẩm mới từ tên. Brand phải là một brand đã tồn tại; AI không được tạo brand mới.',
           parameters: z.object({
             name: z.string().describe('Tên sản phẩm cần tạo'),
             price: z.number().optional().describe('Giá mong muốn (nếu admin chỉ định)'),
@@ -196,17 +194,6 @@ HÀNH ĐỘNG:
           execute: async ({ query }: { query: string }) => {
             console.log(`🔧 [AdminAgent] Tool: find_products("${query}")`);
             const toolResult = await findProductsByName(query, 5);
-            return formatToolResult(toolResult);
-          },
-        },
-        ensure_brand: {
-          description: 'Kiểm tra hãng tồn tại. Nếu chưa có → AI tự động tạo hãng (origin, description) và lưu vào DB',
-          parameters: z.object({
-            name: z.string().describe('Tên hãng cần kiểm tra/tạo'),
-          }),
-          execute: async ({ name }: { name: string }) => {
-            console.log(`🔧 [AdminAgent] Tool: ensure_brand("${name}")`);
-            const toolResult = await ensureBrand(name);
             return formatToolResult(toolResult);
           },
         },

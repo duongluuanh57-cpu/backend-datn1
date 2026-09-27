@@ -1,9 +1,22 @@
 import type { FastifyInstance } from 'fastify';
+import mongoose from 'mongoose';
 import { redis } from '../config/redis.ts';
 import { Product } from '../models/Product.ts';
 import { Brand } from '../models/Brand.ts';
 import { OrderItem } from '../models/OrderItem.ts';
 import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware.ts';
+
+const VN_TZ = '+07:00';
+const VN_OFFSET_MS = 7 * 3600 * 1000;
+
+const orderItemProductStages: any[] = [
+  { $lookup: { from: 'product_variants', localField: 'productVariantId', foreignField: '_id', as: 'variant' } },
+  { $unwind: '$variant' },
+  { $lookup: { from: 'products', localField: 'variant.productId', foreignField: '_id', as: 'product' } },
+  { $unwind: '$product' },
+  { $lookup: { from: 'brands', localField: 'product.brandId', foreignField: '_id', as: 'brandDoc' } },
+  { $unwind: '$brandDoc' },
+];
 
 async function safeRedisGet(key: string): Promise<string | null> {
   try {
@@ -27,10 +40,12 @@ export async function funnelRoutes(fastify: FastifyInstance) {
   const VALID_METRICS = ['add_to_cart', 'reach_checkout', 'purchase'];
 
   function fmtDate(d: Date): string {
-    return d.toISOString().split('T')[0];
+    return new Date(d.getTime() + VN_OFFSET_MS).toISOString().split('T')[0];
   }
 
-  fastify.post('/track', async (request, _reply) => {
+  fastify.post('/track', {
+    config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+  }, async (request, _reply) => {
     try {
       const { brandId, stage } = request.body as { brandId: string; stage: string };
       if (!brandId || !stage) return { success: false, message: 'Missing brandId or stage' };
@@ -65,7 +80,7 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       const { brandId } = request.query as { brandId?: string };
 
       const cacheKey = brandId ? `funnel:data:${brandId}` : 'funnel:data:all';
-      const cached = await redis.get(cacheKey);
+      const cached = await safeRedisGet(cacheKey);
       if (cached) return JSON.parse(cached);
 
       const brands = await Brand.find().select('_id name').lean() as any[];
@@ -81,8 +96,8 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       for (const v of viewAgg) viewsByBrand.set(v._id.toString(), v.totalViews);
 
       const purchaseAgg = await OrderItem.aggregate([
-        { $match: { brand: { $ne: '', $exists: true } } },
-        { $group: { _id: '$brand', totalQty: { $sum: '$quantity' }, totalOrders: { $addToSet: '$orderId' } } },
+        ...orderItemProductStages,
+        { $group: { _id: '$brandDoc.name', totalQty: { $sum: '$quantity' }, totalOrders: { $addToSet: '$orderId' } } },
       ]);
       const purchaseByName = new Map<string, { purchases: number; orders: number; items: number }>();
       for (const p of purchaseAgg) {
@@ -131,7 +146,6 @@ export async function funnelRoutes(fastify: FastifyInstance) {
 
       const resultData = brandId ? data.filter(d => d.brandId === brandId) : data;
       const result = { success: true, data: resultData, brands: allBrands };
-      await redis.set(cacheKey, JSON.stringify(result), 'EX', 600);
       await safeRedisSet(cacheKey, JSON.stringify(result), 'EX', 600);
       return result;
     } catch (error: any) {
@@ -173,16 +187,11 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       }
 
       let brandNameStr = 'Tất cả thương hiệu';
-      let productIdsOfBrand: any[] = [];
-      let targetBrandName = '';
 
       if (!isAllBrands) {
         const brand = await Brand.findById(brandId).select('name').lean() as any;
         if (!brand) return { success: false, message: 'Brand not found' };
         brandNameStr = brand.name;
-        targetBrandName = brand.name;
-        const productsOfBrand = await Product.find({ brandId: brand._id }).select('_id').lean();
-        productIdsOfBrand = productsOfBrand.map(p => p._id);
       }
 
       const sinceCurrent = new Date(now);
@@ -194,12 +203,6 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       sinceBenchmark.setHours(0, 0, 0, 0);
 
       const orderItemMatch: any = { createdAt: { $gte: sinceBenchmark } };
-      if (!isAllBrands) {
-        orderItemMatch.$or = [
-          { brand: targetBrandName },
-          { productId: { $in: productIdsOfBrand } }
-        ];
-      }
 
       const currentMap = new Map<string, number>();
       const benchmarkMap = new Map<string, number>();
@@ -208,14 +211,12 @@ export async function funnelRoutes(fastify: FastifyInstance) {
 
       const orderItemAgg = await OrderItem.aggregate([
         { $match: orderItemMatch },
-        { $lookup: { from: 'products', localField: 'productId', foreignField: '_id', as: 'product' } },
-        { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-        { $lookup: { from: 'brands', localField: 'product.brandId', foreignField: '_id', as: 'brandDoc' } },
-        { $unwind: { path: '$brandDoc', preserveNullAndEmptyArrays: true } },
+        ...orderItemProductStages,
+        ...(isAllBrands ? [] : [{ $match: { 'brandDoc._id': new mongoose.Types.ObjectId(brandId) } }]),
         {
           $project: {
-            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            brandName: { $ifNull: ['$brand', '$brandDoc.name'] },
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: VN_TZ } },
+            brandName: '$brandDoc.name',
             quantity: '$quantity',
             createdAt: '$createdAt',
           }
@@ -329,16 +330,11 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       if (heatmapCached) return JSON.parse(heatmapCached);
 
       let brandNameStr = 'Tất cả thương hiệu';
-      let productIdsOfBrand: any[] = [];
-      let targetBrandName = '';
 
       if (!isAllBrands) {
         const brand = await Brand.findById(brandId).select('name').lean() as any;
         if (!brand) return { success: false, message: 'Brand not found' };
         brandNameStr = brand.name;
-        targetBrandName = brand.name;
-        const productsOfBrand = await Product.find({ brandId: brand._id }).select('_id').lean();
-        productIdsOfBrand = productsOfBrand.map(p => p._id);
       }
 
       const dayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
@@ -352,12 +348,6 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       since.setHours(0, 0, 0, 0);
 
       const orderItemMatch: any = { createdAt: { $gte: since, $lte: now } };
-      if (!isAllBrands) {
-        orderItemMatch.$or = [
-          { brand: targetBrandName },
-          { productId: { $in: productIdsOfBrand } }
-        ];
-      }
 
       const brandBreakdownByHour: Record<number, Array<{ brandName: string; count: number }>> = {};
       const brandBreakdownByDay: Record<number, Array<{ brandName: string; count: number }>> = {};
@@ -365,15 +355,13 @@ export async function funnelRoutes(fastify: FastifyInstance) {
 
       const itemsAgg = await OrderItem.aggregate([
         { $match: orderItemMatch },
-        { $lookup: { from: 'products', localField: 'productId', foreignField: '_id', as: 'product' } },
-        { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-        { $lookup: { from: 'brands', localField: 'product.brandId', foreignField: '_id', as: 'brandDoc' } },
-        { $unwind: { path: '$brandDoc', preserveNullAndEmptyArrays: true } },
+        ...orderItemProductStages,
+        ...(isAllBrands ? [] : [{ $match: { 'brandDoc._id': new mongoose.Types.ObjectId(brandId) } }]),
         {
           $project: {
-            dow: { $dayOfWeek: '$createdAt' },
-            hour: { $hour: '$createdAt' },
-            brandName: { $ifNull: ['$brand', '$brandDoc.name'] },
+            dow: { $dayOfWeek: { date: '$createdAt', timezone: VN_TZ } },
+            hour: { $hour: { date: '$createdAt', timezone: VN_TZ } },
+            brandName: '$brandDoc.name',
             quantity: '$quantity',
           }
         },
@@ -446,12 +434,13 @@ export async function funnelRoutes(fastify: FastifyInstance) {
       const since = new Date();
       since.setDate(since.getDate() - 90);
       const items = await OrderItem.aggregate([
-        { $match: { brand: { $ne: '', $exists: true }, createdAt: { $gte: since } } },
+        { $match: { createdAt: { $gte: since } } },
+        ...orderItemProductStages,
         { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', pipeline: [{ $project: { userId: 1, 'shippingInfo.customerName': 1 } }], as: 'order' } },
         { $unwind: '$order' },
         { $match: { 'order.userId': { $exists: true } } },
         { $project: {
-          brand: 1,
+          brand: '$brandDoc.name',
           userId: { $ifNull: ['$order.userId', { $concat: ['guest:', '$order.shippingInfo.customerName'] }] },
           revenue: { $multiply: [{ $toDouble: '$price' }, { $toDouble: '$quantity' }] },
           createdAt: 1,
@@ -483,7 +472,7 @@ export async function funnelRoutes(fastify: FastifyInstance) {
         .sort((a, b) => (b.new + b.returning) - (a.new + a.returning))
         .slice(0, 15);
 
-      await redis.set(cacheKey, JSON.stringify(data), 'EX', 300);
+      await safeRedisSet(cacheKey, JSON.stringify(data), 'EX', 300);
 
       return { success: true, data, cached: false };
     } catch (error: any) {

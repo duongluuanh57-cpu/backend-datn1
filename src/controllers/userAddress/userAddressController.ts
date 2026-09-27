@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { UserAddress } from '../../models/UserAddress.ts';
 import { User } from '../../models/User.ts';
+import type { CreateAddressInput, UpdateAddressInput } from '../../types/address.types.ts';
 import mongoose from 'mongoose';
 
 export class UserAddressController {
@@ -13,7 +14,8 @@ export class UserAddressController {
       const userId = (req as any).user?.userId;
       if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
 
-      const addresses = await UserAddress.find({ userId: new mongoose.Types.ObjectId(userId) })
+      const uid = new mongoose.Types.ObjectId(userId);
+      const addresses = await UserAddress.find({ userId: uid })
         .sort({ isDefault: -1, createdAt: -1 })
         .lean();
 
@@ -32,36 +34,23 @@ export class UserAddressController {
       const userId = (req as any).user?.userId;
       if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
 
+      const uid = new mongoose.Types.ObjectId(userId);
       const user = await User.findById(userId).lean();
       if (!user) return reply.status(404).send({ success: false, message: 'Người dùng không tồn tại' });
 
-      const body = req.body as {
-        addressType?: 'home' | 'office';
-        fullName?: string;
-        phoneNumber?: string;
-        address?: string;
-        province?: string;
-        district?: string;
-        ward?: string;
-        latitude?: number;
-        longitude?: number;
-        isDefault?: boolean;
-      };
+      const body = req.body as CreateAddressInput;
 
       // Nếu đây là địa chỉ mặc định, bỏ mặc định của các địa chỉ cũ
       if (body.isDefault) {
-        await UserAddress.updateMany(
-          { userId: new mongoose.Types.ObjectId(userId) },
-          { $set: { isDefault: false } }
-        );
+        await UserAddress.updateMany({ userId: uid }, { $set: { isDefault: false } });
       }
 
       // Nếu chưa có địa chỉ nào, tự động set isDefault = true
-      const existingCount = await UserAddress.countDocuments({ userId: new mongoose.Types.ObjectId(userId) });
+      const existingCount = await UserAddress.countDocuments({ userId: uid });
       const isDefault = body.isDefault ?? existingCount === 0;
 
       const newAddress = await UserAddress.create({
-        userId: new mongoose.Types.ObjectId(userId),
+        userId: uid,
         addressType: body.addressType || 'home',
         fullName: body.fullName?.trim() || '',
         phoneNumber: body.phoneNumber?.trim() || '',
@@ -94,23 +83,14 @@ export class UserAddressController {
         return reply.status(400).send({ success: false, message: 'ID địa chỉ không hợp lệ' });
       }
 
-      const body = req.body as {
-        addressType?: 'home' | 'office';
-        fullName?: string;
-        phoneNumber?: string;
-        address?: string;
-        province?: string;
-        district?: string;
-        ward?: string;
-        latitude?: number;
-        longitude?: number;
-        isDefault?: boolean;
-      };
+      const uid = new mongoose.Types.ObjectId(userId);
+      const addrId = new mongoose.Types.ObjectId(id);
+      const body = req.body as UpdateAddressInput;
 
       // Nếu set isDefault = true, bỏ mặc định của địa chỉ khác
       if (body.isDefault) {
         await UserAddress.updateMany(
-          { userId: new mongoose.Types.ObjectId(userId), _id: { $ne: new mongoose.Types.ObjectId(id) } },
+          { userId: uid, _id: { $ne: addrId } },
           { $set: { isDefault: false } }
         );
       }
@@ -128,7 +108,7 @@ export class UserAddressController {
       if (body.isDefault !== undefined) updateData.isDefault = body.isDefault;
 
       const updated = await UserAddress.findOneAndUpdate(
-        { _id: new mongoose.Types.ObjectId(id), userId: new mongoose.Types.ObjectId(userId) },
+        { _id: addrId, userId: uid },
         { $set: updateData },
         { new: true }
       );
@@ -157,10 +137,10 @@ export class UserAddressController {
         return reply.status(400).send({ success: false, message: 'ID địa chỉ không hợp lệ' });
       }
 
-      const deleted = await UserAddress.findOneAndDelete({
-        _id: new mongoose.Types.ObjectId(id),
-        userId: new mongoose.Types.ObjectId(userId),
-      });
+      const uid = new mongoose.Types.ObjectId(userId);
+      const addrId = new mongoose.Types.ObjectId(id);
+
+      const deleted = await UserAddress.findOneAndDelete({ _id: addrId, userId: uid });
 
       if (!deleted) {
         return reply.status(404).send({ success: false, message: 'Không tìm thấy địa chỉ' });
@@ -168,7 +148,7 @@ export class UserAddressController {
 
       // Nếu xóa địa chỉ mặc định, tự động set địa chỉ mới nhất làm mặc định
       if (deleted.isDefault) {
-        const next = await UserAddress.findOne({ userId: new mongoose.Types.ObjectId(userId) }).sort({ createdAt: -1 });
+        const next = await UserAddress.findOne({ userId: uid }).sort({ createdAt: -1 });
         if (next) {
           await UserAddress.updateOne({ _id: next._id }, { $set: { isDefault: true } });
         }
@@ -194,15 +174,15 @@ export class UserAddressController {
         return reply.status(400).send({ success: false, message: 'ID địa chỉ không hợp lệ' });
       }
 
+      const uid = new mongoose.Types.ObjectId(userId);
+      const addrId = new mongoose.Types.ObjectId(id);
+
       // Bỏ mặc định của tất cả địa chỉ khác
-      await UserAddress.updateMany(
-        { userId: new mongoose.Types.ObjectId(userId) },
-        { $set: { isDefault: false } }
-      );
+      await UserAddress.updateMany({ userId: uid }, { $set: { isDefault: false } });
 
       // Set địa chỉ này làm mặc định
       const updated = await UserAddress.findOneAndUpdate(
-        { _id: new mongoose.Types.ObjectId(id), userId: new mongoose.Types.ObjectId(userId) },
+        { _id: addrId, userId: uid },
         { $set: { isDefault: true } },
         { new: true }
       );

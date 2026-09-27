@@ -13,8 +13,19 @@ vi.mock('../../models/FlashSale.ts', () => {
   });
 
   const mock: any = vi.fn(function (this: any, data: any) { return doc(data); });
+  const chainable = (result: any = null) => {
+    const q: any = {
+      select: () => q,
+      populate: () => q,
+      sort: () => q,
+      limit: () => q,
+      lean: async () => result,
+      then: (res: any, rej: any) => Promise.resolve(result).then(res, rej),
+    };
+    return q;
+  };
   mock.findById = vi.fn();
-  mock.findOne = vi.fn();
+  mock.findOne = vi.fn().mockReturnValue(chainable(null));
   mock.find = vi.fn();
   mock.updateMany = vi.fn().mockResolvedValue({ modifiedCount: 0 });
   mock.updateOne = vi.fn().mockResolvedValue({ modifiedCount: 1 });
@@ -38,20 +49,38 @@ vi.mock('../../services/product/productFormatterService.ts', () => ({
   formatMultipleProducts: vi.fn(),
 }));
 
+vi.mock('../../graphql/schema.ts', () => ({
+  invalidateHomepageCache: vi.fn(),
+}));
+
 import { FlashSaleService } from '../../services/FlashSaleService.ts';
 import { FlashSale } from '../../models/FlashSale.ts';
-import { Product } from '../../models/Product.ts';
 import { redis } from '../../config/redis.ts';
 import { formatMultipleProducts } from '../../services/product/productFormatterService.ts';
+import { invalidateHomepageCache } from '../../graphql/schema.ts';
 
 const oid = (s: string) => {
   const hex = s.replace(/[^0-9a-fA-F]/g, '0') || '0';
   return new mongoose.Types.ObjectId(hex.padEnd(24, '0').slice(0, 24));
 };
 
+const nullChain = () => {
+  const q: any = {
+    select: () => q,
+    populate: () => q,
+    sort: () => q,
+    limit: () => q,
+    lean: async () => null,
+    then: (res: any, rej: any) => Promise.resolve(null).then(res, rej),
+  };
+  return q;
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   (FlashSale.find as any).mockReturnValue({ lean: vi.fn().mockResolvedValue([]) });
+  (FlashSale.findOne as any).mockReturnValue(nullChain());
+  (redis.keys as any).mockResolvedValue(['products:public:dummy']);
 });
 
 describe('FlashSaleService', () => {
@@ -74,15 +103,18 @@ describe('FlashSaleService', () => {
   });
 
   describe('clearCache', () => {
-    it('deletes known keys and products:public:* keys', async () => {
-      (redis.keys as any).mockResolvedValue(['products:public:page1', 'products:public:page2']);
+    it('scans current section/homepage patterns and clears the in-memory homepage cache', async () => {
+      (redis.keys as any).mockImplementation(async (pattern: string) =>
+        pattern === 'products:public:*' ? ['products:public:page1', 'products:public:page2'] : []
+      );
       await FlashSaleService.clearCache();
-      expect(redis.del).toHaveBeenCalled();
-      const args = (redis.del as any).mock.calls[0][0];
-      expect(args).toContain('homepage:v4');
-      expect(args).toContain('products:trending:tag:v5');
-      expect(redis.keys).toHaveBeenCalledWith('products:public:*');
+      // Quét theo prefix các key hiện hành (không hard-code version cũ)
+      expect(redis.keys).toHaveBeenCalledWith('homepage:*');
+      expect(redis.keys).toHaveBeenCalledWith('products:limited:*');
+      expect(redis.keys).toHaveBeenCalledWith('products:new:*');
       expect(redis.del).toHaveBeenCalledWith(['products:public:page1', 'products:public:page2']);
+      // Hủy cả tầng cache in-memory của trang chủ
+      expect(invalidateHomepageCache).toHaveBeenCalled();
     });
   });
 
@@ -143,6 +175,24 @@ describe('FlashSaleService', () => {
       expect(callArgs.items[0].stockLimit).toBe(0);
       expect(callArgs.items[0].soldCount).toBe(4);
     });
+
+    it('throws when a product already belongs to an overlapping Flash Sale', async () => {
+      const conflictChain: any = {
+        select: () => conflictChain,
+        lean: async () => ({ name: 'Conflict FS' }),
+        then: (res: any, rej: any) => Promise.resolve({ name: 'Conflict FS' }).then(res, rej),
+      };
+      (FlashSale.findOne as any).mockReturnValue(conflictChain);
+      const productId = new mongoose.Types.ObjectId().toString();
+      await expect(
+        FlashSaleService.create({
+          name: 'X',
+          startDate: '2030-01-01',
+          endDate: '2030-01-02',
+          items: [{ productId, extraDiscountPercentage: 10, stockLimit: 5, soldCount: 0 }],
+        } as any)
+      ).rejects.toThrow('đã thuộc đợt Flash Sale "Conflict FS"');
+    });
   });
 
   describe('update', () => {
@@ -198,46 +248,6 @@ describe('FlashSaleService', () => {
       expect(FlashSale.findByIdAndDelete).toHaveBeenCalledWith('fs1');
       expect(result).toEqual({ _id: 'fs1' });
       expect(redis.del).toHaveBeenCalled();
-    });
-  });
-
-  describe('assignProduct', () => {
-    it('throws on invalid productId', async () => {
-      await expect(FlashSaleService.assignProduct('nope', null)).rejects.toThrow('productId không hợp lệ');
-    });
-
-    it('throws when product does not exist', async () => {
-      (Product.exists as any).mockResolvedValue(false);
-      await expect(FlashSaleService.assignProduct(oid('a').toString(), null)).rejects.toThrow('Không tìm thấy sản phẩm');
-    });
-
-    it('throws when flash sale not found', async () => {
-      (Product.exists as any).mockResolvedValue(true);
-      (FlashSale.findById as any).mockResolvedValue(null);
-      await expect(FlashSaleService.assignProduct(oid('a').toString(), oid('b').toString())).rejects.toThrow('Không tìm thấy sự kiện Flash Sale');
-    });
-
-    it('adds product to flash sale and clears cache', async () => {
-      (Product.exists as any).mockResolvedValue(true);
-      const fs: any = { items: [], save: vi.fn().mockResolvedValue({ _id: 'fs1' }) };
-      (FlashSale.findById as any).mockResolvedValue(fs);
-      const result = await FlashSaleService.assignProduct(oid('a').toString(), oid('b').toString(), 20, 5);
-      expect(FlashSale.updateMany).toHaveBeenCalled();
-      expect(fs.items).toHaveLength(1);
-      expect(fs.items[0].extraDiscountPercentage).toBe(20);
-      expect(fs.items[0].stockLimit).toBe(5);
-      expect(fs.save).toHaveBeenCalled();
-      expect(redis.del).toHaveBeenCalled();
-      expect(result).toEqual({ _id: 'fs1' });
-    });
-
-    it('rejects when flash sale already has 20 items', async () => {
-      (Product.exists as any).mockResolvedValue(true);
-      const items = Array.from({ length: 20 }, () => ({ productId: oid('x').toString() }));
-      const fs: any = { items, save: vi.fn() };
-      (FlashSale.findById as any).mockResolvedValue(fs);
-      await expect(FlashSaleService.assignProduct(oid('a').toString(), oid('b').toString()))
-        .rejects.toThrow('tối đa 20 sản phẩm');
     });
   });
 

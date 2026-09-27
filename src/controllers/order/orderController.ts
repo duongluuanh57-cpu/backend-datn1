@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { Order } from '../../models/Order.ts';
 import { OrderItem } from '../../models/OrderItem.ts';
 import { User } from '../../models/User.ts';
-import { enhanceItemsWithProductData, populateOrderTotals, autoCancelExpiredVNPayOrders, unmarkSoldCounted } from './orderHelpers.ts';
+import { enhanceItemsWithProductData, populateOrderTotals, attachShippingInfo, autoCancelExpiredVNPayOrders, cancelOrderWithRestore, paidOrderCancelBlockMessage } from './orderHelpers.ts';
 import { StockService } from '../../services/cart/StockService.ts';
 
 /**
@@ -35,7 +35,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
     const orders = await Order.find(query)
       .sort({ createdAt: -1 })
       .populate('voucherId')
-      .populate('shippingMethodId')
+      .populate('paymentMethodId', 'name code icon')
       .lean();
 
     for (const order of orders) {
@@ -44,6 +44,7 @@ export async function getMyOrders(req: FastifyRequest, reply: FastifyReply) {
         await enhanceItemsWithProductData(items);
         populateOrderTotals(order, items);
       }
+      attachShippingInfo(order);
       order.items = items;
     }
 
@@ -86,21 +87,23 @@ export async function cancelOrder(req: FastifyRequest, reply: FastifyReply) {
       });
     }
 
-    const { cancelReason } = (req.body || {}) as { cancelReason?: string };
-    const validReasons = ['want_change_voucher', 'want_change_product', 'complicated_payment', 'found_cheaper', 'changed_mind'];
-
-    if (cancelReason && validReasons.includes(cancelReason)) {
-      order.cancelReason = cancelReason as any;
+    const blocked = paidOrderCancelBlockMessage(order);
+    if (blocked) {
+      return reply.status(400).send({ success: false, message: blocked });
     }
 
-    order.status = 'cancelled';
-    await order.save();
+    // Hủy theo CAS status → cancelled: hoàn kho + hoàn voucher + trừ lượt bán
+    // chỉ chạy ở luồng thắng, nên bấm hủy 2 lần không thể hoàn kép.
+    const cancelled = await cancelOrderWithRestore(order._id, {
+      filter: { status: 'pending', paymentStatus: { $ne: 'paid' }, userId: new mongoose.Types.ObjectId(userId) },
+    });
 
-    // Trả lại lượt bán nếu đơn đã được cộng soldCount trước đó
-    await unmarkSoldCounted(order._id);
-
-    // Hoàn kho + hoàn voucher (idempotent — retry không hoàn kép)
-    await StockService.restoreOrderResources(order._id);
+    if (!cancelled) {
+      return reply.status(400).send({
+        success: false,
+        message: 'Chỉ có thể hủy đơn hàng ở trạng thái Chờ xác nhận',
+      });
+    }
 
     return reply.status(200).send({ success: true, message: 'Hủy đơn hàng thành công' });
   } catch (error: any) {
@@ -131,7 +134,7 @@ export async function getOrderById(req: FastifyRequest, reply: FastifyReply) {
       userId: new mongoose.Types.ObjectId(userId),
     })
       .populate('voucherId')
-      .populate('shippingMethodId')
+      .populate('paymentMethodId', 'name code icon')
       .lean();
 
     if (!order) {
@@ -141,6 +144,7 @@ export async function getOrderById(req: FastifyRequest, reply: FastifyReply) {
     const items = await OrderItem.find({ orderId: order._id }).lean();
     await enhanceItemsWithProductData(items);
     populateOrderTotals(order, items);
+    attachShippingInfo(order);
     order.items = items;
 
     return reply.status(200).send({ success: true, data: order });

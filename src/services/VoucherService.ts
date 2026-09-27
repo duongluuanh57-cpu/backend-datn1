@@ -1,194 +1,23 @@
-import { Voucher, type VoucherType, type VoucherScope } from '../models/Voucher.ts';
-import { MiniGameSession } from '../models/MiniGameSession.ts';
-import { UserVoucher } from '../models/UserVoucher.ts';
-import { User } from '../models/User.ts';
+import { Voucher, type VoucherType } from '../models/Voucher.ts';
 
-// Thứ tự hạng từ thấp đến cao
-export const TIER_ORDER: Record<string, number> = {
-  MEMBER: 0,
-  member: 0,
-  'Thành viên': 0,
-  'thành viên': 0,
-  dong: 0,
-  Dong: 0,
-  Bronze: 0,
-  bronze: 0,
-  Bac: 1,
-  bac: 1,
-  'Bạc': 1,
-  'bạc': 1,
-  Silver: 1,
-  silver: 1,
-  Vang: 2,
-  vang: 2,
-  'Vàng': 2,
-  'vàng': 2,
-  Gold: 2,
-  gold: 2,
-  KimCuong: 3,
-  kimcuong: 3,
-  'Kim Cương': 3,
-  'kim cương': 3,
-  Diamond: 3,
-  diamond: 3,
-};
-
+/**
+ * Voucher dùng chung cho checkout. Membership và minigame không còn là
+ * loại voucher; minigame chỉ cộng xu qua RewardService.
+ */
 export class VoucherService {
-  /**
-   * Đảm bảo luôn có đúng 5 voucher cố định cho Vòng Quay May Mắn (applicableTo = 'minigame')
-   */
-  static async ensureDefaultMinigameVouchers() {
-    const minigameVouchers = await Voucher.find({ applicableTo: 'minigame' }).lean();
-    if (minigameVouchers.length < 5) {
-      const defaults = [
-        { code: 'GAME-FS1', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-DISC5', type: 'percentage' as const, value: 5, voucherCategory: 'discount' as const, maxDiscount: 100000, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-FS2', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-FS3', type: 'fixed' as const, value: 0, voucherCategory: 'freeship' as const, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
-        { code: 'GAME-DISC10', type: 'percentage' as const, value: 10, voucherCategory: 'discount' as const, maxDiscount: 100000, applicableTo: 'minigame' as const, status: 'active' as const, startDate: new Date('2025-01-01'), endDate: new Date('2030-12-31'), validityDays: 7, maxUsage: -1, minOrderAmount: 0 },
-      ];
-
-      for (let i = minigameVouchers.length; i < 5; i++) {
-        const def = defaults[i];
-        const exists = await Voucher.findOne({ code: def.code });
-        if (!exists) {
-          await Voucher.create(def);
-        }
-      }
-    }
-  }
-
-  /**
-   * Đồng bộ tự động trạng thái các voucher hết lượt hoặc có maxUsage = 0 về Ẩn (inactive)
-   */
-  static async syncVouchersState() {
-    // Tự động gán voucherCategory = 'freeship' cho các voucher freeship cũ
-    await Voucher.updateMany(
-      {
-        $or: [
-          { code: /^FSEXPRESS/i },
-          { type: 'fixed', value: 0 }
-        ],
-        voucherCategory: { $exists: false }
-      },
-      { $set: { voucherCategory: 'freeship' } }
-    );
-
-    // Đảm bảo các voucher của minigame có validityDays mặc định là 7 nếu chưa đặt
-    await Voucher.updateMany(
-      { applicableTo: 'minigame', $or: [{ validityDays: { $exists: false } }, { validityDays: 0 }, { validityDays: null }] },
-      { $set: { validityDays: 7 } }
-    );
-
-    // Đảm bảo các voucher của minigame luôn active và khuôn mẫu không bao giờ hết hạn
-    await Voucher.updateMany(
-      { applicableTo: 'minigame' },
-      {
-        $set: {
-          status: 'active',
-          startDate: new Date('2020-01-01'),
-          endDate: new Date('2099-12-31'),
-          maxUsage: -1,
-        },
-      }
-    );
-
-    // Tự động tạo 5 voucher mặc định cho Vòng quay may mắn nếu chưa có đủ 5
-    await this.ensureDefaultMinigameVouchers();
-  }
-
-  /**
-   * Lấy tất cả voucher của tenant
-   */
   static async getAll() {
-    await this.syncVouchersState();
     return Voucher.find({}).sort({ createdAt: -1 }).lean();
   }
 
-  /**
-   * Lấy voucher đang hoạt động (còn hạn, còn lượt) — lọc theo hạng và voucher trúng game của user
-   * @param userTier Hạng của user (VD: 'MEMBER', 'Bac', 'Vang', 'KimCuong'), null/undefined = không lọc
-   * @param userId ID của user hiện tại, dùng để hiển thị voucher trúng từ mini game & membership
-   */
-  static async getActive(userTier?: string | null, userId?: string | null) {
-    await this.syncVouchersState();
+  static async getActive(_userTier?: string | null, _userId?: string | null) {
     const now = new Date();
-    let userLevel = TIER_ORDER[userTier || 'MEMBER'] ?? 0;
-
-    if (userId) {
-      const u = await User.findById(userId).select('memberTier').lean();
-      if (u?.memberTier) {
-        userLevel = TIER_ORDER[u.memberTier] ?? userLevel;
-      }
-    }
-
-    // 1. Lấy voucher toàn sàn & membership công khai
-    const publicVouchers = await Voucher.find({
+    return Voucher.find({
       status: 'active',
-      applicableTo: { $in: ['all', 'membership'] },
+      maxUsage: { $gt: 0 },
+      $expr: { $lt: [{ $ifNull: ['$usedCount', 0] }, '$maxUsage'] },
       startDate: { $lte: now },
       endDate: { $gte: now },
     }).sort({ createdAt: -1 }).lean();
-
-    // Lọc theo minTier: chỉ lấy voucher mà user đủ hạng (minTier <= userLevel)
-    const eligiblePublicVouchers = publicVouchers.filter((v: any) => {
-      if (v.minTier) {
-        const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
-        if (userLevel < requiredLevel) return false;
-      }
-      return true;
-    });
-
-    // 2. Lấy tất cả voucher được cấp riêng cho user này (từ membership và minigame) qua UserVoucher
-    let grantedVouchers: any[] = [];
-    if (userId) {
-      const uVouchers = await UserVoucher.find({
-        userId,
-        isUsed: false,
-      }).populate('voucherId').lean();
-
-      grantedVouchers = uVouchers
-        .map((uv: any) => {
-          const v = uv.voucherId;
-          if (!v) return null;
-          if (v.status !== 'active') return null;
-
-          // Kiểm tra hạn sử dụng cá nhân hóa (đếm ngược từ lúc nhận)
-          if (uv.expiresAt && new Date(uv.expiresAt) < now) {
-            return null; // Đã quá hạn đếm ngược của user này
-          }
-          // Nếu chưa đến ngày kích hoạt (startDate trong tương lai)
-          if (uv.startDate && new Date(uv.startDate) > now) {
-            return null;
-          }
-          // Fallback cho voucher cũ không có expiresAt riêng: kiểm tra theo endDate của voucher
-          if (!uv.expiresAt && v.applicableTo !== 'minigame') {
-            if (new Date(v.startDate) > now || new Date(v.endDate) < now) return null;
-          }
-
-          if (v.minTier) {
-            const requiredLevel = TIER_ORDER[v.minTier] ?? 0;
-            if (userLevel < requiredLevel) return null;
-          }
-          return {
-            ...v,
-            startDate: uv.startDate || v.startDate,
-            endDate: uv.expiresAt || v.endDate,
-            expiresAt: uv.expiresAt,
-            userVoucherId: uv._id, // Lưu ID của UserVoucher để tham chiếu nếu cần
-          };
-        })
-        .filter(Boolean);
-    }
-
-    // Gộp cả 2 danh sách lại và loại bỏ trùng lặp nếu có trùng code
-    const allActive = [...eligiblePublicVouchers, ...grantedVouchers];
-    const uniqueMap = new Map<string, any>();
-    for (const v of allActive) {
-      uniqueMap.set(v.code, v);
-    }
-
-    return Array.from(uniqueMap.values());
   }
 
   static async getById(id: string) {
@@ -199,33 +28,27 @@ export class VoucherService {
     code: string;
     type: VoucherType;
     value: number;
-    applicableTo?: VoucherScope;
     voucherCategory?: 'discount' | 'freeship';
-    minTier?: string;
     minOrderAmount?: number;
     maxDiscount?: number;
-    maxUsage?: number;
+    maxUsage: number;
     startDate: string;
     endDate: string;
-    validityDays?: number;
     status?: 'active' | 'inactive';
   }) {
-    if (data.applicableTo === 'minigame') {
-      const minigameCount = await Voucher.countDocuments({ applicableTo: 'minigame' });
-      if (minigameCount >= 5) {
-        throw new Error('Số lượng mã giảm giá Mini Game đã đạt tối đa 5 mã cố định cho Vòng Quay May Mắn.');
-      }
-    }
-    const maxUsage = data.maxUsage ?? (data.applicableTo === 'minigame' ? -1 : 0);
-    const status = data.status || 'active';
-    const validityDays = data.validityDays !== undefined ? Number(data.validityDays) || 0 : (data.applicableTo === 'minigame' ? 7 : (data.applicableTo === 'membership' ? 30 : 0));
-
+    // Whitelist tường minh: không spread nguyên body để client không set được
+    // usedCount / isPublic ngoài luồng thông thường.
     return Voucher.create({
-      ...data,
-      maxUsage,
-      validityDays,
       code: data.code.toUpperCase(),
-      status,
+      type: data.type,
+      value: data.value,
+      voucherCategory: data.voucherCategory ?? 'discount',
+      minOrderAmount: data.minOrderAmount ?? 0,
+      maxDiscount: data.maxDiscount,
+      maxUsage: data.maxUsage,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      status: data.status || 'active',
     });
   }
 
@@ -233,223 +56,136 @@ export class VoucherService {
     code: string;
     type: VoucherType;
     value: number;
-    applicableTo: VoucherScope;
     voucherCategory: 'discount' | 'freeship';
-    minTier: string;
     minOrderAmount: number;
     maxDiscount: number;
     maxUsage: number;
     startDate: string;
     endDate: string;
-    validityDays: number;
     status: 'active' | 'inactive';
   }>) {
-    const existing = await Voucher.findById(id);
-    if (existing) {
-      if (data.applicableTo === 'minigame' && existing.applicableTo !== 'minigame') {
-        const minigameCount = await Voucher.countDocuments({ applicableTo: 'minigame' });
-        if (minigameCount >= 5) {
-          throw new Error('Số lượng mã giảm giá Mini Game đã đạt tối đa 5 mã cố định.');
-        }
-      }
-    }
+    const current = await Voucher.findById(id).select('maxUsage usedCount').lean();
+    if (!current) return null;
 
     const updateData: any = {};
     if (data.code !== undefined) updateData.code = data.code.toUpperCase();
     if (data.type !== undefined) updateData.type = data.type;
     if (data.value !== undefined) updateData.value = data.value;
-    if (data.applicableTo !== undefined) updateData.applicableTo = data.applicableTo;
     if (data.voucherCategory !== undefined) updateData.voucherCategory = data.voucherCategory;
-    if (data.minTier !== undefined) updateData.minTier = data.minTier;
     if (data.minOrderAmount !== undefined) updateData.minOrderAmount = data.minOrderAmount;
     if (data.maxDiscount !== undefined) updateData.maxDiscount = data.maxDiscount;
     if (data.startDate !== undefined) updateData.startDate = data.startDate;
     if (data.endDate !== undefined) updateData.endDate = data.endDate;
-    if (data.validityDays !== undefined) updateData.validityDays = Number(data.validityDays) || 0;
-
-    if (existing) {
-      const maxUsage = data.maxUsage !== undefined ? data.maxUsage : existing.maxUsage;
-      const status = data.status !== undefined ? data.status : existing.status;
-      updateData.maxUsage = maxUsage;
-      updateData.status = status;
-    }
+    if (data.maxUsage !== undefined) updateData.maxUsage = data.maxUsage;
+    if (data.status !== undefined) updateData.status = data.status;
+    const effectiveMaxUsage = data.maxUsage ?? current.maxUsage;
+    if ((current.usedCount || 0) >= effectiveMaxUsage) updateData.status = 'inactive';
 
     return Voucher.findOneAndUpdate(
       { _id: id },
       { $set: updateData },
-      { new: true }
+      { new: true },
     );
   }
 
   static async delete(id: string) {
-    const existing = await Voucher.findById(id);
-    if (existing && existing.applicableTo === 'minigame') {
-      const minigameCount = await Voucher.countDocuments({ applicableTo: 'minigame' });
-      if (minigameCount <= 5) {
-        throw new Error('Vòng Quay May Mắn yêu cầu duy trì tối thiểu 5 mã Mini Game. Không thể xóa mã này.');
-      }
-    }
     const result = await Voucher.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 
-  /**
-   * Validate voucher code: kiểm tra hạn, số lượt, min order, hạng user
-   * Trả về { valid, message, voucher? }
-   * @param userTier Hạng của user (VD: 'MEMBER', 'Bac', 'Vang', 'KimCuong'), null/undefined = bỏ qua kiểm tra hạng
-   * @param userId ID của user hiện tại, dùng để kiểm tra quyền sở hữu đối với voucher game & membership
-   */
-  static async validate(code: string, orderAmount: number, userTier?: string | null, userId?: string | null) {
+  static async validate(
+    code: string,
+    orderAmount: number,
+    _userTier?: string | null,
+    _userId?: string | null,
+  ) {
     const voucher = await Voucher.findOne({
       code: code.toUpperCase(),
-    }).lean();
-
-    if (!voucher) {
-      return { valid: false, message: 'Mã giảm giá không tồn tại' };
-    }
-
-    if (voucher.status !== 'active') {
-      return { valid: false, message: 'Mã giảm giá đã bị vô hiệu hoá' };
-    }
+    }).lean() as any;
+    if (!voucher) return { valid: false, message: 'Mã giảm giá không tồn tại' };
+    if (voucher.status !== 'active') return { valid: false, message: 'Mã giảm giá đã bị vô hiệu hoá' };
 
     const now = new Date();
-    const isMinigame = voucher.applicableTo === 'minigame';
-    if (!isMinigame) {
-      if (voucher.startDate > now) {
-        return { valid: false, message: 'Mã giảm giá chưa đến hạn sử dụng' };
-      }
-      if (voucher.endDate < now) {
-        return { valid: false, message: 'Mã giảm giá đã hết hạn' };
-      }
+    if (voucher.startDate > now) return { valid: false, message: 'Mã giảm giá chưa đến hạn sử dụng' };
+    if (voucher.endDate < now) return { valid: false, message: 'Mã giảm giá đã hết hạn' };
+    if (!Number.isInteger(Number(voucher.maxUsage)) || Number(voucher.maxUsage) <= 0) {
+      return { valid: false, message: 'Mã giảm giá không có giới hạn lượt sử dụng hợp lệ' };
     }
-
-    // Nếu là voucher toàn sàn (hoặc chưa cấu hình scope), kiểm tra maxUsage chung (maxUsage > 0)
-    if (!voucher.applicableTo || voucher.applicableTo === 'all') {
-      if (voucher.maxUsage && voucher.maxUsage > 0 && (voucher.usedCount || 0) >= voucher.maxUsage) {
-        return { valid: false, message: 'Mã giảm giá đã hết lượt sử dụng' };
-      }
-    } else {
-      // Đối với voucher membership hoặc minigame, bắt buộc user phải có record trong UserVoucher và chưa dùng
-      if (!userId) {
-        return { valid: false, message: 'Bạn cần đăng nhập để sử dụng mã này' };
-      }
-      const uv = await UserVoucher.findOne({
-        userId,
-        voucherId: voucher._id,
-        isUsed: false,
-      }).lean();
-
-      if (!uv) {
-        return { valid: false, message: 'Bạn không sở hữu mã giảm giá này hoặc đã sử dụng rồi' };
-      }
-
-      // Kiểm tra thời hạn sử dụng cá nhân hóa của user (đếm ngược từ ngày nhận)
-      if (uv.expiresAt && new Date(uv.expiresAt) < now) {
-        return { valid: false, message: 'Mã giảm giá này của bạn đã hết hạn sử dụng' };
-      }
-      if (uv.startDate && new Date(uv.startDate) > now) {
-        return { valid: false, message: 'Mã giảm giá này của bạn chưa đến thời gian kích hoạt' };
-      }
+    if ((voucher.usedCount || 0) >= Number(voucher.maxUsage)) {
+      return { valid: false, message: 'Mã giảm giá đã hết lượt sử dụng' };
     }
-
-    // Kiểm tra hạng user nếu là voucher membership trực tiếp (để chắc chắn)
-    if (voucher.applicableTo === 'membership' && voucher.minTier) {
-      if (!userTier) {
-        return { valid: false, message: 'Bạn cần đăng nhập để sử dụng mã này' };
-      }
-      const requiredLevel = TIER_ORDER[voucher.minTier] ?? 0;
-      const userLevel = TIER_ORDER[userTier] ?? -1;
-      if (userLevel < requiredLevel) {
-        return {
-          valid: false,
-          message: `Mã giảm giá yêu cầu hạng ${voucher.minTier} trở lên`,
-        };
-      }
-    }
-
-    if (orderAmount < voucher.minOrderAmount) {
+    if (orderAmount < (voucher.minOrderAmount || 0)) {
       return {
         valid: false,
-        message: `Đơn hàng tối thiểu ${voucher.minOrderAmount.toLocaleString()}đ để áp dụng mã này`,
+        message: `Đơn hàng tối thiểu ${(voucher.minOrderAmount || 0).toLocaleString()}đ để áp dụng mã này`,
       };
     }
 
-    // Tính discount
     let discountAmount = 0;
     if (voucher.type === 'percentage') {
       discountAmount = Math.round(orderAmount * (voucher.value / 100));
-      if (voucher.maxDiscount && discountAmount > voucher.maxDiscount) {
-        discountAmount = voucher.maxDiscount;
-      }
+      if (voucher.maxDiscount && discountAmount > voucher.maxDiscount) discountAmount = voucher.maxDiscount;
     } else {
       discountAmount = voucher.value;
     }
+    // Không cho mức giảm vượt quá giá trị đơn (chặn voucher cấu hình sai,
+    // vd percentage > 100 hoặc fixed value quá lớn).
+    discountAmount = Math.max(0, Math.min(discountAmount, orderAmount));
 
     return { valid: true, message: 'Áp dụng mã giảm giá thành công', voucher, discountAmount };
   }
 
-  /**
-   * Tự động cấp phát voucher của hạng thành viên mới khi thăng cấp
-   * @param userId ID của user
-   * @param newTier Hạng mới thăng cấp
-   * @param oldTier Hạng cũ
-   */
-  static async grantMembershipVouchers(userId: string, newTier: string, oldTier: string) {
-    const TIERS = ['MEMBER', 'Bac', 'Vang', 'KimCuong'];
-    const oldIndex = TIERS.indexOf(oldTier);
-    const newIndex = TIERS.indexOf(newTier);
-    if (newIndex <= oldIndex) return;
-
-    // Lấy danh sách hạng được thăng cấp lên (bỏ qua hạng đầu tiên MEMBER)
-    const upgradedTiers = TIERS.slice(oldIndex + 1, newIndex + 1).filter(t => t !== 'MEMBER');
-    if (upgradedTiers.length === 0) return;
-
-    // Tìm tất cả voucher active của các hạng này
-    const now = new Date();
-    const vouchers = await Voucher.find({
-      status: 'active',
-      applicableTo: 'membership',
-      minTier: { $in: upgradedTiers },
-      startDate: { $lte: now },
-      endDate: { $gte: now },
-    }).lean();
-
-    for (const v of vouchers) {
-      // Đảm bảo không tạo bản ghi trùng lặp
-      const existing = await UserVoucher.findOne({
-        userId,
-        voucherId: v._id,
-      }).lean();
-
-      if (!existing) {
-        const validityDays =
-          typeof v.validityDays === 'number' && v.validityDays > 0
-            ? v.validityDays
-            : 30; // Mặc định 30 ngày cho voucher thứ hạng
-        const expiresAt = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
-
-        await UserVoucher.create({
-          userId,
-          voucherId: v._id,
-          code: v.code,
-          startDate: now,
-          expiresAt,
-          isUsed: false,
-          grantedReason: 'membership',
-        });
-        console.log(`🎁 [Voucher Grant] Granted membership voucher ${v.code} (hết hạn sau ${validityDays} ngày: ${expiresAt.toISOString()}) to user ${userId}`);
-      }
-    }
+  static async incrementUsage(id: string) {
+    await Voucher.updateOne(
+      { _id: id, $expr: { $lt: [{ $ifNull: ['$usedCount', 0] }, '$maxUsage'] } },
+      [
+        {
+          $set: {
+            usedCount: { $add: [{ $ifNull: ['$usedCount', 0] }, 1] },
+            status: {
+              $cond: [
+                { $gte: [{ $add: [{ $ifNull: ['$usedCount', 0] }, 1] }, '$maxUsage'] },
+                'inactive',
+                '$status',
+              ],
+            },
+          },
+        },
+      ],
+    );
   }
 
   /**
-   * Tăng usedCount của voucher (gọi khi order thành công)
+   * Đốt lượt dùng theo kiểu "đặt chỗ" nguyên tử: trả về true nếu thực sự lấy
+   * được một lượt (usedCount < maxUsage tại thời điểm update). Dùng TRƯỚC khi
+   * tạo đơn để hai đơn đồng tranh lượt cuối chỉ có một đơn thắng.
    */
-  static async incrementUsage(id: string) {
-    const voucher = await Voucher.findById(id);
-    if (voucher) {
-      voucher.usedCount = (voucher.usedCount || 0) + 1;
-      await voucher.save();
-    }
+  static async tryConsume(id: string): Promise<boolean> {
+    const res = await Voucher.updateOne(
+      { _id: id, $expr: { $lt: [{ $ifNull: ['$usedCount', 0] }, '$maxUsage'] } },
+      [
+        {
+          $set: {
+            usedCount: { $add: [{ $ifNull: ['$usedCount', 0] }, 1] },
+            status: {
+              $cond: [
+                { $gte: [{ $add: [{ $ifNull: ['$usedCount', 0] }, 1] }, '$maxUsage'] },
+                'inactive',
+                '$status',
+              ],
+            },
+          },
+        },
+      ],
+    );
+    return res.matchedCount === 1;
+  }
+
+  /** Hoàn lại một lượt đã đặt chỗ (khi tạo đơn thất bại sau tryConsume). */
+  static async releaseUsage(id: string): Promise<void> {
+    await Voucher.updateOne(
+      { _id: id, usedCount: { $gt: 0 } },
+      { $inc: { usedCount: -1 } },
+    );
   }
 }

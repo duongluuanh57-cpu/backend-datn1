@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import { Tag } from '../models/Tag.ts';
 import type { ITag } from '../models/Tag.ts';
 import { ProductTag } from '../models/ProductTag.ts';
-import { slugify } from '../utils/textNormalizer.ts';
 import { FlashSaleService } from './FlashSaleService.ts';
 
 export class TagService {
@@ -63,62 +62,20 @@ export class TagService {
     return await Tag.findOne({ _id: id });
   }
 
-  /**
-   * Create a new tag
-   */
-  static async createTag(data: Partial<ITag>): Promise<ITag> {
-    const slug = data.slug || slugify(data.name || '');
-    const tag = new Tag({
-      ...data,
-      slug,
-    });
-    return await tag.save();
-  }
-
-  /**
-   * Update tag info
-   */
-  static async updateTag(id: string, data: Partial<ITag>): Promise<ITag | null> {
-    const updateData = { ...data };
-    if (data.name && !data.slug) {
-      updateData.slug = slugify(data.name);
-    }
+  /** Chỉ cập nhật trạng thái hiển thị; không cho phép tạo, sửa danh tính hoặc xóa Tag. */
+  static async updateTagStatus(id: string, status: 'active' | 'inactive'): Promise<ITag | null> {
     const updatedTag = await Tag.findOneAndUpdate(
       { _id: id },
-      { $set: updateData },
+      { $set: { status } },
       { new: true }
     );
 
-    // Nếu Tag chuyển sang trạng thái Ẩn (inactive), tự động gỡ Tag khỏi tất cả sản phẩm
-    if (data.status === 'inactive') {
-      await ProductTag.deleteMany({ tagId: id });
+    if (updatedTag) {
+      // Giữ nguyên ProductTag để khi bật lại tag, sản phẩm vẫn giữ liên kết cũ.
+      await FlashSaleService.clearCache();
     }
-    await FlashSaleService.clearCache();
 
     return updatedTag;
-  }
-
-  /**
-   * Delete tag from the system
-   */
-  static async deleteTag(id: string): Promise<boolean> {
-    const result = await Tag.deleteOne({ _id: id });
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      await ProductTag.deleteMany({ tagId: new mongoose.Types.ObjectId(id) });
-    }
-    await FlashSaleService.clearCache();
-    return result.deletedCount > 0;
-  }
-
-  static async bulkDeleteTags(ids: string[]): Promise<number> {
-    if (!ids || ids.length === 0) return 0;
-    const result = await Tag.deleteMany({ _id: { $in: ids } });
-    const validObjectIds = ids.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
-    if (validObjectIds.length > 0) {
-      await ProductTag.deleteMany({ tagId: { $in: validObjectIds } });
-    }
-    await FlashSaleService.clearCache();
-    return result.deletedCount;
   }
 
   static async getTagDetail(id: string) {
@@ -129,7 +86,7 @@ export class TagService {
       ProductTag.countDocuments({ tagId: id }),
       ProductTag.find({ tagId: id })
         .populate('productId')
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .limit(20)
         .lean(),
     ]);
@@ -161,7 +118,7 @@ export class TagService {
       ProductTag.countDocuments({ tagId: id }),
       ProductTag.find({ tagId: id })
         .populate('productId')
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),

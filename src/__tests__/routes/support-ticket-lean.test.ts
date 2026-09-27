@@ -44,7 +44,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app?.close();
-  const tickets = await SupportTicket.find({ title: new RegExp(MARK) }).select('_id').lean();
+  const tickets = await SupportTicket.find({ ticketType: new RegExp(MARK) }).select('_id').lean();
   await SupportTicketReply.deleteMany({ ticketId: { $in: tickets.map((t) => t._id) } });
   await SupportTicket.deleteMany({ _id: { $in: tickets.map((t) => t._id) } });
   await User.deleteOne({ _id: userId });
@@ -65,11 +65,14 @@ describe('POST /api/support-tickets/guest', () => {
     });
     expect(res.statusCode).toBe(201);
 
-    const ticket = await SupportTicket.findOne({ title: `${MARK} lien he` }).lean();
+    const reply = await SupportTicketReply.findOne({ message: new RegExp(MARK) }).lean();
+    expect(reply).toBeTruthy();
+    const ticket = await SupportTicket.findById(reply!.ticketId).lean();
     expect(ticket).toBeTruthy();
+    expect(ticket).not.toHaveProperty('title');
+    expect(ticket!.ticketType).toBe('other');
     expect((ticket as any).userId).toBeFalsy();
 
-    const reply = await SupportTicketReply.findOne({ ticketId: ticket!._id }).lean();
     expect((reply as any).message).toContain('Khach Test');
     expect((reply as any).message).toContain('Cho hỏi về đơn hàng');
     expect((reply as any).senderId).toBeFalsy();
@@ -94,8 +97,8 @@ describe('POST /api/support-tickets/guest', () => {
 
 describe('getMyTickets dùng 1 query cho reply meta (không N+1)', () => {
   it('danh sách ticket có replyCount + lastReply chính xác', async () => {
-    const t1 = await SupportTicket.create({ userId, title: `${MARK} t1`, status: 'open' });
-    const t2 = await SupportTicket.create({ userId, title: `${MARK} t2`, status: 'open' });
+    const t1 = await SupportTicket.create({ userId, ticketType: `${MARK} t1`, status: 'open' });
+    const t2 = await SupportTicket.create({ userId, ticketType: `${MARK} t2`, status: 'open' });
     const base = Date.now();
     await SupportTicketReply.collection.insertMany([
       { ticketId: t1._id, senderId: new mongoose.Types.ObjectId(userId), message: 'r1 early', createdAt: new Date(base - 2000), updatedAt: new Date(base - 2000) },
@@ -109,10 +112,10 @@ describe('getMyTickets dùng 1 query cho reply meta (không N+1)', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    const data = res.json().data.filter((t: any) => t.title.startsWith(MARK));
+    const data = res.json().data.filter((t: any) => t.ticketType.startsWith(MARK));
 
-    const found1 = data.find((t: any) => t.title === `${MARK} t1`);
-    const found2 = data.find((t: any) => t.title === `${MARK} t2`);
+    const found1 = data.find((t: any) => t.ticketType === `${MARK} t1`);
+    const found2 = data.find((t: any) => t.ticketType === `${MARK} t2`);
     expect(found1.replyCount).toBe(2);
     expect(found1.lastReply.message).toBe('r1 latest');
     expect(found2.replyCount).toBe(1);
@@ -122,7 +125,7 @@ describe('getMyTickets dùng 1 query cho reply meta (không N+1)', () => {
 
 describe('Khóa hội thoại & mở lại tối đa 1 lần', () => {
   it('reply vào ticket đã đóng -> 400', async () => {
-    const ticket = await SupportTicket.create({ userId, title: `${MARK} locked`, status: 'closed' });
+    const ticket = await SupportTicket.create({ userId, ticketType: `${MARK} locked`, status: 'closed' });
 
     const res = await app.inject({
       method: 'POST',
@@ -135,7 +138,7 @@ describe('Khóa hội thoại & mở lại tối đa 1 lần', () => {
   });
 
   it('mở lại lần 1 OK, đóng lại, mở lần 2 -> 400', async () => {
-    const ticket = await SupportTicket.create({ userId, title: `${MARK} reopen`, status: 'closed' });
+    const ticket = await SupportTicket.create({ userId, ticketType: `${MARK} reopen`, status: 'closed' });
 
     const first = await app.inject({
       method: 'PATCH',
@@ -166,7 +169,7 @@ describe('Khóa hội thoại & mở lại tối đa 1 lần', () => {
   });
 
   it('khách không được tự đặt in_progress khi ticket đang mở, chỉ được đóng', async () => {
-    const ticket = await SupportTicket.create({ userId, title: `${MARK} only-close`, status: 'open' });
+    const ticket = await SupportTicket.create({ userId, ticketType: `${MARK} only-close`, status: 'open' });
 
     const bad = await app.inject({
       method: 'PATCH',
@@ -186,7 +189,7 @@ describe('Khóa hội thoại & mở lại tối đa 1 lần', () => {
   });
 
   it('admin chỉ chuyển trạng thái theo chiều tiến, không quay lại', async () => {
-    const ticket = await SupportTicket.create({ userId, title: `${MARK} forward-only`, status: 'in_progress' });
+    const ticket = await SupportTicket.create({ userId, ticketType: `${MARK} forward-only`, status: 'in_progress' });
 
     const forward = await app.inject({
       method: 'PATCH',

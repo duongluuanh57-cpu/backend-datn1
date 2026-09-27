@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { UnauthorizedError } from './errors.ts';
+import { safeRedisGet, safeRedisSet } from '../config/redis.ts';
 import type { IUser } from '../models/User.ts';
 
 export const toPublicUser = (user: IUser) => ({
@@ -10,14 +11,15 @@ export const toPublicUser = (user: IUser) => ({
   email: user.email,
   role: user.role,
   memberTier: user.memberTier || 'MEMBER',
+  membershipRewardedTier: user.membershipRewardedTier || 'MEMBER',
+  totalSpent: user.totalSpent || 0,
+  rewardPoints: user.rewardPoints || 0,
   status: user.status || 'active',
   fullName: user.fullName || '',
   phoneNumber: user.phoneNumber || '',
   gender: user.gender || '',
   avatar: user.avatar || '',
-  dateOfBirth: user.dateOfBirth || '',
   hasPassword: !!user.passwordHash,
-  passwordChangedAt: user.passwordChangedAt ? new Date(user.passwordChangedAt).toISOString() : undefined,
   createdAt: user.createdAt,
 });
 
@@ -45,7 +47,6 @@ export const ADMIN_COOKIE = 'admin_token';
 
 // TTL chuẩn hoá: user thường 15 phút / 7 ngày — admin 12 giờ / 14 ngày (trước đây admin là 365 ngày)
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;   // 7 ngày (giây) — blacklist/cookie refresh user
-export const ADMIN_COOKIE_MAX_AGE = 12 * 60 * 60;            // 12 giờ (giây) — khớp access token admin
 
 export const hashPassword = async (password: string): Promise<string> => {
   const salt = await bcrypt.genSalt(10);
@@ -109,7 +110,7 @@ export const generateTokens = (userId: string, role: string) => {
  * - Validate issuer và audience
  * - Validate type claim (chống dùng refresh token thay access token)
  */
-export const verifyAccessToken = (token: string): { userId: string; role: string } => {
+export const verifyAccessToken = (token: string): { userId: string; role: string; iat?: number } => {
   const decoded = jwt.verify(token, requiredSecret('JWT_SECRET'), {
     algorithms: ['HS256'],     // Chỉ chấp nhận HS256, chặn 'none' và các alg khác
     issuer: JWT_ISSUER,
@@ -120,7 +121,35 @@ export const verifyAccessToken = (token: string): { userId: string; role: string
     throw new Error('Invalid token type — refresh token không được dùng ở đây');
   }
 
-  return { userId: decoded.sub, role: decoded.role };
+  return { userId: decoded.sub, role: decoded.role, iat: decoded.iat };
+};
+
+/**
+ * Thu hồi phiên theo user.
+ *
+ * Access/refresh token là JWT stateless nên đổi mật khẩu một mình không vô hiệu hóa được
+ * token đang sống: kẻ chiếm tài khoản vẫn dùng tiếp tới hết hạn (user 15 phút, admin 12 giờ,
+ * refresh 7 ngày). Lưu mốc thu hồi trong Redis rồi từ chối mọi token ký TRƯỚC mốc đó.
+ *
+ * Redis không sẵn dụng → `safeRedisGet` trả null tức fail-open: phiên cũ sống nốt TTL
+ * (ngắn) thay vì cả site sập theo Redis.
+ */
+const SESSIONS_REVOKED_TTL_SECONDS = 14 * 24 * 60 * 60; // bằng TTL refresh token dài nhất
+
+export const revokeUserSessions = async (userId: string): Promise<void> => {
+  await safeRedisSet(
+    sessionsRevokedBeforeKey(userId),
+    new Date().toISOString(),
+    'EX',
+    SESSIONS_REVOKED_TTL_SECONDS
+  );
+};
+
+export const isSessionRevoked = async (userId: string, iat?: number): Promise<boolean> => {
+  if (!userId || !iat) return false;
+  const revokedAt = await safeRedisGet(sessionsRevokedBeforeKey(userId));
+  if (!revokedAt) return false;
+  return iat * 1000 < new Date(revokedAt).getTime();
 };
 
 /**
@@ -143,6 +172,9 @@ export const verifyRefreshToken = (token: string): { userId: string; jti?: strin
 /** Key blacklist theo jti (rotation) hoặc theo token (legacy) */
 export const refreshTokenBlacklistKey = (token: string, jti?: string): string =>
   jti ? `blacklist:jti:${jti}` : `blacklist:${token}`;
+
+/** Mốc "mọi token ký trước thời điểm này đều chết" của một user (đổi mật khẩu). */
+const sessionsRevokedBeforeKey = (userId: string): string => `auth:sessions-revoked:${userId}`;
 
 /**
  * Xác minh Cloudflare Turnstile server-side.

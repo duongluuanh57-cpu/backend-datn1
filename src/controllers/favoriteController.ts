@@ -4,6 +4,8 @@ import { User } from '../models/User.ts';
 import { Product } from '../models/Product.ts';
 import { ProductVariant } from '../models/ProductVariant.ts';
 import { ProductImage } from '../models/ProductImage.ts';
+import { Review } from '../models/Review.ts';
+import { bySizeAsc } from '../services/product/productHelpers.ts';
 import mongoose from 'mongoose';
 
 export class FavoriteController {
@@ -19,24 +21,34 @@ export class FavoriteController {
       const favorites = await Favorite.find({ userId: new mongoose.Types.ObjectId(userId) })
         .populate({
           path: 'productId',
-          select: 'name brandId image discountPercentage discountStartDate discountEndDate variants reviewsCount avgRating soldCount status',
+          select: 'name brandId image discountPercentage soldCount status',
           populate: {
             path: 'brandId',
             select: 'name logo',
           },
         })
-        .sort({ createdAt: -1 })
+        .sort({ _id: -1 })
         .lean();
 
-      // Filter out null productId (deleted products)
+      // ponytail: product bị xóa → populate trả null. Lọc bỏ thay vì cascade-delete
+      // favorite (giữ controller đơn giản). Trần: dòng favorite "mồ côi" tích tụ dần
+      // trong DB; nếu cần dọn thì xóa Favorite theo productId ở tầng xóa product.
       const validFavorites = favorites.filter(f => f.productId);
 
-      // Attach computed price from variant 50ml via batch variant query and product images
+      // Attach computed price from variant 50ml via batch variant query, product images,
+      // and rating/reviewsCount computed live from Review (no denormalized cache on Product).
       const pIds = validFavorites.map(f => (f.productId as any)._id).filter(Boolean);
-      const [allProductVariants, allProductImages] = await Promise.all([
-        ProductVariant.find({ productId: { $in: pIds } }).sort({ sortOrder: 1 }).lean() as Promise<any[]>,
-        ProductImage.find({ productId: { $in: pIds } }).select('url productId').sort({ createdAt: 1 }).lean() as Promise<any[]>,
+      const [allProductVariants, allProductImages, reviewAgg] = await Promise.all([
+        ProductVariant.find({ productId: { $in: pIds } }).lean().then((vs: any[]) => vs.sort(bySizeAsc)) as Promise<any[]>,
+        ProductImage.find({ productId: { $in: pIds } }).select('url productId').sort({ _id: 1 }).lean() as Promise<any[]>,
+        Review.aggregate([
+          { $match: { productId: { $in: pIds.map(id => new mongoose.Types.ObjectId(id)) }, status: 'visible' } },
+          { $group: { _id: '$productId', count: { $sum: 1 }, avg: { $avg: '$rating' } } },
+        ]),
       ]);
+
+      const reviewMap = new Map<string, { count: number; avg: number }>();
+      for (const r of reviewAgg) reviewMap.set(r._id.toString(), { count: r.count, avg: Math.round(r.avg * 10) / 10 });
 
       const variantGroupMap: Record<string, any[]> = {};
       allProductVariants.forEach(v => {
@@ -61,10 +73,7 @@ export class FavoriteController {
         let price = variant?.price || 0;
         const originalPrice = price;
         if (price > 0 && product.discountPercentage > 0) {
-          const now = new Date();
-          const startOk = !product.discountStartDate || new Date(product.discountStartDate) <= now;
-          const endOk = !product.discountEndDate || new Date(product.discountEndDate) >= now;
-          if (startOk && endOk) price = Math.round(price * (1 - product.discountPercentage / 100));
+          price = Math.round(price * (1 - product.discountPercentage / 100));
         }
 
         const brandLogo = product.brandId?.logo;
@@ -73,6 +82,10 @@ export class FavoriteController {
         if (brandLogo && finalImage === brandLogo) {
           finalImage = imageGroupMap[productIdStr] || '';
         }
+
+        const reviewStats = reviewMap.get(productIdStr);
+        const reviewsCount = reviewStats?.count ?? 0;
+        const avgRating = reviewStats?.avg ?? 0;
 
         return {
           ...fav,
@@ -84,6 +97,9 @@ export class FavoriteController {
             quantityInStock,
             discount: product.discountPercentage || 0,
             brand: product.brandId?.name || '',
+            reviewsCount,
+            avgRating,
+            rating: avgRating,
           },
         };
       });

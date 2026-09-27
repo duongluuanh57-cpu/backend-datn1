@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import mongoose from 'mongoose';
 import { BrandService } from '../../services/BrandService.ts';
 import { Product } from '../../models/Product.ts';
 
@@ -34,23 +35,15 @@ export class BrandListingController {
   }
 
   /**
-   * GET /api/brands/origins
-   */
-  static async getBrandOrigins(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const origins = await BrandService.getBrandOrigins();
-      return reply.status(200).send({ success: true, data: origins });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
    * GET /api/brands/:id
    */
   static async getBrandById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
+
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID thương hiệu không hợp lệ' });
+      }
 
       const brand = await BrandService.getBrandById(id);
       if (!brand) {
@@ -62,65 +55,6 @@ export class BrandListingController {
       return reply.status(200).send({
         success: true,
         data: { ...brand.toObject(), productCount },
-      });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  /**
-   * POST /api/brands/ai-suggest
-   * Sử dụng Gemini AI để tìm xuất xứ và gợi ý slug cho bất kỳ thương hiệu nào
-   */
-  static async aiSuggestBrand(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { name } = (req.body || {}) as { name?: string };
-      if (!name || !name.trim()) {
-        return reply.status(400).send({ success: false, message: 'Tên thương hiệu không được để trống' });
-      }
-
-      const cleanName = name.trim();
-      let origin = '';
-      let slug = cleanName
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[đĐ]/g, 'd')
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-');
-
-      try {
-        const { generateTextResponse } = await import('../../services/ai/aiInteractionService.ts');
-        const prompt = `Bạn là chuyên gia về thương hiệu nước hoa và mỹ phẩm thế giới. 
-Hãy xác định chính xác xuất xứ quốc gia (origin) và slug của thương hiệu: "${cleanName}".
-Ví dụ:
-- "Verites" -> origin: "Việt Nam", slug: "verites"
-- "Chanel" -> origin: "Pháp", slug: "chanel"
-- "Creed" -> origin: "Pháp", slug: "creed"
-- "Jo Malone" -> origin: "Anh", slug: "jo-malone"
-- "Dior" -> origin: "Pháp", slug: "dior"
-- "Tom Ford" -> origin: "Mỹ", slug: "tom-ford"
-- "Gucci" -> origin: "Ý", slug: "gucci"
-- "Le Labo" -> origin: "Mỹ", slug: "le-labo"
-
-Trả về DUY NHẤT một JSON object:
-{"origin": "Tên quốc gia bằng tiếng Việt (VD: Pháp, Ý, Mỹ, Anh, Đức, Việt Nam, Nhật Bản, Hàn Quốc, Thụy Điển...)", "slug": "slug-chuan"}`;
-
-        const aiResponse = await generateTextResponse(prompt);
-        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          if (parsed.origin) origin = parsed.origin;
-          if (parsed.slug) slug = parsed.slug;
-        }
-      } catch (aiErr) {
-        console.warn('[AI Brand Suggest] Fallback:', aiErr);
-      }
-
-      return reply.status(200).send({
-        success: true,
-        data: { origin, slug, name: cleanName },
       });
     } catch (error: any) {
       return reply.status(500).send({ success: false, message: error.message });

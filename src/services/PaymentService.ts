@@ -1,29 +1,46 @@
-import { Payment, type PaymentStatus } from '../models/Payment.ts';
-import { PaymentMethod } from '../models/PaymentMethod.ts';
+import { PaymentMethod, type PaymentMethodCode } from '../models/PaymentMethod.ts';
 
-// ─── Payment Method CRUD ───
+/**
+ * PaymentMethodService — danh mục phương thức thanh toán.
+ *
+ * Bảng `payments` đã bị xoá: thông tin giao dịch nằm trực tiếp trên `orders`
+ * (payment_method_id, bank_code, payment_txn_ref, payment_transaction_code, paid_at).
+ */
 
 export class PaymentMethodService {
   static async getAll(onlyActive = false) {
     const filter: any = {};
-    if (onlyActive) filter.isActive = true;
-    return PaymentMethod.find(filter).sort({ sortOrder: 1 }).lean();
+    if (onlyActive) filter.status = 'active';
+    // Thứ tự hiển thị cố định: COD trước VNPay.
+    return PaymentMethod.find(filter).sort({ code: 1 }).lean();
   }
 
   static async getById(id: string) {
     return PaymentMethod.findOne({ _id: id }).lean();
   }
 
-  static async create(data: { name: string; code: string; icon?: string; sortOrder?: number }) {
+  static async create(data: {
+    name: string;
+    code: PaymentMethodCode;
+    description?: string;
+    icon?: string;
+  }) {
+    if (data.code !== 'cod' && data.code !== 'vnpay') {
+      throw new Error('Chỉ hỗ trợ phương thức thanh toán COD hoặc VNPay');
+    }
+
     return PaymentMethod.create({
       name: data.name,
       code: data.code,
+      description: data.description || '',
       icon: data.icon || '',
-      sortOrder: data.sortOrder ?? 0,
     });
   }
 
-  static async update(id: string, data: { name?: string; icon?: string; isActive?: boolean; sortOrder?: number }) {
+  static async update(
+    id: string,
+    data: { name?: string; description?: string; icon?: string; status?: 'active' | 'inactive' }
+  ) {
     return PaymentMethod.findOneAndUpdate(
       { _id: id },
       { $set: data },
@@ -33,68 +50,6 @@ export class PaymentMethodService {
 
   static async delete(id: string) {
     const result = await PaymentMethod.deleteOne({ _id: id });
-    return result.deletedCount > 0;
-  }
-}
-
-// ─── Payment Transaction CRUD ───
-
-export class PaymentService {
-  static async getAll() {
-    return Payment.find({})
-      .populate({ path: 'orderId', select: 'shippingInfo totalAmount status' })
-      .sort({ createdAt: -1 })
-      .lean();
-  }
-
-  static async getById(id: string) {
-    return Payment.findOne({ _id: id })
-      .populate({ path: 'orderId', select: 'shippingInfo totalAmount status' })
-      .lean();
-  }
-
-  static async getByOrder(orderId: string) {
-    return Payment.find({ orderId })
-      .sort({ createdAt: -1 })
-      .lean();
-  }
-
-  static async create(data: { orderId: string; method: string }) {
-    // Resolve method code to PaymentMethod ObjectId
-    const paymentMethod = await PaymentMethod.findOne({ code: data.method }).lean();
-    return Payment.create({
-      orderId: data.orderId,
-      paymentMethodId: paymentMethod?._id || undefined,
-      method: data.method,
-    });
-  }
-
-  static async markPaid(id: string, transactionCode: string | undefined) {
-    return Payment.findOneAndUpdate(
-      { _id: id },
-      { $set: { status: 'paid' as PaymentStatus, transactionCode: transactionCode || undefined, paidAt: new Date() } },
-      { new: true }
-    );
-  }
-
-  static async markFailed(id: string) {
-    return Payment.findOneAndUpdate(
-      { _id: id },
-      { $set: { status: 'failed' as PaymentStatus } },
-      { new: true }
-    );
-  }
-
-  static async markRefunded(id: string) {
-    return Payment.findOneAndUpdate(
-      { _id: id },
-      { $set: { status: 'refunded' as PaymentStatus, refundedAt: new Date() } },
-      { new: true }
-    );
-  }
-
-  static async delete(id: string) {
-    const result = await Payment.deleteOne({ _id: id });
     return result.deletedCount > 0;
   }
 }

@@ -14,9 +14,8 @@ export async function productRoutes(app: FastifyInstance) {
   // Suggest / Autocomplete cho Navbar (must be before /:id)
   app.get('/suggest', ProductController.suggestProducts);
 
-  // Bulk fetch + top brands by views (must be before /:id)
+  // Bulk fetch (must be before /:id)
   app.get('/bulk', ProductController.getBulkProducts);
-  app.get('/top-brands-by-views', ProductController.getTopBrandsByViews);
 
   // Quản lý sản phẩm (CRUD) — chỉ ADMIN (tránh lộ sản phẩm draft/archived qua filter status)
   app.get('/', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductController.getAllProducts);
@@ -37,10 +36,4 @@ export async function productRoutes(app: FastifyInstance) {
   
   // Xóa hàng loạt sản phẩm
   app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductMutationController.bulkDeleteProducts);
-
-  // Cập nhật hàng loạt sản phẩm
-  app.post('/bulk-update', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductMutationController.bulkUpdateProducts);
-  
-  // Nhân bản sản phẩm
-  app.post('/:id/duplicate', { preHandler: [authMiddleware, requireRole('ADMIN')] }, ProductMutationController.duplicateProduct);
 }

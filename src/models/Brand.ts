@@ -5,9 +5,6 @@ export interface IBrand extends Document {
   logo?: string;
   origin?: string;
   status: 'active' | 'inactive';
-  featured: boolean;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 const BrandSchema = new Schema<IBrand>(
@@ -16,16 +13,14 @@ const BrandSchema = new Schema<IBrand>(
     slug: { type: String, index: true, sparse: true },
     logo: { type: String },
     origin: { type: String },
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
-    featured: { type: Boolean, default: false }
+    status: { type: String, enum: ['active', 'inactive'], default: 'active' }
   },
   {
-    timestamps: true,
     collection: 'brands'
   }
 );
 
 BrandSchema.index({ name: 'text' });
-BrandSchema.index({ status: 1, featured: -1 });
+BrandSchema.index({ status: 1 });
 
 export const Brand = mongoose.models.Brand || mongoose.model<IBrand>('Brand', BrandSchema);

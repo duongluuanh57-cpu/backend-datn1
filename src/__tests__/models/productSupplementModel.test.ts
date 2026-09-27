@@ -38,8 +38,8 @@ describe("Product Model — Supplement fields", () => {
       description: "A".repeat(60),
       brandId: "brand123",
       image: "https://example.com/img.jpg",
-      variants: ["var1", "var2"],
-      categories: ["cat1"],
+      variantCount: 2,
+      categoryId: "cat1",
       isSupplemented: false,
       status: "draft",
     };
@@ -50,10 +50,8 @@ describe("Product Model — Supplement fields", () => {
       product.description.length > 50 &&
       product.brandId &&
       product.image &&
-      product.variants &&
-      product.variants.length > 0 &&
-      product.categories &&
-      product.categories.length === 1
+      product.variantCount > 0 &&
+      product.categoryId
     );
 
     expect(isFull).toBe(true);
@@ -69,12 +67,11 @@ describe("Product Model — Supplement fields", () => {
 
   it("should NOT auto-switch when missing required fields", () => {
     const testCases = [
-      { name: "No desc", description: "", brandId: "b", image: "i", variants: ["v"], categories: ["c1"] },
-      { name: "Short desc", description: "Short", brandId: "b", image: "i", variants: ["v"], categories: ["c1"] },
-      { name: "No image", description: "A".repeat(60), brandId: "b", image: "", variants: ["v"], categories: ["c1"] },
-      { name: "No variants", description: "A".repeat(60), brandId: "b", image: "i", variants: [], categories: ["c1"] },
-      { name: "No categories", description: "A".repeat(60), brandId: "b", image: "i", variants: ["v"], categories: [] },
-      { name: "Multiple categories", description: "A".repeat(60), brandId: "b", image: "i", variants: ["v"], categories: ["c1", "c2"] },
+      { name: "No desc", description: "", brandId: "b", image: "i", variantCount: 1, categoryId: "c1" },
+      { name: "Short desc", description: "Short", brandId: "b", image: "i", variantCount: 1, categoryId: "c1" },
+      { name: "No image", description: "A".repeat(60), brandId: "b", image: "", variantCount: 1, categoryId: "c1" },
+      { name: "No variants", description: "A".repeat(60), brandId: "b", image: "i", variantCount: 0, categoryId: "c1" },
+      { name: "No category", description: "A".repeat(60), brandId: "b", image: "i", variantCount: 1, categoryId: null },
     ];
 
     testCases.forEach((tc) => {
@@ -84,10 +81,8 @@ describe("Product Model — Supplement fields", () => {
         tc.description.length > 50 &&
         tc.brandId &&
         tc.image &&
-        tc.variants &&
-        tc.variants.length > 0 &&
-        tc.categories &&
-        tc.categories.length === 1
+        tc.variantCount > 0 &&
+        tc.categoryId
       );
       expect(isFull).toBe(false);
     });

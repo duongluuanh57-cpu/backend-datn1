@@ -1,24 +1,30 @@
 import mongoose, { Document, Schema } from 'mongoose';
+
+export type PaymentMethodCode = 'cod' | 'vnpay';
+
+/**
+ * payment_methods — danh mục phương thức thanh toán.
+ * `code` giữ lại làm khoá nghiệp vụ (logic tra 'cod'/'vnpay'), `icon` phục vụ
+ * hiển thị; `status` thay cho isActive trước đây.
+ */
 export interface IPaymentMethod extends Document {
   name: string;
-  code: string;
+  description?: string;
+  code: PaymentMethodCode;
   icon?: string;
-  isActive: boolean;
-  sortOrder: number;
-  createdAt: Date;
-  updatedAt: Date;
+  status: 'active' | 'inactive';
 }
 
 const PaymentMethodSchema = new Schema<IPaymentMethod>(
   {
     name: { type: String, required: true },
-    code: { type: String, required: true, unique: true, index: true },
+    description: { type: String, default: '' },
+    code: { type: String, required: true, enum: ['cod', 'vnpay'], unique: true, index: true },
     icon: { type: String, default: '' },
-    isActive: { type: Boolean, default: true, index: true },
-    sortOrder: { type: Number, default: 0 },
+    status: { type: String, enum: ['active', 'inactive'], default: 'active', index: true },
   },
   {
-    timestamps: true,
+    timestamps: false,
     collection: 'payment_methods',
   }
 );

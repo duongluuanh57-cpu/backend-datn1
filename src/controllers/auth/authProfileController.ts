@@ -1,11 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { hashPassword, comparePassword } from '../../utils/auth.ts';
+import { hashPassword, comparePassword, revokeUserSessions } from '../../utils/auth.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { User } from '../../models/User.ts';
 import { UserAddress } from '../../models/UserAddress.ts';
 import { Order } from '../../models/Order.ts';
-import { AuditLog } from '../../models/AuditLog.ts';
 import { ImageService } from '../../services/ImageService.ts';
 import { computeMemberTier } from '../../utils/memberTier.ts';
 import mongoose from 'mongoose';
@@ -22,18 +21,12 @@ async function getTotalSpent(userId: mongoose.Types.ObjectId): Promise<number> {
   return agg?.total || 0;
 }
 
-/** Ep kieu ObjectId an toan cho audit log */
-function safeObjectId(id?: string): mongoose.Types.ObjectId | undefined {
-  return id && mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : undefined;
-}
-
 export class AuthProfileController {
   /**
    * POST /api/auth/change-password
-   * Body: { currentPassword?, newPassword }
-   * - Nếu user có passwordHash: bắt buộc currentPassword để xác thực
-   * - Nếu user chưa có passwordHash (OAuth): không cần currentPassword, set mật khẩu mới
-   * - Đổi thành công → ghi passwordChangedAt → mọi refresh token cũ bị vô hiệu
+   * Body: { newPassword }
+   * - Nếu user có passwordHash (đăng nhập thường): yêu cầu currentPassword để xác thực
+   * - Nếu user chưa có passwordHash (OAuth): không cần currentPassword, set mật khẩu mới ngay
    * Yêu cầu: Đã xác thực
    */
   static async changePassword(request: FastifyRequest, reply: FastifyReply) {
@@ -58,16 +51,11 @@ export class AuthProfileController {
     const newHash = await hashPassword(body.newPassword);
     await UserRepository.update(userId, {
       passwordHash: newHash,
-      passwordChangedAt: new Date(),
     } as any);
 
-    await AuditLog.create({
-      userId: safeObjectId(userId),
-      action: 'PASSWORD_CHANGE',
-      resource: 'User',
-      metadata: { via: 'profile' },
-      status: 'SUCCESS',
-    });
+    // Đổi mật khẩu = mật khẩu cũ nhiều khả năng đã lộ. Mọi phiên ký trước lúc này phải chết,
+    // kể cả refresh token 7 ngày và access token admin 12 giờ của kẻ tấn công.
+    await revokeUserSessions(userId);
 
     return reply.send({ success: true, message: 'Đổi mật khẩu thành công' });
   }
@@ -87,7 +75,6 @@ export class AuthProfileController {
     const user = await UserRepository.findById(userId);
     if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-    // User OAuth chua co mat khau: khong co gi de verify — tu choi ro rang
     if (!user.passwordHash) {
       return reply.status(400).send({ success: false, message: 'Tài khoản chưa thiết lập mật khẩu' });
     }
@@ -116,6 +103,7 @@ export class AuthProfileController {
       phoneNumber?: string;
       gender?: string;
       dateOfBirth?: string;
+      currentPassword?: string;
     };
     const userId = (request as any).user?.userId;
     if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
@@ -150,6 +138,21 @@ export class AuthProfileController {
       if (existingUser && existingUser._id.toString() !== userId) {
         return reply.status(400).send({ success: false, message: 'Email này đã được sử dụng bởi tài khoản khác' });
       }
+
+      // Đổi email = đổi chìa khóa đặt lại tài khoản → bắt buộc lại mật khẩu NGAY trong
+      // request. Bước verify-password trên UI không phải lớp bảo vệ (một cú POST thẳng
+      // /update-profile là qua được), nên server phải tự kiểm tra.
+      const account = await UserRepository.findById(userId);
+      if (!account) throw new UnauthorizedError('Người dùng không tồn tại');
+      if (trimmedEmail !== account.email.toLowerCase() && account.passwordHash) {
+        if (!body.currentPassword) {
+          return reply.status(400).send({ success: false, message: 'Vui lòng nhập lại mật khẩu để đổi email' });
+        }
+        const isMatch = await comparePassword(body.currentPassword, account.passwordHash);
+        if (!isMatch) {
+          return reply.status(400).send({ success: false, message: 'Mật khẩu hiện tại không đúng' });
+        }
+      }
       updateData.email = trimmedEmail;
     }
 
@@ -169,14 +172,6 @@ export class AuthProfileController {
     if (!updatedUser) {
       return reply.status(404).send({ success: false, message: 'Không thể cập nhật thông tin' });
     }
-
-    await AuditLog.create({
-      userId: safeObjectId(userId),
-      action: 'PROFILE_UPDATE',
-      resource: 'User',
-      metadata: { fields: Object.keys(updateData) },
-      status: 'SUCCESS',
-    }).catch(() => {});
 
     const { passwordHash, ...safeUser } = updatedUser as any;
 
@@ -237,21 +232,26 @@ export class AuthProfileController {
    * GET /api/auth/me
    * Yêu cầu: Đã xác thực
    *
-   * Hạng thành viên được tính REAL-TIME từ tổng chi tiêu đơn đã giao — không đọc
-   * và cũng không ghi đè memberTier trong DB (trước đây mỗi lần mở profile từng
-   * reset hạng của user về MEMBER).
+   * Hạng thành viên được đồng bộ từ tổng chi tiêu đơn đã giao; lượt quay thưởng
+   * được cộng nguyên tử khi người dùng đi lên hạng.
    */
   static async getMe(request: FastifyRequest, reply: FastifyReply) {
     const userId = (request as any).user?.userId;
     if (!userId) throw new UnauthorizedError('Vui lòng đăng nhập');
 
-    const user = await User.findById(userId).lean();
+    let user = await User.findById(userId).lean();
     if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
     const userObjId = new mongoose.Types.ObjectId(userId);
     const totalSpent = await getTotalSpent(userObjId);
+    const { RewardService } = await import('../../services/RewardService.ts');
+    await RewardService.syncMembershipTier(userId, totalSpent).catch((error) => {
+      console.warn('Không đồng bộ được lượt quay thành viên:', error);
+    });
+    // Đọc lại để response phản ánh hạng thành viên và tổng chi tiêu mới nhất.
+    user = await User.findById(userId).lean();
+    if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
     const memberTier = computeMemberTier(totalSpent);
-
     // Lấy địa chỉ mặc định của user
     const defaultAddress = await UserAddress.findOne({ userId: userObjId, isDefault: true }).lean();
 

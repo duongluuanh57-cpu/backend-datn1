@@ -126,10 +126,26 @@ export function createPaymentUrl(input: VNPayPaymentInput, customReturnUrl?: str
 }
 
 /**
+ * So sánh chữ ký không lọt thời gian. So `!==` thường cho phép đo timing từng byte.
+ */
+function secureHashEquals(expected: string, received: string): boolean {
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(received, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+/**
  * Xác thực IPN callback từ VNPAY
  */
 export function verifyIpnResponse(params: Record<string, string>): VNPayIPNResponse {
   try {
+    // Thiếu secret → fail-closed. HMAC tính bằng key rỗng thì ai cũng ký được, nên
+    // "chưa cấu hình" không thể được hiểu là "mọi chữ ký đều hợp lệ".
+    if (!VNPAY_HASH_SECRET) {
+      throw new Error('VNPAY_HASH_SECRET is not configured — cannot verify VNPay signature');
+    }
+
     const secureHash = params['vnp_SecureHash'];
     if (!secureHash) {
       return {
@@ -150,7 +166,7 @@ export function verifyIpnResponse(params: Record<string, string>): VNPayIPNRespo
     // Hash cũng được tính trên encoded query string giống như lúc tạo URL
     const expectedHash = createSecureHash(restParams, VNPAY_HASH_SECRET);
 
-    if (expectedHash !== secureHash) {
+    if (!secureHashEquals(expectedHash, secureHash)) {
       return {
         isValid: false,
         txnRef: params['vnp_TxnRef'] || null,

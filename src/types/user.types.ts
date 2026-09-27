@@ -52,7 +52,7 @@ export const CreateAdminSchema = z.object({
 export const UpdateUserSchema = z
   .object({
     role: z.enum(['USER', 'ADMIN'], { message: 'Vai trò không hợp lệ' }).optional(),
-    status: z.enum(['active', 'inactive', 'suspended'], { message: 'Trạng thái không hợp lệ' }).optional(),
+    status: z.enum(['active', 'suspended'], { message: 'Trạng thái không hợp lệ' }).optional(),
   })
   .refine((v) => v.role !== undefined || v.status !== undefined, {
     message: 'Không có trường nào được gửi để cập nhật',
@@ -65,7 +65,7 @@ export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
 
 export type UserRole = 'USER' | 'ADMIN';
 export type MemberTier = 'MEMBER' | 'Bac' | 'Vang' | 'KimCuong';
-export type UserAccountStatus = 'active' | 'inactive' | 'suspended';
+export type UserAccountStatus = 'active' | 'suspended';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
 export interface UserRoleLite {
@@ -76,6 +76,8 @@ export interface UserRoleLite {
   role?: UserRole;
   memberTier?: MemberTier;
   totalSpent?: number;
+  rewardPoints?: number;
+  membershipRewardedTier?: MemberTier;
   status?: UserAccountStatus;
   fullName?: string;
   phoneNumber?: string;
@@ -84,10 +86,7 @@ export interface UserRoleLite {
   avatar?: string;
   oauthProvider?: 'google';
   oauthId?: string;
-  lastDailySpinGrantedAt?: string;
   lastLoginAt?: string;
-  failedLoginAttempts?: number;
-  lockUntil?: string;
   hasPassword?: boolean;
   defaultAddress?: unknown;
   createdAt?: string;

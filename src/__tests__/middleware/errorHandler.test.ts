@@ -5,7 +5,7 @@ import { AppError } from "../../utils/errors.ts";
 describe("errorHandler", () => {
   it("should return silently for ERR_STREAM_PREMATURE_CLOSE", () => {
     const error = { code: "ERR_STREAM_PREMATURE_CLOSE" } as any;
-    const req = { log: { error: vi.fn() } } as any;
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
     const reply = { status: vi.fn(), send: vi.fn() } as any;
     const result = errorHandler(error, req, reply);
     expect(result).toBeUndefined();
@@ -13,7 +13,7 @@ describe("errorHandler", () => {
 
   it("should return AppError with correct statusCode and message", () => {
     const error = new AppError("Custom not found", 404);
-    const req = { log: { error: vi.fn() } } as any;
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
     let sentStatus = 0, sentBody: any = null;
     const reply = {
       status: (code: number) => {
@@ -29,7 +29,7 @@ describe("errorHandler", () => {
 
   it("should return 400 for validation errors", () => {
     const error = { validation: [{ message: "Invalid field" }], statusCode: 400 } as any;
-    const req = { log: { error: vi.fn() } } as any;
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
     let sentStatus = 0, sentBody: any = null;
     const reply = {
       status: (code: number) => {
@@ -45,7 +45,7 @@ describe("errorHandler", () => {
 
   it("should return 429 with specific message for rate-limit", () => {
     const error = { statusCode: 429 } as any;
-    const req = { log: { error: vi.fn() } } as any;
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
     let sentStatus = 0, sentBody: any = null;
     const reply = {
       status: (code: number) => {
@@ -60,7 +60,7 @@ describe("errorHandler", () => {
 
   it("should return 500 for unknown errors", () => {
     const error = new Error("Something unexpected");
-    const req = { log: { error: vi.fn() } } as any;
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
     let sentStatus = 0, sentBody: any = null;
     const reply = {
       status: (code: number) => {

@@ -1,19 +1,18 @@
 import { Brand } from '../models/Brand.ts';
 import type { IBrand } from '../models/Brand.ts';
 import { Product } from '../models/Product.ts';
-import { ImageService } from './ImageService.ts';
 import { redis } from '../config/redis.ts';
 
 export class BrandService {
-  /** Lấy danh sách toàn bộ thương hiệu (không phân trang, có cache) */
+  /** Lấy danh sách brand đang hoạt động cho storefront/AI (không phân trang, có cache) */
   static async getAllBrands(): Promise<IBrand[]> {
-    const cacheKey = 'brands:all';
+    const cacheKey = 'brands:all:active:v1';
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return JSON.parse(cached);
     } catch (_) {}
 
-    const brands = await Brand.find({}).sort({ name: 1 });
+    const brands = await Brand.find({ status: 'active' }).sort({ name: 1 });
     if (brands && (brands as any[]).length > 0) {
       try {
         await redis.set(cacheKey, JSON.stringify(brands), 'EX', 300);
@@ -73,97 +72,37 @@ export class BrandService {
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  /** Lấy danh sách xuất xứ duy nhất */
-  static async getBrandOrigins(): Promise<string[]> {
-    const origins = await Brand.find({ origin: { $ne: null, $exists: true } }).distinct('origin');
-    return origins.filter((o): o is string => typeof o === 'string' && o.trim() !== '').sort();
-  }
-
   /** Lấy chi tiết thương hiệu theo ID */
   static async getBrandById(id: string): Promise<IBrand | null> {
     return await Brand.findOne({ _id: id });
   }
 
-  /** Tạo thương hiệu mới */
-  static async createBrand(data: Partial<IBrand>): Promise<IBrand> {
-    if (data.name) {
-      const nameRegex = new RegExp(`^${data.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-      const existing = await Brand.findOne({ name: nameRegex });
-      if (existing) {
-        throw new Error(`Thương hiệu "${data.name.trim()}" đã tồn tại!`);
-      }
-    }
-    const brand = new Brand({ ...data });
-    const saved = await brand.save();
-    try { await redis.del('brands:all'); } catch (_) {}
-    return saved;
-  }
-
-  /** Cập nhật thông tin thương hiệu */
-  static async updateBrand(id: string, data: Partial<IBrand>): Promise<IBrand | null> {
-    if (data.name) {
-      const nameRegex = new RegExp(`^${data.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-      const existing = await Brand.findOne({ _id: { $ne: id }, name: nameRegex });
-      if (existing) {
-        throw new Error(`Thương hiệu "${data.name.trim()}" đã tồn tại!`);
-      }
-    }
-
-    let oldLogo = '';
-    if (data.logo) {
-      const oldBrand = await Brand.findOne({ _id: id });
-      if (oldBrand && oldBrand.logo && oldBrand.logo !== data.logo) {
-        oldLogo = oldBrand.logo;
-      }
-    }
-
+  /** Chỉ cập nhật trạng thái hiển thị của brand; không cho phép sửa danh tính brand. */
+  static async updateBrandStatus(id: string, status: 'active' | 'inactive'): Promise<IBrand | null> {
     const updatedBrand = await Brand.findOneAndUpdate(
       { _id: id },
-      { $set: data },
+      { $set: { status } },
       { new: true }
     );
 
-    if (updatedBrand && oldLogo) {
-      ImageService.deleteFromR2(oldLogo).catch(err => {
-        console.error('Lỗi khi xóa logo cũ thương hiệu khỏi R2:', err);
-      });
+    if (updatedBrand) {
+      try {
+        // Xóa cache danh sách brand + toàn bộ cache trang chủ theo pattern
+        // (version key trang chủ hay đổi nên quét `homepage:*` cho chắc).
+        const keysToDelete = ['brands:all', 'brands:all:active:v1'];
+        let cursor = '0';
+        do {
+          const [next, keys] = await redis.scan(cursor, 'MATCH', 'homepage:*', 'COUNT', 200);
+          cursor = next;
+          if (keys.length > 0) keysToDelete.push(...keys);
+        } while (cursor !== '0');
+        if (keysToDelete.length > 0) await redis.del(...keysToDelete);
+        // Trang chủ còn 1 tầng cache in-memory trong graphql/schema → phải hủy cả hai.
+        const { invalidateHomepageCache } = await import('../graphql/schema.ts');
+        invalidateHomepageCache();
+      } catch (_) {}
     }
 
-    try { await redis.del('brands:all'); } catch (_) {}
     return updatedBrand;
-  }
-
-  /** Xóa thương hiệu */
-  static async deleteBrand(id: string): Promise<boolean> {
-    const brand = await Brand.findOne({ _id: id });
-    if (!brand) return false;
-
-    const result = await Brand.deleteOne({ _id: id });
-    if (result.deletedCount > 0 && brand.logo) {
-      ImageService.deleteFromR2(brand.logo).catch(err => {
-        console.error('Lỗi khi xóa logo thương hiệu khỏi R2:', err);
-      });
-    }
-    try { await redis.del('brands:all'); } catch (_) {}
-    return result.deletedCount > 0;
-  }
-
-  /** Xóa hàng loạt thương hiệu */
-  static async bulkDeleteBrands(ids: string[]): Promise<boolean> {
-    if (!ids || ids.length === 0) return false;
-
-    const brands = await Brand.find({ _id: { $in: ids } });
-    const logos = brands.map(b => b.logo).filter(Boolean);
-
-    const result = await Brand.deleteMany({ _id: { $in: ids } });
-    if (result.deletedCount > 0 && logos.length > 0) {
-      for (const logo of logos) {
-        ImageService.deleteFromR2(logo).catch(err => {
-          console.error('Lỗi khi xóa logo thương hiệu khỏi R2 trong bulk delete:', err);
-        });
-      }
-    }
-    try { await redis.del('brands:all'); } catch (_) {}
-    return result.deletedCount > 0;
   }
 }

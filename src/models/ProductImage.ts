@@ -2,8 +2,6 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IProductImage extends Document {
   productId: mongoose.Types.ObjectId;
   url: string;
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 const ProductImageSchema = new Schema<IProductImage>(
@@ -12,7 +10,7 @@ const ProductImageSchema = new Schema<IProductImage>(
     url: { type: String, required: true },
   },
   {
-    timestamps: true,
+    timestamps: false,
     collection: 'product_images',
   }
 );

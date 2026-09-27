@@ -9,5 +9,4 @@ export async function categoryRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [authMiddleware, requireRole('ADMIN')] }, CategoryController.create);
   app.patch('/:id', { preHandler: [authMiddleware, requireRole('ADMIN')] }, CategoryController.update);
   app.delete('/:id', { preHandler: [authMiddleware, requireRole('ADMIN')] }, CategoryController.delete);
-  app.post('/bulk-delete', { preHandler: [authMiddleware, requireRole('ADMIN')] }, CategoryController.bulkDelete);
 }

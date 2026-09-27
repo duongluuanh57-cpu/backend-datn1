@@ -9,11 +9,12 @@ export async function reviewRoutes(app: FastifyInstance) {
 
   // Auth
   app.post('/', { preHandler: authMiddleware }, ReviewController.create);
-  app.get('/can-review/:productId', { preHandler: authMiddleware }, ReviewController.canReview);
   app.post('/upload-image', { preHandler: authMiddleware }, ReviewController.uploadReviewImage);
+  app.get('/can-review/:productId', { preHandler: authMiddleware }, ReviewController.canReview);
 
-  // Admin
+  // Admin - danh sách/chi tiết do AI tự kiểm duyệt; /moderate chỉ là lưới chắn cuối
+  // cho review 'pending' (AI gián đoạn), requireAdmin ở controller
+  app.get('/all', { preHandler: authMiddleware }, ReviewController.getAll);
   app.get('/detail/:id', { preHandler: authMiddleware }, ReviewController.getById);
   app.patch('/:id/moderate', { preHandler: authMiddleware }, ReviewController.moderate);
-  app.get('/all', { preHandler: authMiddleware }, ReviewController.getAll);
 }

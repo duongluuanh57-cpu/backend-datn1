@@ -1,8 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { adminAuthMiddleware } from '../middleware/adminAuthMiddleware.ts';
 import { csrfProtection } from '../middleware/csrfMiddleware.ts';
-import { DashboardStatsController } from '../controllers/admin/dashboardStatsController.ts';
-import { AuditLog } from '../models/AuditLog.ts';
 import { detectFrontendUrl } from '../utils/viewHelpers.ts';
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -32,50 +30,8 @@ export async function adminRoutes(app: FastifyInstance) {
   // CSRF bảo vệ tất cả POST/PUT/DELETE
   app.addHook('preHandler', csrfProtection);
 
-  // Dashboard Stats API
-  app.get('/dashboard-stats', DashboardStatsController.getSummaryStats);
-
-  // ── Activity Log API ──
-  app.get('/activity-log-api', async (req, reply) => {
-    const page = parseInt((req.query as any).page, 10) || 1;
-    const limit = Math.min(parseInt((req.query as any).limit, 10) || 30, 100);
-    const skip = (page - 1) * limit;
-    const action = (req.query as any).action || '';
-    const resource = (req.query as any).resource || '';
-
-    const filter: any = {};
-    if (action) filter.action = action;
-    if (resource) filter.resource = resource;
-
-    const [logs, total] = await Promise.all([
-      AuditLog.find(filter)
-        .populate('userId', 'username fullName email')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      AuditLog.countDocuments(filter),
-    ]);
-
-    return reply.send({
-      success: true,
-      data: {
-        items: logs.map((l: any) => ({
-          _id: l._id,
-          userId: l.userId,
-          action: l.action,
-          resource: l.resource,
-          metadata: l.metadata || {},
-          status: l.status,
-          createdAt: l.createdAt,
-        })),
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    });
-  });
+  // Lưu ý: API dashboard dùng thật nằm ở dashboardRoutes (prefix /api/admin/*),
+  // frontend gọi qua baseURL `${origin}/api`. Không còn alias trùng /dashboard-stats ở đây.
 
   // Redirect /admin root to frontend admin dashboard
   app.get('/', async (req, reply) => {

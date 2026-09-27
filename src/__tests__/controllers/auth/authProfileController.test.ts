@@ -31,10 +31,6 @@ vi.mock('../../../models/Order.ts', () => ({
   },
 }));
 
-vi.mock('../../../models/AuditLog.ts', () => ({
-  AuditLog: { create: vi.fn().mockResolvedValue({}) },
-}));
-
 vi.mock('../../../services/ImageService.ts', () => ({
   ImageService: { compressAndUpload: vi.fn(), deleteFromR2: vi.fn() },
 }));
@@ -42,14 +38,14 @@ vi.mock('../../../services/ImageService.ts', () => ({
 vi.mock('../../../utils/auth.ts', () => ({
   hashPassword: vi.fn().mockResolvedValue('new-hash'),
   comparePassword: vi.fn(),
+  revokeUserSessions: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { UserRepository } from '../../../repositories/UserRepository.ts';
 import { User } from '../../../models/User.ts';
 import { Order } from '../../../models/Order.ts';
 import { UserAddress } from '../../../models/UserAddress.ts';
-import { AuditLog } from '../../../models/AuditLog.ts';
-import { comparePassword } from '../../../utils/auth.ts';
+import { comparePassword, revokeUserSessions } from '../../../utils/auth.ts';
 
 function makeReply() {
   let statusCode = 200;
@@ -74,14 +70,13 @@ describe('AuthProfileController.changePassword', () => {
     vi.mocked(comparePassword).mockResolvedValue(false);
 
     const { reply, getStatus } = makeReply();
-    await AuthProfileController.changePassword(req({ currentPassword: 'wrong', newPassword: 'abcd1234' }), reply);
+    await AuthProfileController.changePassword(req({ newPassword: 'abcd1234' }), reply);
 
     expect(getStatus()).toBe(400);
     expect(UserRepository.update).not.toHaveBeenCalled();
-    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
-  it('OAuth user chưa có mật khẩu → set luôn mật khẩu mới, ghi passwordChangedAt + AuditLog', async () => {
+  it('OAuth user chưa có mật khẩu → set luôn mật khẩu mới', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: '' } as any);
 
     const { reply } = makeReply();
@@ -89,22 +84,17 @@ describe('AuthProfileController.changePassword', () => {
 
     expect(UserRepository.update).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.objectContaining({
       passwordHash: 'new-hash',
-      passwordChangedAt: expect.any(Date),
-    }));
-    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'PASSWORD_CHANGE',
-      status: 'SUCCESS',
     }));
   });
 
-  it('đúng mật khẩu hiện tại → hash mật khẩu mới + ghi passwordChangedAt (vô hiệu session cũ)', async () => {
+  it('đúng mật khẩu hiện tại → hash mật khẩu mới (không ghi passwordChangedAt)', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: 'hash' } as any);
     vi.mocked(comparePassword).mockResolvedValue(true);
 
     const { reply } = makeReply();
     await AuthProfileController.changePassword(req({ currentPassword: 'correct', newPassword: 'abcd1234' }), reply);
 
-    expect(UserRepository.update).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.objectContaining({
+    expect(UserRepository.update).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.not.objectContaining({
       passwordChangedAt: expect.any(Date),
     }));
   });
@@ -146,7 +136,7 @@ describe('AuthProfileController.verifyPassword', () => {
     expect(comparePassword).not.toHaveBeenCalled();
   });
 
-  it('REGRESSION: verify chỉ so sánh — không được ghi passwordHash/passwordChangedAt (hack cũ làm đăng xuất mọi thiết bị)', async () => {
+  it('REGRESSION: verify chỉ so sánh — không được ghi passwordHash (test giữ nguyên)', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: 'hash' } as any);
     vi.mocked(comparePassword).mockResolvedValue(true);
 
@@ -154,7 +144,6 @@ describe('AuthProfileController.verifyPassword', () => {
     await AuthProfileController.verifyPassword(req({ password: 'oldpass1' }), reply);
 
     expect(UserRepository.update).not.toHaveBeenCalled();
-    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 });
 
@@ -168,6 +157,9 @@ describe('AuthProfileController.updateProfile — normalize + chặn trùng', ()
   it('trim + lowercase email và username trước khi kiểm tra/lưu', async () => {
     vi.mocked(UserRepository.findByEmail).mockResolvedValue(null);
     vi.mocked(UserRepository.findByUsername).mockResolvedValue(null);
+    vi.mocked(UserRepository.findById).mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011', email: 'old@x.com', passwordHash: '',
+    } as any);
 
     const { reply } = makeReply();
     await AuthProfileController.updateProfile(req({ username: '  NewName  ', email: ' John@X.COM ' }), reply);
@@ -178,6 +170,47 @@ describe('AuthProfileController.updateProfile — normalize + chặn trùng', ()
       username: 'newname',
       email: 'john@x.com',
     }));
+  });
+
+  it('REGRESSION A6: đổi email trên tài khoản có mật khẩu → bắt buộc currentPassword', async () => {
+    vi.mocked(UserRepository.findByEmail).mockResolvedValue(null);
+    vi.mocked(UserRepository.findById).mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011', email: 'old@x.com', passwordHash: 'hash',
+    } as any);
+
+    const { reply, getStatus } = makeReply();
+    // Không có currentPassword (hoặc sai) → chặn ngay từ controller, server không tin
+    // bước verify-password trên UI vì một cú POST thẳng /update-profile là qua được.
+    await AuthProfileController.updateProfile(req({ email: 'new@x.com' }), reply);
+    expect(getStatus()).toBe(400);
+    expect(UserRepository.update).not.toHaveBeenCalled();
+
+    vi.mocked(comparePassword).mockResolvedValue(false);
+    await AuthProfileController.updateProfile(req({ email: 'new@x.com', currentPassword: 'wrong' }), reply);
+    expect(UserRepository.update).not.toHaveBeenCalled();
+
+    vi.mocked(comparePassword).mockResolvedValue(true);
+    const ok = makeReply();
+    await AuthProfileController.updateProfile(req({ email: 'new@x.com', currentPassword: 'right' }), ok.reply);
+    expect(UserRepository.update).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      expect.objectContaining({ email: 'new@x.com' })
+    );
+  });
+
+  it('không đổi email (chỉ sửa tên/SDT) → KHÔNG đòi mật khẩu', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue({
+      _id: '507f1f77bcf86cd799439011', email: 'old@x.com', passwordHash: 'hash',
+    } as any);
+
+    const { reply, getStatus } = makeReply();
+    await AuthProfileController.updateProfile(req({ email: ' Old@X.com ', phoneNumber: '0900000001' }), reply);
+    expect(getStatus()).toBe(200);
+    expect(comparePassword).not.toHaveBeenCalled();
+    expect(UserRepository.update).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      expect.objectContaining({ phoneNumber: '0900000001' })
+    );
   });
 
   it('username trùng user khác → 400', async () => {
@@ -207,16 +240,14 @@ describe('AuthProfileController.updateProfile — normalize + chặn trùng', ()
     expect(getBody().message).toContain('đã được sử dụng');
   });
 
-  it('ghi AuditLog PROFILE_UPDATE sau khi cập nhật thành công', async () => {
+  it('cập nhật profile thành công', async () => {
     vi.mocked(UserRepository.findByUsername).mockResolvedValue(null);
 
-    const { reply } = makeReply();
+    const { reply, getBody } = makeReply();
     await AuthProfileController.updateProfile(req({ fullName: 'Nguyễn Văn A' }), reply);
 
-    expect(AuditLog.create).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'PROFILE_UPDATE',
-      status: 'SUCCESS',
-    }));
+    expect(getBody().success).toBe(true);
+    expect(getBody().message).toContain('Cập nhật thông tin cá nhân thành công');
   });
 });
 

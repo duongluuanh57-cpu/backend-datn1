@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
 import { UserRepository } from '../repositories/UserRepository.ts';
 import { Order } from '../models/Order.ts';
-import { AuditLog } from '../models/AuditLog.ts';
+import CartItem from '../models/CartItem.ts';
 import { computeMemberTier } from '../utils/memberTier.ts';
 import type { CreateAdminInput, UpdateUserInput } from '../types/user.types.ts';
 import { hashPassword } from '../utils/auth.ts';
@@ -15,11 +15,6 @@ async function getTotalSpent(userId: mongoose.Types.ObjectId): Promise<number> {
     { $group: { _id: null, total: { $sum: '$totalAmount' } } },
   ]);
   return agg?.total || 0;
-}
-
-/** Ep kieu ObjectId an toan — tranh crash khi id khong hop le (audit khong duoc lam roi request) */
-function safeObjectId(id?: string): mongoose.Types.ObjectId | undefined {
-  return id && mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
 export class UserController {
@@ -73,8 +68,10 @@ export class UserController {
   static async getUserById(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string };
 
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Không tìm thấy người dùng', 404);
+
     const user = await UserRepository.findById(id);
-    if (!user || !mongoose.Types.ObjectId.isValid(id)) throw new AppError('Không tìm thấy người dùng', 404);
+    if (!user) throw new AppError('Không tìm thấy người dùng', 404);
 
     const userObjId = new mongoose.Types.ObjectId(id);
     const orders = await Order.find({ userId: userObjId }).sort({ createdAt: -1 }).limit(10).lean();
@@ -103,6 +100,8 @@ export class UserController {
     const currentUserId = (request as any).user?.userId;
     const data = request.body;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError('Không tìm thấy người dùng', 404);
+
     const targetUser = await UserRepository.findById(id);
     if (!targetUser) throw new AppError('Không tìm thấy người dùng', 404);
 
@@ -120,17 +119,13 @@ export class UserController {
     const user = await UserRepository.update(id, data);
     if (!user) throw new AppError('Không tìm thấy người dùng', 404);
 
-    // Audit trail cho hanh dong quan tri nham cua admin (khoa/mo khoa/doi vai tro)
-    await AuditLog.create({
-      userId: safeObjectId(currentUserId),
-      action: 'ADMIN_UPDATE_USER',
-      resource: 'User',
-      metadata: {
-        targetUserId: id,
-        changes: data,
-      },
-      status: 'SUCCESS',
-    }).catch(() => {});
+    // Chuyển tài khoản sang suspended thì dọn luôn giỏ hàng.
+    // ponytail: đây là hành vi phá hủy, KHÔNG hoàn tác được khi mở khóa lại —
+    // chấp nhận theo yêu cầu nghiệp vụ. Chỉ chạy ở bước chuyển VÀO suspended để
+    // không xóa giỏ oan ở các lần update khác.
+    if (data.status === 'suspended' && targetUser.status !== 'suspended') {
+      await CartItem.deleteMany({ userId: user._id }).catch(() => {});
+    }
 
     const { passwordHash, ...safeUser } = user.toObject();
     return reply.send({

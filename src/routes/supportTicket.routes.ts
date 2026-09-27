@@ -3,12 +3,12 @@ import {
   getMyTickets,
   getTicketDetail,
   createTicket,
-  createGuestTicket,
   replyTicket,
   updateTicketStatus,
   getAllTicketsAdmin,
   adminUpdateTicket,
   uploadTicketImage,
+  createGuestTicket,
 } from '../controllers/support/supportTicketController.ts';
 import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 
@@ -24,12 +24,14 @@ export async function supportTicketRoutes(app: FastifyInstance) {
   // Admin routes — prefix /admin (registered first to avoid collision with /:id)
   await app.register(adminSupportTicketRoutes, { prefix: '/admin' });
 
+  // Guest endpoint - no auth required
+  app.post('/guest', createGuestTicket);
+
   // User authenticated endpoints
   app.get('/my-tickets', { preHandler: [authMiddleware] }, getMyTickets);
   app.post('/upload-image', { preHandler: [authMiddleware] }, uploadTicketImage);
   app.get('/:id', { preHandler: [authMiddleware] }, getTicketDetail);
   app.post('/', { preHandler: [authMiddleware] }, createTicket);
-  app.post('/guest', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, createGuestTicket);
   app.post('/:id/replies', { preHandler: [authMiddleware] }, replyTicket);
   app.patch('/:id/status', { preHandler: [authMiddleware] }, updateTicketStatus);
 }

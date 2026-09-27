@@ -25,6 +25,8 @@ vi.mock('../../utils/auth.ts', () => ({
   verifyRefreshToken: vi.fn(),
   generateTokens: vi.fn(),
   refreshTokenBlacklistKey: vi.fn((_t: string, jti?: string) => (jti ? `blacklist:jti:${jti}` : `blacklist:${_t}`)),
+  isSessionRevoked: vi.fn().mockResolvedValue(false),
+  revokeUserSessions: vi.fn().mockResolvedValue(undefined),
   toPublicUser: vi.fn((u: any) => ({ id: u._id || u.id, role: u.role, username: u.username, email: u.email })),
   ACCESS_COOKIE: 'access_token',
   REFRESH_COOKIE: 'refresh_token',
@@ -113,7 +115,7 @@ describe('AuthController - Register & Login', () => {
       expect(AuthSessionService.login).not.toHaveBeenCalled();
     });
 
-    it('should return 201 with user and tokens on successful registration', async () => {
+    it('should return 201 with the user, session only in httpOnly cookies', async () => {
       const mockUser: any = {
         _id: 'user123',
         username: 'newuser',
@@ -151,7 +153,10 @@ describe('AuthController - Register & Login', () => {
       expect(reply.statusCode).toBe(201);
       expect(reply.body.success).toBe(true);
       expect(reply.body.data.user.username).toBe('newuser');
-      expect(reply.body.data.tokens.accessToken).toBe('access-token-789');
+      // A5: body không còn mang token — session chỉ nằm ở cookie httpOnly.
+      expect(reply.body.data.tokens).toBeUndefined();
+      expect(reply.setCookie).toHaveBeenCalledWith('access_token', 'access-token-789', expect.anything());
+      expect(reply.setCookie).toHaveBeenCalledWith('refresh_token', 'refresh-token-012', expect.anything());
     });
 
     it('should return 201 with user and tokens after login on registration success', async () => {
@@ -286,12 +291,12 @@ describe('AuthController - Register & Login', () => {
       });
 
       const req = { body: validLoginInput, ip: '127.0.0.1', headers: { 'user-agent': 'vitest' } } as any;
-      let reply: any = {
+      const setCookie = vi.fn();
+      const reply: any = {
         statusCode: 200,
-        headers: {} as Record<string, string>,
         status(code: number) { reply.statusCode = code; return reply; },
         send(body: any) { reply.body = body; return reply; },
-        header(name: string, value: string) { reply.setCookie = vi.fn(); reply.headers[name] = value; return reply; },
+        setCookie,
       };
 
       await AuthSessionController.login(req, reply);
@@ -299,7 +304,15 @@ describe('AuthController - Register & Login', () => {
       expect(reply.statusCode).toBe(200);
       expect(reply.body.success).toBe(true);
       expect(reply.body.data.user.username).toBe('admin');
-      expect(reply.headers['Set-Cookie']).toContain('admin_token=');
+      // Cookie admin phải đi qua setCookie với đúng bộ attributes cross-site (không còn
+      // tự ghép chuỗi "SameSite=Lax" thủ công — Lax làm cookie chết trên FE Vercel).
+      expect(setCookie).toHaveBeenCalledWith(
+        'admin_token',
+        'admin-access-token-888',
+        expect.objectContaining({ httpOnly: true, path: '/', maxAge: 12 * 60 * 60 })
+      );
+      // Admin không có refresh token — chỉ đúng MỘT cookie được set.
+      expect(setCookie).toHaveBeenCalledTimes(1);
     });
 
     it('should login with username instead of email', async () => {
@@ -352,7 +365,6 @@ describe('AuthController - Register & Login', () => {
         fullName: '',
         phoneNumber: '',
         createdAt: new Date(),
-        passwordChangedAt: null,
       } as any);
     });
 
@@ -369,16 +381,21 @@ describe('AuthController - Register & Login', () => {
       });
 
       const req = { body: validRefreshInput } as any;
+      const setCookie = vi.fn();
       let reply: any = {
         send: (body: any) => { reply = body; return reply; },
-        setCookie: vi.fn(),
+        setCookie,
         clearCookie: vi.fn(),
       };
 
       await AuthSessionController.refresh(req, reply);
 
       expect(reply.success).toBe(true);
-      expect(reply.data.tokens.accessToken).toBe('new-access-token');
+      // Cặp token mới chỉ đi qua httpOnly cookie; body trả user để FE khôi phục session sau F5.
+      expect(reply.data.tokens).toBeUndefined();
+      expect(reply.data.user).toBeDefined();
+      expect(setCookie).toHaveBeenCalledWith('access_token', 'new-access-token', expect.anything());
+      expect(setCookie).toHaveBeenCalledWith('refresh_token', 'new-refresh-token', expect.anything());
     });
 
     it('should throw UnauthorizedError when refresh token is blacklisted', async () => {

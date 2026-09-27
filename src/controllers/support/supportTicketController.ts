@@ -122,18 +122,13 @@ export async function createTicket(req: FastifyRequest, reply: FastifyReply) {
       return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
     }
 
-    const { orderId, ticketType, department, title, message, image } = req.body as {
+    const { orderId, ticketType, department, message, image } = req.body as {
       orderId?: string;
       ticketType?: string;
       department?: string;
-      title: string;
       message: string;
       image?: string;
     };
-
-    if (!title || !title.trim()) {
-      return reply.status(400).send({ success: false, message: 'Vui lòng nhập tiêu đề yêu cầu hỗ trợ' });
-    }
 
     if (!message || !message.trim()) {
       return reply.status(400).send({ success: false, message: 'Vui lòng nhập nội dung chi tiết cần hỗ trợ' });
@@ -156,7 +151,6 @@ export async function createTicket(req: FastifyRequest, reply: FastifyReply) {
       orderId: validOrderId,
       ticketType: ticketType || 'order_inquiry',
       department: department || 'cskh',
-      title: title.trim(),
       status: 'open',
     });
 
@@ -202,16 +196,16 @@ export async function createGuestTicket(req: FastifyRequest, reply: FastifyReply
     }
 
     const newTicket = await SupportTicket.create({
-      title: (subject?.trim() || 'Liên hệ từ trang Contact').slice(0, 200),
       ticketType: 'other',
       department: 'general',
       status: 'open',
     });
 
+    const subjectLine = subject?.trim() ? `\nChủ đề: ${subject.trim()}` : '';
     await SupportTicketReply.create({
       ticketId: newTicket._id,
       senderId: null,
-      message: `[Khách vãng lai] ${fullName.trim()} - ${email.trim()}${phone?.trim() ? ` - ${phone.trim()}` : ''}\n\n${message.trim()}`,
+      message: `[Khách vãng lai] ${fullName.trim()} - ${email.trim()}${phone?.trim() ? ` - ${phone.trim()}` : ''}${subjectLine}\n\n${message.trim()}`,
     });
 
     return reply.status(201).send({
@@ -387,7 +381,7 @@ export async function getAllTicketsAdmin(req: FastifyRequest, reply: FastifyRepl
         .select('_id')
         .lean();
 
-      filter.$or = [{ title: searchRegex }, { userId: { $in: matchedUsers.map((u) => u._id) } }];
+      filter.$or = [{ ticketType: searchRegex }, { userId: { $in: matchedUsers.map((u) => u._id) } }];
 
       if (mongoose.Types.ObjectId.isValid(trimmed)) {
         filter.$or.push({ _id: new mongoose.Types.ObjectId(trimmed) }, { orderId: new mongoose.Types.ObjectId(trimmed) });

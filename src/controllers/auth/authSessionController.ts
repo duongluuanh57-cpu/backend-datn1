@@ -4,42 +4,22 @@ import {
   verifyRefreshToken,
   refreshTokenBlacklistKey,
   generateTokens,
+  isSessionRevoked,
   toPublicUser,
-  ACCESS_COOKIE,
   REFRESH_COOKIE,
-  ADMIN_COOKIE,
 } from '../../utils/auth.ts';
+import {
+  setSessionCookies,
+  setAdminCookie,
+  clearSessionCookies,
+  REFRESH_COOKIE_MAX_AGE,
+} from '../../utils/sessionCookies.ts';
 import { UnauthorizedError } from '../../utils/errors.ts';
 import { redis } from '../../config/redis.ts';
 import { UserRepository } from '../../repositories/UserRepository.ts';
 import { AuthRegisterService } from '../../services/auth/authRegisterService.ts';
 import { AuthSessionService } from '../../services/auth/authSessionService.ts';
 import type { RegisterInput, LoginInput } from '../../types/user.types.ts';
-
-// ── Cookie options: token nằm trong httpOnly cookie, JS không đọc được (chống XSS) ──
-const isProd = process.env.NODE_ENV === 'production';
-const ACCESS_COOKIE_MAX_AGE = 15 * 60;        // 15 phút (giây) — khớp access token user
-const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 ngày (giây) — khớp refresh token user
-const ADMIN_COOKIE_MAX_AGE = 12 * 60 * 60;    // 12 giờ (giây) — khớp access token admin
-
-const baseCookie = {
-  httpOnly: true,
-  secure: isProd,              // production chạy HTTPS → bắt buộc Secure
-  sameSite: 'lax' as const,
-  path: '/',
-};
-
-function setSessionCookies(reply: FastifyReply, tokens: { accessToken: string; refreshToken: string }) {
-  void reply.setCookie(ACCESS_COOKIE, tokens.accessToken, { ...baseCookie, maxAge: ACCESS_COOKIE_MAX_AGE });
-  void reply.setCookie(REFRESH_COOKIE, tokens.refreshToken, { ...baseCookie, maxAge: REFRESH_COOKIE_MAX_AGE });
-}
-
-function clearSessionCookies(reply: FastifyReply) {
-  void reply.clearCookie(ACCESS_COOKIE, { ...baseCookie });
-  void reply.clearCookie(REFRESH_COOKIE, { ...baseCookie });
-  // Admin panel dùng cookie riêng — logout phải xóa cả hai, nếu không phiên admin sống dai
-  void reply.clearCookie(ADMIN_COOKIE, { ...baseCookie });
-}
 
 export class AuthSessionController {
   static async register(request: FastifyRequest<{ Body: RegisterInput }>, reply: FastifyReply) {
@@ -55,9 +35,9 @@ export class AuthSessionController {
     return reply.status(201).send({
       success: true,
       message: 'Đăng ký thành công',
+      // KHÔNG trả token trong body: session chỉ nằm ở httpOnly cookie ở trên.
       data: {
         user,
-        tokens,
       },
     });
   }
@@ -67,19 +47,10 @@ export class AuthSessionController {
 
     await verifyTurnstile(data.turnstileToken, request.ip);
 
-    const metadata = {
-      ip: request.ip,
-      userAgent: request.headers?.['user-agent'] || 'unknown'
-    };
-
-    const { user, tokens } = await AuthSessionService.login(data, metadata);
+    const { user, tokens } = await AuthSessionService.login(data);
 
     if (user.role === 'ADMIN') {
-      // Cookie riêng cho admin panel — HttpOnly + Secure + Max-Age khớp TTL 12h
-      reply.header(
-        'Set-Cookie',
-        `admin_token=${encodeURIComponent(tokens.accessToken)}; Path=/; SameSite=Lax; HttpOnly${isProd ? '; Secure' : ''}; Max-Age=${ADMIN_COOKIE_MAX_AGE}`
-      );
+      setAdminCookie(reply, tokens.accessToken);
     } else {
       setSessionCookies(reply, tokens);
     }
@@ -87,9 +58,10 @@ export class AuthSessionController {
     return reply.send({
       success: true,
       message: 'Đăng nhập thành công',
+      // Session chỉ nằm trong httpOnly cookie vừa set — body không mang token (XSS không
+      // đọc được refresh token 7 ngày nữa).
       data: {
         user,
-        tokens,
       },
     });
   }
@@ -112,22 +84,22 @@ export class AuthSessionController {
       if (jtiBlacklisted) throw new UnauthorizedError('Token đã bị thu hồi');
     }
 
+    // Refresh cấp trước lần đổi mật khẩu gần nhất → không nối lại phiên được nữa.
+    if (await isSessionRevoked(userId, iat)) {
+      throw new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+    }
+
     const user = await UserRepository.findByIdWithSecurity(userId);
     if (!user) throw new UnauthorizedError('Người dùng không tồn tại');
 
-    // Chặn refresh cho tài khoản bị khóa — admin khóa tài khoản phải có tác dụng ngay,
+    // Chặn refresh cho tài khoản không active — admin khóa tài khoản phải có tác dụng ngay,
     // không cho session cũ tự gia hạn vô hạn.
-    if (user.status === 'suspended') {
-      throw new UnauthorizedError('Tài khoản của bạn đã bị tạm khóa. Vui lòng liên hệ quản trị viên.');
-    }
-    if (user.status === 'inactive') {
-      throw new UnauthorizedError('Tài khoản của bạn chưa được kích hoạt.');
-    }
-
-    // Đổi mật khẩu vô hiệu hóa mọi refresh token phát hành trước thời điểm đổi
-    const pwdChangedAt = (user as any).passwordChangedAt ?? null;
-    if (pwdChangedAt && iat && iat * 1000 < new Date(pwdChangedAt).getTime()) {
-      throw new UnauthorizedError('Phiên đăng nhập đã hết hiệu lực do mật khẩu vừa được thay đổi. Vui lòng đăng nhập lại.');
+    if (user.status !== 'active') {
+      throw new UnauthorizedError(
+        user.status === 'suspended'
+          ? 'Tài khoản của bạn đã bị khóa.'
+          : 'Tài khoản của bạn không khả dụng.',
+      );
     }
 
     // ── Rotation: token cũ chết ngay khi token mới được cấp ──
@@ -143,13 +115,13 @@ export class AuthSessionController {
 
     setSessionCookies(reply, tokens);
 
-    // Trả kèm user public — frontend dùng để khôi phục session sau F5 mà không cần gọi thêm /me
+    // Trả kèm user public — frontend dùng để khôi phục session sau F5 mà không cần gọi thêm /me.
+    // Token mới chỉ nằm trong cookie vừa set ở trên.
     return reply.send({
       success: true,
       message: 'Cấp lại token thành công',
       data: {
         user: toPublicUser(user),
-        tokens,
       },
     });
   }
@@ -161,8 +133,8 @@ export class AuthSessionController {
     if (!refreshToken) throw new UnauthorizedError('Refresh token là bắt buộc');
 
     // Service tự verify token + blacklist theo jti (xác minh quyền sở hữu).
-    // Cookie admin_token là access token stateless — không revoke được, chỉ có thể
-    // xóa khỏi máy client và chờ hết hạn 12h.
+    // Cookie admin_token là access token stateless — logout chỉ xóa được khỏi máy client;
+    // muốn cắt ngay token admin đang sống thì dùng đổi mật khẩu (revokeUserSessions).
     await AuthSessionService.logout(refreshToken);
 
     clearSessionCookies(reply);

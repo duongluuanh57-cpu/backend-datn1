@@ -20,6 +20,8 @@ vi.mock('../../../utils/auth.ts', () => ({
   verifyRefreshToken: vi.fn(),
   generateTokens: vi.fn(),
   refreshTokenBlacklistKey: vi.fn((_t: string, jti?: string) => (jti ? `blacklist:jti:${jti}` : `blacklist:${_t}`)),
+  isSessionRevoked: vi.fn().mockResolvedValue(false),
+  revokeUserSessions: vi.fn().mockResolvedValue(undefined),
   toPublicUser: vi.fn((u: any) => ({ id: u._id || u.id, role: u.role, username: u.username, email: u.email })),
   ACCESS_COOKIE: 'access_token',
   REFRESH_COOKIE: 'refresh_token',
@@ -39,7 +41,7 @@ vi.mock('../../../repositories/UserRepository.ts', () => ({
 
 import { AuthRegisterService } from '../../../services/auth/authRegisterService.ts';
 import { AuthSessionService } from '../../../services/auth/authSessionService.ts';
-import { verifyTurnstile, verifyRefreshToken, generateTokens } from '../../../utils/auth.ts';
+import { verifyTurnstile, verifyRefreshToken, generateTokens, isSessionRevoked } from '../../../utils/auth.ts';
 import { redis } from '../../../config/redis.ts';
 import { UserRepository } from '../../../repositories/UserRepository.ts';
 
@@ -47,10 +49,11 @@ describe('AuthSessionController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(verifyTurnstile).mockResolvedValue(undefined);
+    vi.mocked(isSessionRevoked).mockResolvedValue(false);
   });
 
   describe('login', () => {
-    it('returns tokens on successful login', async () => {
+    it('puts the session in httpOnly cookies and never in the body', async () => {
       const mockResult: any = {
         user: { id: '123', username: 'test', role: 'USER' },
         tokens: { accessToken: 'at', refreshToken: 'rt' },
@@ -59,14 +62,15 @@ describe('AuthSessionController', () => {
 
       const req = { body: { email: 'a@b.com', password: 'pwd' }, ip: '1.2.3.4', headers: { 'user-agent': 'test' } } as any;
       let sentBody: any = {};
-      const reply = { send: (b: any) => { sentBody = b; return reply; }, status: () => reply, header: () => reply, setCookie: vi.fn(), clearCookie: vi.fn() } as any;
+      const setCookie = vi.fn();
+      const reply = { send: (b: any) => { sentBody = b; return reply; }, status: () => reply, header: () => reply, setCookie, clearCookie: vi.fn() } as any;
 
       await AuthSessionController.login(req, reply);
       expect(sentBody.success).toBe(true);
-      expect(sentBody.data).toEqual({
-        user: mockResult.user,
-        tokens: mockResult.tokens,
-      });
+      expect(sentBody.data).toEqual({ user: mockResult.user });
+      // Token chỉ được đi qua cookie — XSS đọc body không lấy được refresh token 7 ngày.
+      expect(setCookie).toHaveBeenCalledWith('access_token', 'at', expect.anything());
+      expect(setCookie).toHaveBeenCalledWith('refresh_token', 'rt', expect.anything());
     });
 
     it('rejects when turnstile verification fails', async () => {
@@ -95,36 +99,51 @@ describe('AuthSessionController', () => {
 
       const req = { body: { username: 'newuser', email: 'a@b.com', password: 'pwd' }, ip: '1.2.3.4' } as any;
       let statusCode = 0, sentBody: any = {};
+      const setCookie = vi.fn();
       const reply = {
         status: (c: number) => { statusCode = c; return { send: (b: any) => { sentBody = b; } }; },
-        setCookie: vi.fn(),
+        setCookie,
         clearCookie: vi.fn(),
       } as any;
 
       await AuthSessionController.register(req, reply);
       expect(statusCode).toBe(201);
       expect(sentBody.success).toBe(true);
-      expect(sentBody.data).toEqual({
-        user: mockResult.user,
-        tokens: mockResult.tokens,
-      });
+      expect(sentBody.data).toEqual({ user: mockResult.user });
+      expect(setCookie).toHaveBeenCalledWith('access_token', 'at', expect.anything());
+      expect(setCookie).toHaveBeenCalledWith('refresh_token', 'rt', expect.anything());
     });
   });
 
   describe('refresh', () => {
-    it('returns new tokens on valid refresh token', async () => {
+    it('rotates the session into cookies and returns the user (no token in body)', async () => {
       vi.mocked(redis.get).mockResolvedValue(null);
       vi.mocked(verifyRefreshToken).mockReturnValue({ userId: '123' } as any);
-      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: '123', role: 'USER', passwordHash: '', email: '', username: '', status: 'active', createdAt: new Date(), passwordChangedAt: null } as any);
+      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: '123', role: 'USER', passwordHash: '', email: '', username: '', status: 'active', createdAt: new Date() } as any);
       vi.mocked(generateTokens).mockReturnValue({ accessToken: 'new-at', refreshToken: 'new-rt' });
 
       const req = { body: { refreshToken: 'valid-rt' } } as any;
       let sentBody: any = {};
-      const reply = { send: (b: any) => { sentBody = b; return reply; }, setCookie: vi.fn(), clearCookie: vi.fn() } as any;
+      const setCookie = vi.fn();
+      const reply = { send: (b: any) => { sentBody = b; return reply; }, setCookie, clearCookie: vi.fn() } as any;
 
       await AuthSessionController.refresh(req, reply);
       expect(sentBody.success).toBe(true);
-      expect(sentBody.data.tokens.accessToken).toBe('new-at');
+      // Frontend khôi phục session sau F5 chỉ cần user — token mới nằm ở cookie.
+      expect(sentBody.data.tokens).toBeUndefined();
+      expect(setCookie).toHaveBeenCalledWith('access_token', 'new-at', expect.anything());
+      expect(setCookie).toHaveBeenCalledWith('refresh_token', 'new-rt', expect.anything());
+    });
+
+    it('từ chối refresh khi mọi phiên đã bị thu hồi (đổi mật khẩu)', async () => {
+      vi.mocked(redis.get).mockResolvedValue(null);
+      vi.mocked(verifyRefreshToken).mockReturnValue({ userId: '123', iat: 1 } as any);
+      vi.mocked(isSessionRevoked).mockResolvedValue(true);
+
+      const req = { body: { refreshToken: 'old-rt' } } as any;
+      const reply = { send: () => {}, setCookie: vi.fn(), clearCookie: vi.fn() } as any;
+      await expect(AuthSessionController.refresh(req, reply)).rejects.toThrow('Phiên đăng nhập đã hết hạn');
+      expect(UserRepository.findByIdWithSecurity).not.toHaveBeenCalled();
     });
 
     it('throws when refresh token is blacklisted', async () => {
@@ -143,22 +162,14 @@ describe('AuthSessionController', () => {
     it('blocks refresh for suspended accounts (admin lock takes effect immediately)', async () => {
       vi.mocked(redis.get).mockResolvedValue(null);
       vi.mocked(verifyRefreshToken).mockReturnValue({ userId: '123' } as any);
-      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: '123', role: 'USER', passwordHash: '', email: '', username: '', status: 'suspended', createdAt: new Date(), passwordChangedAt: null } as any);
+      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: '123', role: 'USER', passwordHash: '', email: '', username: '', status: 'suspended', createdAt: new Date() } as any);
 
       const req = { body: { refreshToken: 'suspended-rt' } } as any;
       const reply = { send: () => {}, setCookie: vi.fn(), clearCookie: vi.fn() } as any;
-      await expect(AuthSessionController.refresh(req, reply)).rejects.toThrow('tạm khóa');
+      await expect(AuthSessionController.refresh(req, reply)).rejects.toThrow('Tài khoản của bạn đã bị khóa.');
     });
 
-    it('blocks refresh tokens issued before the last password change', async () => {
-      vi.mocked(redis.get).mockResolvedValue(null);
-      vi.mocked(verifyRefreshToken).mockReturnValue({ userId: '123', iat: 1000000000 } as any);
-      vi.mocked(UserRepository.findByIdWithSecurity).mockResolvedValue({ _id: '123', role: 'USER', passwordHash: '', email: '', username: '', status: 'active', createdAt: new Date(), passwordChangedAt: new Date('2020-01-01T00:00:00Z') } as any);
-
-      const req = { body: { refreshToken: 'pre-change-rt' } } as any;
-      const reply = { send: () => {}, setCookie: vi.fn(), clearCookie: vi.fn() } as any;
-      await expect(AuthSessionController.refresh(req, reply)).rejects.toThrow('đăng nhập lại');
-    });
+    // passwordChangedAt đã bị xóa, nên không còn test invalidate refresh token theo mốc đổi mật khẩu
   });
 
   describe('logout', () => {

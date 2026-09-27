@@ -1,9 +1,19 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { PaymentService, PaymentMethodService } from '../services/PaymentService.ts';
+import mongoose from 'mongoose';
+import { PaymentMethodService } from '../services/PaymentService.ts';
+import type { PaymentMethodCode } from '../models/PaymentMethod.ts';
 import { requireAdmin } from '../utils/adminAuth.ts';
 
-// ─── Payment Methods ───
+/** ID không hợp lệ → 400 thay vì để Mongoose CastError thành 500 (quy ước toàn dự án). */
+const isInvalidId = (id?: string) => !id || !mongoose.Types.ObjectId.isValid(id);
 
+/**
+ * Danh mục phương thức thanh toán.
+ *
+ * Bảng `payments` (giao dịch) đã bị xoá — mã giao dịch nằm ngay trên `orders`
+ * (payment_txn_ref, payment_transaction_code, bank_code, paid_at), nên không còn
+ * API admin cho giao dịch. Muốn xem đối soát thì đọc từ đơn hàng.
+ */
 export class PaymentMethodController {
   /** GET /api/payment-methods — public, chỉ lấy active */
   static async getActive(req: FastifyRequest, reply: FastifyReply) {
@@ -30,7 +40,7 @@ export class PaymentMethodController {
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
       if (!requireAdmin(req, reply)) return;
-      const body = req.body as { name: string; code: string; icon?: string; sortOrder?: number };
+      const body = req.body as { name: string; code: PaymentMethodCode; description?: string; icon?: string };
       const method = await PaymentMethodService.create(body);
       return reply.status(201).send({ success: true, data: method });
     } catch (err: any) {
@@ -43,7 +53,8 @@ export class PaymentMethodController {
     try {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
-      const body = req.body as { name?: string; icon?: string; isActive?: boolean; sortOrder?: number };
+      if (isInvalidId(id)) return reply.status(400).send({ success: false, message: 'ID không hợp lệ' });
+      const body = req.body as { name?: string; description?: string; icon?: string; status?: 'active' | 'inactive' };
       const method = await PaymentMethodService.update(id, body);
       if (!method) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
       return reply.send({ success: true, data: method });
@@ -57,76 +68,11 @@ export class PaymentMethodController {
     try {
       if (!requireAdmin(req, reply)) return;
       const { id } = req.params as { id: string };
+      if (isInvalidId(id)) return reply.status(400).send({ success: false, message: 'ID không hợp lệ' });
       const ok = await PaymentMethodService.delete(id);
       if (!ok) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
       return reply.send({ success: true, message: 'Đã xóa' });
     } catch (err: any) {
       return reply.status(500).send({ success: false, message: err.message });
-    }
-  }
-}
-
-// ─── Payment Transactions ───
-
-export class PaymentController {
-  static async getAll(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const list = await PaymentService.getAll();
-    return reply.send({ success: true, data: list });
-  }
-
-  static async getById(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    const item = await PaymentService.getById(id);
-    if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
-    return reply.send({ success: true, data: item });
-  }
-
-  static async getByOrder(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { orderId } = req.params as { orderId: string };
-    const items = await PaymentService.getByOrder(orderId);
-    return reply.send({ success: true, data: items });
-  }
-
-  static async create(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const body = req.body as { orderId: string; method: string };
-    const item = await PaymentService.create(body);
-    return reply.status(201).send({ success: true, data: item });
-  }
-
-  static async markPaid(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    const { transactionCode } = req.body as { transactionCode?: string };
-    const item = await PaymentService.markPaid(id, transactionCode);
-    if (!item) return reply.status(404).send({ success: false, message: 'Không tìm thấy' });
-    return reply.send({ success: true, data: item });
-  }
-
-  static async markFailed(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    const item = await PaymentService.markFailed(id);
-    if (!item) return reply.status(404).send({ success: false });
-    return reply.send({ success: true, data: item });
-  }
-
-  static async markRefunded(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    const item = await PaymentService.markRefunded(id);
-    if (!item) return reply.status(404).send({ success: false });
-    return reply.send({ success: true, data: item });
-  }
-
-  static async remove(req: FastifyRequest, reply: FastifyReply) {
-    if (!requireAdmin(req, reply)) return;
-    const { id } = req.params as { id: string };
-    const ok = await PaymentService.delete(id);
-    if (!ok) return reply.status(404).send({ success: false });
-    return reply.send({ success: true, message: 'Đã xóa' });
-  }
+    }  }
 }

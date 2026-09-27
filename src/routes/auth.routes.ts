@@ -8,7 +8,9 @@ import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '../types/user.types.ts';
 
 export async function authRoutes(app: FastifyInstance) {
-  // Rate limit cho POST /login, /register — 50 req/phút mỗi IP.
+  // Rate limit các endpoint nhạy cảm — 50 req/phút mỗi IP.
+  // verify-password/change-password cũng phải nằm trong đây: mỗi lượt thử là một lần
+  // so sánh bcrypt, nếu để lọt thì chỉ còn quota chung 600/phút của role.
   // request.url luôn là full path (/api/auth/login) kể cả trong plugin có prefix,
   // nên bắt bằng suffix thay vì so sánh tuyệt đối.
   await app.register(rateLimit, {
@@ -19,7 +21,7 @@ export async function authRoutes(app: FastifyInstance) {
     },
     allowList: (request: any) => {
       if (request.method !== 'POST') return true;
-      return !/\/(login|register)$/.test(request.url || '');
+      return !/\/(login|register|verify-password|change-password)$/.test(request.url || '');
     },
     errorResponseBuilder: () => ({
       statusCode: 429, // @fastify/rate-limit v10 throw giá trị này — thiếu statusCode sẽ bị map thành 500
@@ -40,16 +42,18 @@ export async function authRoutes(app: FastifyInstance) {
   }, AuthSessionController.login);
 
   // Cấp lại Access Token bằng Refresh Token
+  // refreshToken đến từ httpOnly cookie là chính; controller chỉ đọc body khi có.
+  // Schema bắt buộc từng khai ở đây chặn request hợp lệ ngay từ validation (400) — để optional.
   typedApp.post('/refresh', {
     schema: {
-      body: z.object({ refreshToken: z.string().min(1) })
+      body: z.object({ refreshToken: z.string().optional() })
     }
   }, AuthSessionController.refresh);
 
   // Đăng xuất — đưa Refresh Token vào Blacklist
   typedApp.post('/logout', {
     schema: {
-      body: z.object({ refreshToken: z.string().min(1) })
+      body: z.object({ refreshToken: z.string().optional() })
     }
   }, AuthSessionController.logout);
 
@@ -85,6 +89,8 @@ export async function authRoutes(app: FastifyInstance) {
         phoneNumber: z.string().max(20).optional(),
         gender: z.enum(['MALE', 'FEMALE', 'OTHER', '']).optional(),
         dateOfBirth: z.string().max(10).optional(),
+        // Chỉ bắt buộc khi đổi email — server kiểm ở authProfileController.updateProfile.
+        currentPassword: z.string().optional(),
       })
     }
   }, AuthProfileController.updateProfile);

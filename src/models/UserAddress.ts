@@ -35,6 +35,17 @@ const UserAddressSchema = new Schema<IUserAddress>(
   }
 );
 
+// Invariant "mỗi user tối đa 1 địa chỉ mặc định" do DB đảm bảo, không chỉ ở app layer.
+// Index partial: chỉ các doc có isDefault=true mới bị ràng buộc unique theo userId,
+// nên 2 request set-default đồng thời sẽ có 1 request dính E11000 thay vì tạo ra 2 default.
+// ponytail: app-layer vẫn "unset-all rồi set-one" (2 query, không transaction). Index này
+// chặn dữ liệu hỏng chứ không làm thao tác atomic. Upgrade path nếu cần: bọc
+// unset+set trong 1 transaction, hoặc findOneAndUpdate default cũ và mới theo cặp.
+UserAddressSchema.index(
+  { userId: 1, isDefault: 1 },
+  { unique: true, partialFilterExpression: { isDefault: true } }
+);
+
 export const UserAddress =
   mongoose.models.UserAddress ||
   mongoose.model<IUserAddress>('UserAddress', UserAddressSchema);

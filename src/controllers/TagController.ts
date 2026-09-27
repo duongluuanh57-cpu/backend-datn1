@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import mongoose from 'mongoose';
 import { TagService } from '../services/TagService.ts';
 
 export class TagController {
@@ -35,7 +36,11 @@ export class TagController {
   static async getTagById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      
+
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID tag không hợp lệ' });
+      }
+
       const tag = await TagService.getTagById(id);
       if (!tag) {
         return reply.status(404).send({
@@ -63,7 +68,11 @@ export class TagController {
   static async getTagDetail(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      
+
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID tag không hợp lệ' });
+      }
+
       const tag = await TagService.getTagDetail(id);
       if (!tag) {
         return reply.status(404).send({
@@ -93,6 +102,10 @@ export class TagController {
       const { id } = req.params as { id: string };
       const { page = '1', limit = '20' } = req.query as { page?: string; limit?: string };
 
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID tag không hợp lệ' });
+      }
+
       const data = await TagService.getTagProducts(
         id,
         Math.max(1, parseInt(page, 10) || 1),
@@ -112,42 +125,37 @@ export class TagController {
   }
 
   /**
-   * POST /api/tags
-   */
-  static async createTag(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const tagData = req.body as any;
-      
-      const tag = await TagService.createTag(tagData);
-      
-      return reply.status(201).send({
-        success: true,
-        data: tag,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
    * PATCH /api/tags/:id
+   * Tag là dữ liệu cố định của web; chỉ cho phép bật/ẩn.
    */
-  static async updateTag(req: FastifyRequest, reply: FastifyReply) {
+  static async updateTagStatus(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const tagData = req.body as any;
-      
-      const tag = await TagService.updateTag(id, tagData);
+      const body = req.body as { status?: string };
+      const status = body?.status;
+
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({
+          success: false,
+          message: 'ID tag không hợp lệ',
+        });
+      }
+
+      if (status !== 'active' && status !== 'inactive') {
+        return reply.status(400).send({
+          success: false,
+          message: 'Chỉ được cập nhật trạng thái tag thành active hoặc inactive',
+        });
+      }
+
+      const tag = await TagService.updateTagStatus(id, status);
       if (!tag) {
         return reply.status(404).send({
           success: false,
           message: 'Không tìm thấy tag để cập nhật',
         });
       }
-      
+
       return reply.status(200).send({
         success: true,
         data: tag,
@@ -160,59 +168,4 @@ export class TagController {
     }
   }
 
-  /**
-   * DELETE /api/tags/:id
-   */
-  static async deleteTag(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { id } = req.params as { id: string };
-      
-      const success = await TagService.deleteTag(id);
-      if (!success) {
-        return reply.status(404).send({
-          success: false,
-          message: 'Không tìm thấy tag để xóa',
-        });
-      }
-      
-      return reply.status(200).send({
-        success: true,
-        message: 'Đã xóa tag thành công',
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
-
-  /**
-   * POST /api/tags/bulk-delete
-   */
-  static async bulkDeleteTags(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { ids } = req.body as { ids: string[] };
-      
-      if (!ids || ids.length === 0) {
-        return reply.status(400).send({
-          success: false,
-          message: 'Vui lòng cung cấp danh sách ID để xóa.',
-        });
-      }
-
-      const result = await TagService.bulkDeleteTags(ids);
-      
-      return reply.status(200).send({
-        success: true,
-        data: { deletedCount: result },
-        message: `Đã xóa ${result} tag thành công.`,
-      });
-    } catch (error: any) {
-      return reply.status(500).send({
-        success: false,
-        message: error.message,
-      });
-    }
-  }
 }

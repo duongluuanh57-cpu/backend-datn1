@@ -1,17 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import mongoose from 'mongoose';
 import { CartController } from '../../controllers/CartController.ts';
-import Cart from '../../models/Cart.ts';
 import CartItem from '../../models/CartItem.ts';
-import { Brand } from '../../models/Brand.ts';
-import { Category } from '../../models/Category.ts';
 import { Product } from '../../models/Product.ts';
 import { ProductVariant } from '../../models/ProductVariant.ts';
 
 const TEST_USER_ID = new mongoose.Types.ObjectId();
 const TEST_BRAND_ID = new mongoose.Types.ObjectId();
 let testProductId: mongoose.Types.ObjectId;
-let testCartId: mongoose.Types.ObjectId;
+let variant50Id: mongoose.Types.ObjectId;
+let variant100Id: mongoose.Types.ObjectId;
 
 beforeAll(async () => {
   const uri = process.env.MONGO_URI;
@@ -29,29 +27,31 @@ beforeAll(async () => {
     name: 'Nước hoa Test Product',
     brandId: TEST_BRAND_ID,
     brand: 'Test Brand',
+    categoryId: new mongoose.Types.ObjectId(),
     description: 'Test description',
   });
   testProductId = product._id as mongoose.Types.ObjectId;
-  // Create test variant
-  await ProductVariant.create({
+  // Create test variants
+  const v50 = await ProductVariant.create({
     productId: testProductId,
     size: '50ml',
     price: 500000,
     quantityInStock: 10,
     isDefault: true,
-    sortOrder: 0,
   });
-  // Create test cart
-  const cart = await Cart.create({
-    userId: TEST_USER_ID,
-    totalAmount: 0,
+  const v100 = await ProductVariant.create({
+    productId: testProductId,
+    size: '100ml',
+    price: 700000,
+    quantityInStock: 5,
+    isDefault: false,
   });
-  testCartId = cart._id as mongoose.Types.ObjectId;
+  variant50Id = v50._id as mongoose.Types.ObjectId;
+  variant100Id = v100._id as mongoose.Types.ObjectId;
 });
 
 afterAll(async () => {
-  await CartItem.deleteMany({ cartId: testCartId });
-  await Cart.deleteMany({ userId: TEST_USER_ID });
+  await CartItem.deleteMany({ userId: TEST_USER_ID });
   await Product.deleteMany({ _id: testProductId });
   await ProductVariant.deleteMany({ productId: testProductId });
   await mongoose.connection.db!.collection('brands').deleteMany({ _id: TEST_BRAND_ID });
@@ -77,30 +77,27 @@ function mockReply(): any {
   return r;
 }
 
-describe('CartController', () => {
+describe('CartController (cart_items only)', () => {
   beforeEach(async () => {
-    // Ensure clean state for each test
-    await CartItem.deleteMany({ cartId: testCartId });
-    await Cart.updateOne({ _id: testCartId }, { totalAmount: 0 });
+    await CartItem.deleteMany({ userId: TEST_USER_ID });
   });
 
   describe('getCart', () => {
-    it('should return empty items for existing cart', async () => {
+    it('should return empty items for an empty cart', async () => {
       const req = mockReq();
       const reply = mockReply();
       await CartController.getCart(req, reply);
       expect(reply._body.success).toBe(true);
       expect(reply._body.data.items).toEqual([]);
       expect(reply._body.data.totalAmount).toBe(0);
+      expect(reply._body.data.totalItems).toBe(0);
     });
 
-    it('should return items when cart has items', async () => {
+    it('should return items populated from the product', async () => {
       await CartItem.create({
-        cartId: testCartId,
         userId: TEST_USER_ID,
-        productId: testProductId,
-        name: 'Test Item',
-        price: 100000,
+        productVariantId: variant50Id,
+        price: 500000,
         quantity: 2,
       });
       const req = mockReq();
@@ -108,8 +105,12 @@ describe('CartController', () => {
       await CartController.getCart(req, reply);
       expect(reply._body.success).toBe(true);
       expect(reply._body.data.items.length).toBe(1);
-      expect(reply._body.data.items[0].name).toBe('Test Item');
+      expect(reply._body.data.items[0].name).toBe('Nước hoa Test Product');
+      expect(reply._body.data.items[0].brand).toBe('Test Brand');
+      expect(reply._body.data.items[0].variantSize).toBe('50ml');
+      expect(reply._body.data.items[0].productId).toBe(testProductId.toString());
       expect(reply._body.data.totalItems).toBe(2);
+      expect(reply._body.data.totalAmount).toBe(1000000);
     });
   });
 
@@ -126,45 +127,32 @@ describe('CartController', () => {
       expect(reply._body.data.items[0].variantSize).toBe('50ml');
     });
 
-    it('should increment quantity when same product+variant exists', async () => {
-      // Add first time
+    it('should increment quantity when same variant exists', async () => {
       const req1 = mockReq({
         body: { productId: testProductId.toString(), quantity: 1, variantSize: '50ml' },
       });
       await CartController.addToCart(req1, mockReply());
-      // Add second time
       const req2 = mockReq({
         body: { productId: testProductId.toString(), quantity: 3, variantSize: '50ml' },
       });
       const reply = mockReply();
       await CartController.addToCart(req2, reply);
       expect(reply._body.success).toBe(true);
-      const item = reply._body.data.items.find((i: any) => i.productId.toString() === testProductId.toString());
+      expect(reply._body.data.items.length).toBe(1);
+      const item = reply._body.data.items.find((i: any) => i.productId === testProductId.toString());
       expect(item.quantity).toBe(4);
     });
 
     it('should create separate items for different variantSize', async () => {
-      // Need a variant for 100ml
-      const existing = await ProductVariant.findOne({ productId: testProductId, size: '100ml' });
-      if (!existing) {
-        await ProductVariant.create({
-          productId: testProductId,
-          size: '100ml',
-          price: 700000,
-          quantityInStock: 5,
-    isDefault: false,
-    sortOrder: 1,
-        });
-      }
-      const req1 = mockReq({
-        body: { productId: testProductId.toString(), quantity: 1, variantSize: '50ml' },
-      });
-      await CartController.addToCart(req1, mockReply());
-      const req2 = mockReq({
-        body: { productId: testProductId.toString(), quantity: 2, variantSize: '100ml' },
-      });
+      await CartController.addToCart(
+        mockReq({ body: { productId: testProductId.toString(), quantity: 1, variantSize: '50ml' } }),
+        mockReply()
+      );
       const reply = mockReply();
-      await CartController.addToCart(req2, reply);
+      await CartController.addToCart(
+        mockReq({ body: { productId: testProductId.toString(), quantity: 2, variantSize: '100ml' } }),
+        reply
+      );
       expect(reply._body.data.items.length).toBe(2);
       const sizes = reply._body.data.items.map((i: any) => i.variantSize).sort();
       expect(sizes).toEqual(['100ml', '50ml']);
@@ -183,13 +171,10 @@ describe('CartController', () => {
   describe('updateCartItem', () => {
     it('should update item quantity', async () => {
       await CartItem.create({
-        cartId: testCartId,
         userId: TEST_USER_ID,
-        productId: testProductId,
-        name: 'Update Test',
-        price: 200000,
+        productVariantId: variant50Id,
+        price: 500000,
         quantity: 1,
-        variantSize: '50ml',
       });
       const req = mockReq({
         body: { productId: testProductId.toString(), quantity: 5, variantSize: '50ml' },
@@ -197,19 +182,16 @@ describe('CartController', () => {
       const reply = mockReply();
       await CartController.updateCartItem(req, reply);
       expect(reply._body.success).toBe(true);
-      const item = reply._body.data.items.find((i: any) => i.productId.toString() === testProductId.toString());
+      const item = reply._body.data.items.find((i: any) => i.productId === testProductId.toString());
       expect(item.quantity).toBe(5);
     });
 
     it('should remove item when quantity is 0', async () => {
       await CartItem.create({
-        cartId: testCartId,
         userId: TEST_USER_ID,
-        productId: testProductId,
-        name: 'Remove Test',
-        price: 200000,
+        productVariantId: variant50Id,
+        price: 500000,
         quantity: 1,
-        variantSize: '50ml',
       });
       const req = mockReq({
         body: { productId: testProductId.toString(), quantity: 0, variantSize: '50ml' },
@@ -217,6 +199,21 @@ describe('CartController', () => {
       const reply = mockReply();
       await CartController.updateCartItem(req, reply);
       expect(reply._body.data.items.length).toBe(0);
+    });
+
+    it('should reject quantity over stock', async () => {
+      await CartItem.create({
+        userId: TEST_USER_ID,
+        productVariantId: variant50Id,
+        price: 500000,
+        quantity: 1,
+      });
+      const req = mockReq({
+        body: { productId: testProductId.toString(), quantity: 999, variantSize: '50ml' },
+      });
+      const reply = mockReply();
+      await CartController.updateCartItem(req, reply);
+      expect(reply._status).toBe(400);
     });
 
     it('should return 404 for non-existent item', async () => {
@@ -230,16 +227,37 @@ describe('CartController', () => {
     });
   });
 
+  describe('updateCartItemVariant', () => {
+    it('should switch the item to another variant', async () => {
+      await CartItem.create({
+        userId: TEST_USER_ID,
+        productVariantId: variant50Id,
+        price: 500000,
+        quantity: 2,
+      });
+      const req = mockReq({
+        body: {
+          productId: testProductId.toString(),
+          currentVariantSize: '50ml',
+          newVariantSize: '100ml',
+        },
+      });
+      const reply = mockReply();
+      await CartController.updateCartItemVariant(req, reply);
+      expect(reply._body.success).toBe(true);
+      expect(reply._body.data.items.length).toBe(1);
+      expect(reply._body.data.items[0].variantSize).toBe('100ml');
+      expect(reply._body.data.items[0].price).toBe(700000);
+    });
+  });
+
   describe('removeCartItem', () => {
     it('should remove item from cart', async () => {
       await CartItem.create({
-        cartId: testCartId,
         userId: TEST_USER_ID,
-        productId: testProductId,
-        name: 'Delete Test',
-        price: 150000,
+        productVariantId: variant50Id,
+        price: 500000,
         quantity: 1,
-        variantSize: '50ml',
       });
       const req = mockReq({
         params: { productId: testProductId.toString() },
@@ -261,44 +279,96 @@ describe('CartController', () => {
       await CartController.removeCartItem(req, reply);
       expect(reply._status).toBe(404);
     });
+
+    it('without variantSize removes ALL size lines of the product (I3)', async () => {
+      await CartItem.insertMany([
+        { userId: TEST_USER_ID, productVariantId: variant50Id, price: 500000, quantity: 1 },
+        { userId: TEST_USER_ID, productVariantId: variant100Id, price: 700000, quantity: 2 },
+      ]);
+      const req = mockReq({
+        params: { productId: testProductId.toString() },
+        query: {}, // không variantSize
+      });
+      const reply = mockReply();
+      await CartController.removeCartItem(req, reply);
+      expect(reply._body.success).toBe(true);
+      expect(reply._body.data.items.length).toBe(0);
+      const count = await CartItem.countDocuments({ userId: TEST_USER_ID });
+      expect(count).toBe(0);
+    });
+
+    it('with variantSize removes ONLY that size line (I3)', async () => {
+      await CartItem.insertMany([
+        { userId: TEST_USER_ID, productVariantId: variant50Id, price: 500000, quantity: 1 },
+        { userId: TEST_USER_ID, productVariantId: variant100Id, price: 700000, quantity: 2 },
+      ]);
+      const req = mockReq({
+        params: { productId: testProductId.toString() },
+        query: { variantSize: '50ml' },
+      });
+      const reply = mockReply();
+      await CartController.removeCartItem(req, reply);
+      expect(reply._body.data.items.length).toBe(1);
+      expect(reply._body.data.items[0].variantSize).toBe('100ml');
+    });
   });
 
   describe('clearCart', () => {
-    it('should remove all items and reset totalAmount', async () => {
+    it('should remove all cart_items of the user', async () => {
       await CartItem.insertMany([
-        {
-          cartId: testCartId, userId: TEST_USER_ID,
-          productId: testProductId, name: 'Item 1', price: 100000, quantity: 1, variantSize: '50ml',
-        },
-        {
-          cartId: testCartId, userId: TEST_USER_ID,
-          productId: testProductId, name: 'Item 2', price: 200000, quantity: 2, variantSize: '100ml',
-        },
+        { userId: TEST_USER_ID, productVariantId: variant50Id, price: 500000, quantity: 1 },
+        { userId: TEST_USER_ID, productVariantId: variant100Id, price: 700000, quantity: 2 },
       ]);
-      await Cart.updateOne({ _id: testCartId }, { totalAmount: 500000 });
       const req = mockReq();
       const reply = mockReply();
       await CartController.clearCart(req, reply);
       expect(reply._body.success).toBe(true);
       expect(reply._body.data.items).toEqual([]);
       expect(reply._body.data.totalAmount).toBe(0);
-      // Verify DB is also cleared
-      const count = await CartItem.countDocuments({ cartId: testCartId });
+      const count = await CartItem.countDocuments({ userId: TEST_USER_ID });
       expect(count).toBe(0);
-      const cart = await Cart.findById(testCartId);
-      expect(cart?.totalAmount).toBe(0);
     });
   });
 
-  describe('removeVoucher', () => {
-    it('should clear voucher from cart', async () => {
-      await Cart.updateOne({ _id: testCartId }, { voucherCode: 'TEST10', voucherDiscount: 50000 });
-      const req = mockReq();
+  describe('vouchers (stateless)', () => {
+    it('should remove the discount voucher echoed back by the client', async () => {
+      await CartItem.create({
+        userId: TEST_USER_ID,
+        productVariantId: variant50Id,
+        price: 500000,
+        quantity: 1,
+      });
+      const req = mockReq({
+        body: { code: 'TEST10', voucherCode: 'TEST10', voucherDiscount: 50000 },
+      });
       const reply = mockReply();
       await CartController.removeVoucher(req, reply);
       expect(reply._body.success).toBe(true);
       expect(reply._body.data.voucherCode).toBeNull();
       expect(reply._body.data.voucherDiscount).toBe(0);
+      expect(reply._body.data.items.length).toBe(1);
+    });
+
+    it('should keep the discount voucher when removing a freeship voucher', async () => {
+      await CartItem.create({
+        userId: TEST_USER_ID,
+        productVariantId: variant50Id,
+        price: 500000,
+        quantity: 1,
+      });
+      const req = mockReq({
+        body: {
+          code: 'FREESHIP10',
+          voucherCode: 'TEST10',
+          voucherDiscount: 50000,
+          freeshipVoucherCode: 'FREESHIP10',
+        },
+      });
+      const reply = mockReply();
+      await CartController.removeVoucher(req, reply);
+      expect(reply._body.data.voucherCode).toBe('TEST10');
+      expect(reply._body.data.voucherDiscount).toBe(50000);
+      expect(reply._body.data.freeshipVoucherCode).toBeNull();
     });
   });
 });

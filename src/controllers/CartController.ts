@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { CartService } from '../services/cart/CartService.ts';
 import { CheckoutService, type CheckoutPayload } from '../services/cart/CheckoutService.ts';
+import { User } from '../models/User.ts';
 
 export class CartController {
   /**
@@ -16,7 +17,14 @@ export class CartController {
       if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
 
       const data = await CartService.getCart(userId);
-      return reply.send({ success: true, data });
+      const user = await User.findById(userId).select('rewardPoints').lean() as any;
+      return reply.send({
+        success: true,
+        data: {
+          ...data,
+          rewardPoints: user?.rewardPoints || 0,
+        },
+      });
     } catch (err: any) {
       const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
       return reply.status(status).send({ success: false, message: err.message });
@@ -114,8 +122,15 @@ export class CartController {
       const userId = (req as any).user?.userId;
       if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
 
-      const { code } = req.body as { code: string };
-      const res = await CartService.applyVoucher(userId, code);
+      // Voucher là state phía client (giỏ hàng chỉ có cart_items), nên client gửi
+      // kèm các mã đang áp dụng để server validate + trả lại đầy đủ trạng thái.
+      const { code, voucherCode, voucherDiscount, freeshipVoucherCode } = req.body as {
+        code: string;
+        voucherCode?: string | null;
+        voucherDiscount?: number;
+        freeshipVoucherCode?: string | null;
+      };
+      const res = await CartService.applyVoucher(userId, code, { voucherCode, voucherDiscount, freeshipVoucherCode });
 
       return reply.send(res);
     } catch (err: any) {
@@ -129,8 +144,18 @@ export class CartController {
       const userId = (req as any).user?.userId;
       if (!userId) return reply.status(401).send({ success: false, message: 'Vui lòng đăng nhập' });
 
-      const { code, type } = (req.body || req.query || {}) as { code?: string; type?: 'discount' | 'freeship' };
-      const res = await CartService.removeVoucher(userId, code, type);
+      const { code, type, voucherCode, voucherDiscount, freeshipVoucherCode } = (req.body || req.query || {}) as {
+        code?: string;
+        type?: 'discount' | 'freeship';
+        voucherCode?: string | null;
+        voucherDiscount?: number;
+        freeshipVoucherCode?: string | null;
+      };
+      const res = await CartService.removeVoucher(userId, code, type, {
+        voucherCode,
+        voucherDiscount,
+        freeshipVoucherCode,
+      });
 
       return reply.send(res);
     } catch (err: any) {

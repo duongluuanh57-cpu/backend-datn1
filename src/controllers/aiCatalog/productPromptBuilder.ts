@@ -3,7 +3,6 @@
  */
 export interface PromptInput {
   name: string;
-  availableBrands: string[];
   availableCategories: string[];
   availableTags: string[];
   sizesJson: string;
@@ -12,7 +11,7 @@ export interface PromptInput {
 }
 
 export function buildProductPrompt(input: PromptInput): string {
-  const { name, availableBrands, availableCategories, availableTags, sizesJson, preFilled, webSnippets } = input;
+  const { name, availableCategories, availableTags, sizesJson, preFilled, webSnippets } = input;
 
   return `
 Bạn là AI chuyên gia thẩm định và quản lý danh mục nước hoa cao cấp.
@@ -28,7 +27,6 @@ QUY TẮC THẨM ĐỊNH NƯỚC HOA (BẮT BUỘC & TIÊN QUYẾT):
 3. CHỈ KHI "${name}" là nước hoa hoặc sản phẩm hương thơm hợp lệ, bạn mới tạo hồ sơ JSON chi tiết bên dưới.
 
 DANH SÁCH GIÁ TRỊ TRONG DATABASE:
-- Hãng: ${JSON.stringify(availableBrands)}
 - Dung tích: ${sizesJson}
 - Danh mục (CHỈ chọn ĐÚNG 1 danh mục từ danh sách này): ${JSON.stringify(availableCategories)}
 
@@ -45,7 +43,7 @@ Dựa vào thông tin trên mạng và kiến thức thực tế về chai nư�
   -> "tag": "" (BẮT BUỘC để chuỗi rỗng "", TUYỆT ĐỐI KHÔNG gán bất kỳ tag nào như Standard, Trending, New, Sale).
 
 QUY TẮC DÀNH CHO NƯỚC HOA HỢP LỆ:
-1. Hãng (brand): PHẢI chọn CHÍNH XÁC 1 hãng từ danh sách Hãng. Nếu không chắc, chọn hãng gần nhất.
+1. Brand không do AI suy đoán hoặc tạo; brand phải được admin chọn từ danh sách có sẵn.
 2. Danh mục (category): PHẢI chọn ĐÚNG 1 danh mục duy nhất từ danh sách Danh mục.
 3. Tên sản phẩm: AI tự suy luận tên sản phẩm từ hãng và phân khúc. VD: hãng "Chanel" → "Chanel Coco Mademoiselle", hãng "Dior" → "Dior Sauvage Elixir".
 5. Dung tích (size):
@@ -85,9 +83,8 @@ QUY TẮC DÀNH CHO NƯỚC HOA HỢP LỆ:
    - Tag "limited/giới hạn": giá > 3.000.000 → 0-5%, giá ≤ 3.000.000 → 5-10%
    - Tag "trending/bán chạy": 0-5%
    - Tag "new/sản phẩm mới": 5-15%
-   - Tag "sale": 20-50% + PHẢI có discountStartDate & discountEndDate
    - Không tag đặc biệt: giá < 1.000.000 → 10-20%, giá 1.000.000-3.000.000 → 5-10%, giá > 3.000.000 → 0-5%
-   Nếu > 10 → PHẢI điền discountStartDate & discountEndDate. Ưu tiên ngày đẹp: 7/7, 8/8, 9/9 hoặc tuần cuối tháng trong năm 2026.
+   Lưu ý: KHÔNG tự gán tag "sale" — giảm giá sâu (20-50%) chỉ do Flash Sale quản lý.
 10. Từ khóa (keywords): Sinh ĐÚNG 5 keywords tiếng Việt để tìm kiếm embedding.
 11. Giữ nguyên pre-filled fields từ user, không thay đổi.
 12. Quy tắc điền Mùa (season) - BẮT BUỘC TUÂN THỦ TỈ LỆ 70/20/10:
@@ -106,15 +103,12 @@ PRE-FILLED FIELDS (giữ nguyên): ${JSON.stringify(Object.keys(preFilled).lengt
 CHỈ trả về JSON object thuần. Không markdown, không code block.
 
 {
-  "brand": "tên hãng từ danh sách",
   "isLimited": true / false,
   "tag": "Limited" (nếu isLimited là true) hoặc "" (nếu isLimited là false),
   "category": "tên danh mục duy nhất từ danh sách",
   "size": "nếu isLimited=true thì CHỈ '100ml:giá_tiền', nếu isLimited=false thì '50ml:giá, 10ml:giá, 20ml:giá, 100ml:giá'",
   "description": "Bài viết mô tả chi tiết bằng HTML gồm <h2>, <h3>, <p>, <strong>",
   "discountPercentage": number,
-  "discountStartDate": "ISO date string hoặc null (VD: 2026-07-07T00:00:00.000Z)",
-  "discountEndDate": "ISO date string hoặc null (VD: 2026-07-31T00:00:00.000Z)",
   "longevity": "Thời gian lưu hương (VD: 7 - 9 giờ)",
   "sillage": "Độ tỏa hương (VD: 1m)",
   "scentTrail": "Vệt hương (VD: Mịn, rõ nét, sạch sẽ)",

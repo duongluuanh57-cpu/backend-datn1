@@ -1,29 +1,11 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export const ASPECT_OPTIONS = {
-  quality: 'Chất lượng',
-  longevity: 'Độ lưu hương',
-  scent: 'Mùi hương',
-  value: 'Giá trị',
-  packaging: 'Bao bì',
-  other: 'Khác',
-} as const;
-
-export type AspectName = keyof typeof ASPECT_OPTIONS;
-
-export interface IReviewAspect {
-  name: AspectName;
-  rating: number;   // 1-5
-  comment: string;
-}
-
 export interface IReview extends Document {
   userId: mongoose.Types.ObjectId;
   productId: mongoose.Types.ObjectId;
   orderItemId?: mongoose.Types.ObjectId;
   rating: number;
   comment?: string;
-  aspects: IReviewAspect[];
   images?: string[];
   isAnonymous: boolean;
   status: 'visible' | 'pending' | 'rejected';
@@ -35,15 +17,6 @@ export interface IReview extends Document {
   updatedAt: Date;
 }
 
-const ReviewAspectSchema = new Schema<IReviewAspect>(
-  {
-    name: { type: String, required: true, enum: Object.keys(ASPECT_OPTIONS) },
-    rating: { type: Number, required: true, min: 1, max: 5 },
-    comment: { type: String, default: '' },
-  },
-  { _id: false }
-);
-
 const ReviewSchema = new Schema<IReview>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -51,10 +24,12 @@ const ReviewSchema = new Schema<IReview>(
     orderItemId: { type: Schema.Types.ObjectId, ref: 'OrderItem', index: true },
     rating: { type: Number, required: true, min: 1, max: 5 },
     comment: { type: String, default: '' },
-    aspects: { type: [ReviewAspectSchema], default: [] },
     images: [{ type: String }],
     isAnonymous: { type: Boolean, default: false },
-    status: { type: String, enum: ['visible', 'pending', 'rejected'], default: 'pending', index: true },
+    // 'pending' chỉ còn là giá trị legacy (dữ liệu cũ); luồng create hiện tại luôn chốt
+    // visible/rejected ngay lần ghi đầu tiên, và không còn admin duyệt tay nên default
+    // 'pending' sẽ tạo ra review mắc kẹt vĩnh viễn.
+    status: { type: String, enum: ['visible', 'pending', 'rejected'], default: 'visible', index: true },
     rejectionReason: { type: String, default: '' },
     aiRejected: { type: Boolean, default: false },
     moderatedBy: { type: String, default: '' },

@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import mongoose from 'mongoose';
 import { CategoryService } from '../services/CategoryService.ts';
 
 export class CategoryController {
@@ -27,6 +28,9 @@ export class CategoryController {
   static async getById(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID danh mục không hợp lệ' });
+      }
       const category = await CategoryService.getById(id);
       if (!category) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, data: category });
@@ -37,53 +41,43 @@ export class CategoryController {
 
   static async create(req: FastifyRequest, reply: FastifyReply) {
     try {
-      const body = req.body as { name: string; status?: string };
+      const body = req.body as { name: string; slug?: string; status?: string };
       if (!body.name?.trim()) {
         return reply.status(400).send({ success: false, message: 'Tên category không được để trống' });
       }
       const category = await CategoryService.create(body);
       return reply.status(201).send({ success: true, data: category });
     } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
+      return reply.status(error.statusCode ?? 500).send({ success: false, message: error.message });
     }
   }
 
   static async update(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
-      const body = req.body as { name?: string; status?: string };
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID danh mục không hợp lệ' });
+      }
+      const body = req.body as { name?: string; slug?: string; status?: string };
       const category = await CategoryService.update(id, body);
       if (!category) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, data: category });
     } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
+      return reply.status(error.statusCode ?? 500).send({ success: false, message: error.message });
     }
   }
 
   static async delete(req: FastifyRequest, reply: FastifyReply) {
     try {
       const { id } = req.params as { id: string };
+      if (!mongoose.isValidObjectId(id)) {
+        return reply.status(400).send({ success: false, message: 'ID danh mục không hợp lệ' });
+      }
       const success = await CategoryService.delete(id);
       if (!success) return reply.status(404).send({ success: false, message: 'Không tìm thấy category' });
       return reply.status(200).send({ success: true, message: 'Đã xoá category' });
     } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
-    }
-  }
-
-  static async bulkDelete(req: FastifyRequest, reply: FastifyReply) {
-    try {
-      const { ids } = req.body as { ids: string[] };
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return reply.status(400).send({ success: false, message: 'Danh sách ID không hợp lệ' });
-      }
-      const success = await CategoryService.bulkDelete(ids);
-      if (!success) {
-        return reply.status(404).send({ success: false, message: 'Không thể xóa các danh mục' });
-      }
-      return reply.status(200).send({ success: true, message: `Đã xóa thành công ${ids.length} danh mục` });
-    } catch (error: any) {
-      return reply.status(500).send({ success: false, message: error.message });
+      return reply.status(error.statusCode ?? 500).send({ success: false, message: error.message });
     }
   }
 }

@@ -5,7 +5,7 @@ import { authMiddleware, requireRole } from '../middleware/authMiddleware.ts';
 import { CreateAdminSchema, UpdateUserSchema } from '../types/user.types.ts';
 
 export async function userRoutes(app: FastifyInstance) {
-  // Tất cả các route trong đây đều yêu cầu đăng nhập và là ADMIN
+  // Toàn bộ /api/users là khu vực quản trị.
   app.addHook('preHandler', authMiddleware);
   app.addHook('preHandler', requireRole('ADMIN'));
 

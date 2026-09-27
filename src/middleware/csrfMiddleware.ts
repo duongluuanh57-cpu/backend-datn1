@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import crypto from 'crypto';
+import { sessionCookieAttrs } from '../utils/sessionCookies.ts';
 
 /**
  * CSRF Middleware — tạo & validate token cho tất cả POST/PUT/PATCH/DELETE của Admin.
@@ -18,8 +19,10 @@ export async function csrfProtection(req: FastifyRequest, reply: FastifyReply) {
     const cookieHeader = req.headers.cookie || '';
     if (!cookieHeader.includes(TOKEN_COOKIE)) {
       const newToken = generateCsrfToken();
-      reply.header('Set-Cookie',
-        `${TOKEN_COOKIE}=${newToken}; Path=/; SameSite=Lax; HttpOnly`);
+      // Cùng bộ attributes với cookie session: FE ở Vercel, backend ở Render là
+      // cross-site, nên SameSite=Lax khiến cookie này không bao giờ được gửi lại
+      // và mọi POST của admin chết ở bước validate.
+      void reply.setCookie(TOKEN_COOKIE, newToken, sessionCookieAttrs());
     }
     return;
   }

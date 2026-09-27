@@ -6,17 +6,14 @@ export interface IProduct extends Document {
   name: string;
   slug?: string;
   brandId: mongoose.Types.ObjectId;
-  variants?: mongoose.Types.ObjectId[];
 
   description: string;
   image?: string;
-  categories?: mongoose.Types.ObjectId[];
-  reviewsCount?: number;
-  avgRating?: number;
+  // 1 sản phẩm thuộc ĐÚNG 1 danh mục (theo ERD: category_id). Populate từ Category.
+  categoryId: mongoose.Types.ObjectId;
+  // reviewsCount / avgRating KHÔNG lưu ở đây — tính trực tiếp từ collection Review
+  // lúc đọc (productFormatterService / ReviewService.getStats), tránh cache tự tham chiếu.
   discountPercentage?: number;
-  // Cửa sổ khuyến mãi tùy chọn — null = áp dụng ngay và vô hạn
-  discountStartDate?: Date | null;
-  discountEndDate?: Date | null;
   soldCount?: number;
   viewCount?: number;
   specifications?: {
@@ -55,17 +52,13 @@ const ProductSchema = new Schema<IProduct>(
     name: { type: String, required: true, trim: true, index: true },
     slug: { type: String, unique: true, sparse: true, trim: true, lowercase: true, index: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true, index: true },
-    variants: { type: [{ type: Schema.Types.ObjectId, ref: 'ProductVariant' }], default: [] },
+    // Variants truy vấn qua ProductVariant.productId (1 product : 0..N variant) —
+    // không lưu mảng ObjectId ở đây để tránh hai nguồn sự thật.
 
     description: { type: String, default: '', trim: true },
     image: { type: String, default: '', trim: true },
-    categories: { type: [{ type: Schema.Types.ObjectId, ref: 'Category' }], default: [] },
-    reviewsCount: { type: Number, default: 0, min: 0 },
-    avgRating: { type: Number, default: 0, min: 0, max: 5 },
+    categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true, index: true },
     discountPercentage: { type: Number, default: 0, min: 0, max: 100 },
-    // ── Cửa sổ khuyến mãi (tùy chọn): null = áp dụng ngay và vô hạn, có ngày thì giới hạn khung ──
-    discountStartDate: { type: Date, default: null },
-    discountEndDate: { type: Date, default: null },
     soldCount: { type: Number, default: 0, min: 0 },
     viewCount: { type: Number, default: 0, min: 0 },
     isFeatured: { type: Boolean, default: false, index: true },
@@ -117,21 +110,18 @@ ProductSchema.post('save', function(doc) {
       void Category;
 
       const populated = await Product.findById(doc._id)
-        .select('name description brandId categories')
+        .select('name description brandId categoryId')
         .populate([
           { path: 'brandId', select: 'name' },
-          { path: 'categories', select: 'name' },
+          { path: 'categoryId', select: 'name' },
         ])
         .lean() as any;
       if (!populated) return;
 
       const brandName = populated.brandId?.name || '';
-      const categoryNames = (populated.categories as any[] || [])
-        .map((c: any) => c?.name)
-        .filter(Boolean)
-        .join(' ');
+      const categoryName = (populated.categoryId as any)?.name || '';
 
-      const textToEmbed = `${populated.name} ${brandName} ${populated.description || ''} ${categoryNames}`;
+      const textToEmbed = `${populated.name} ${brandName} ${populated.description || ''} ${categoryName}`;
 
       const { AIService } = await import('../services/AIService.ts');
       const vector = await AIService.generateEmbedding(textToEmbed);
@@ -154,7 +144,7 @@ ProductSchema.index({ status: 1, soldCount: -1 });
 ProductSchema.index({ status: 1, soldCount: -1, createdAt: -1 });
 ProductSchema.index({ status: 1, discountPercentage: -1 });
 ProductSchema.index({ status: 1, isFeatured: 1, createdAt: -1 });
-ProductSchema.index({ categories: 1, status: 1 });
+ProductSchema.index({ categoryId: 1, status: 1 });
 ProductSchema.index({ brandId: 1, status: 1 });
 
 export const Product = mongoose.models.Product || mongoose.model<IProduct>('Product', ProductSchema);

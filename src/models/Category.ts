@@ -3,8 +3,6 @@ export interface ICategory extends Document {
   name: string;
   slug: string;
   status: 'active' | 'inactive';
-  createdAt: Date;
-  updatedAt: Date;
 }
 
 const CategorySchema = new Schema<ICategory>(
@@ -14,7 +12,7 @@ const CategorySchema = new Schema<ICategory>(
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   },
   {
-    timestamps: true,
+    timestamps: false,
     collection: 'categories'
   }
 );

@@ -6,38 +6,30 @@ export interface IProductVariant extends Document {
   quantityInStock: number;
   sku?: string; // Stock Keeping Unit
   isDefault: boolean; // Variant mặc định
-  type?: 'decant' | 'fullbox'; // 'decant' (Chiết) | 'fullbox' (Full box)
-  sortOrder: number;
-  createdAt: Date;
-  updatedAt: Date;
+  // ERD chỉ có 7 cột: _id, productId, size, price, quantityInStock, sku, isDefault.
+  // `type` (decant/fullbox) đã bỏ — luôn suy ra từ size (<50ml = decant, còn lại fullbox)
+  // ở tầng format/response, không lưu vật lý.
+  // timestamps: false — variant luôn được ghi lại qua syncVariantsPreservingIds khi
+  // admin sửa product, không ai đọc createdAt/updatedAt nên bỏ cho khớp ERD.
+  // Thứ tự hiển thị suy ra từ `size` (xem bySizeAsc) nên không cần cột sortOrder.
 }
 
 const ProductVariantSchema = new Schema<IProductVariant>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
     size: { type: String, required: true },
-    type: {
-      type: String,
-      enum: ['decant', 'fullbox'],
-      default: function(this: any) {
-        if (!this.size) return 'fullbox';
-        const num = parseInt(String(this.size).replace(/\D/g, ''), 10) || 0;
-        return num > 0 && num < 50 ? 'decant' : 'fullbox';
-      },
-    },
     price: { type: Number, required: true, min: 0 },
     quantityInStock: { type: Number, default: 0, min: 0 },
     sku: { type: String, default: '', trim: true },
     isDefault: { type: Boolean, default: false },
-    sortOrder: { type: Number, default: 0 },
   },
   {
-    timestamps: true,
+    timestamps: false,
     collection: 'product_variants',
   }
 );
 
-ProductVariantSchema.index({ productId: 1, sortOrder: 1, isDefault: -1 });
+ProductVariantSchema.index({ productId: 1, isDefault: -1 });
 
 export const ProductVariant =
   mongoose.models.ProductVariant ||

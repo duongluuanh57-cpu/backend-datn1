@@ -4,13 +4,15 @@ import { UnauthorizedError, ForbiddenError } from '../../utils/errors.ts';
 
 vi.mock('../../utils/auth.ts', () => ({
   verifyAccessToken: vi.fn(),
+  isSessionRevoked: vi.fn().mockResolvedValue(false),
 }));
 
-import { verifyAccessToken } from '../../utils/auth.ts';
+import { verifyAccessToken, isSessionRevoked } from '../../utils/auth.ts';
 
 describe('adminAuthMiddleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(isSessionRevoked).mockResolvedValue(false);
   });
 
   it('reads token from admin_token cookie and attaches ADMIN user', async () => {
@@ -51,5 +53,14 @@ describe('adminAuthMiddleware', () => {
     const req = { headers: { cookie: 'admin_token=user-token' } } as any;
     const reply = {} as any;
     await expect(adminAuthMiddleware(req, reply)).rejects.toThrow(ForbiddenError);
+  });
+
+  it('rejects an admin access token issued before a password change', async () => {
+    vi.mocked(verifyAccessToken).mockReturnValue({ userId: '123', role: 'ADMIN', iat: 1 } as any);
+    vi.mocked(isSessionRevoked).mockResolvedValue(true);
+    const req = { headers: { cookie: 'admin_token=old-admin-token' } } as any;
+    const reply = {} as any;
+    await expect(adminAuthMiddleware(req, reply)).rejects.toThrow('Phiên đăng nhập đã hết hạn');
+    expect(req.user).toBeUndefined();
   });
 });
