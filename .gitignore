@@ -17,3 +17,6 @@ pnpm-lock.yaml
 /fix3.js
 /fix_rev*.ps1
 /fix_review.ps1
+# Test — chạy local, không đẩy lên repo deploy
+src/__tests__/
+vitest.config.ts
