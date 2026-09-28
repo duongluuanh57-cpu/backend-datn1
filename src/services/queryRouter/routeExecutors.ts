@@ -41,7 +41,7 @@ function buildChatMessages(history: any[], message: string) {
  * Ví dụ id trong prompt từng là `[CARD:123]`, model bắt chước và tự đặt `creed_001`;
  * FE chỉ nhận ObjectId 24 ký tự nên khách thấy nguyên token thô trên màn hình.
  */
-const CARD_ID_RULE = `QUY TẮC THẺ SẢN PHẨM: chỉ được chèn [CARD:<id>] và [BUY_FLOW:<id>] với <id> SAO CHÉP NGUYÊN VĂN từ danh sách sản phẩm bên dưới (24 ký tự 0-9a-f, ví dụ [CARD:6a0d769c8b1bfc212bc79709]). KHÔNG được tự nghĩ ra id, KHÔNG viết hoa id. Nếu danh sách sản phẩm rỗng thì TUYỆT ĐỐI không nêu tên sản phẩm nào và không nêu giá nào — chỉ được nói thật là chưa tìm thấy sản phẩm phù hợp và hỏi khách tiêu chí khác.`;
+const CARD_ID_RULE = `QUY TẮC THẺ SẢN PHẨM: chỉ được chèn [CARD:<id>] và [BUY_FLOW:<id>] với <id> SAO CHÉP NGUYÊN VĂN từ danh sách sản phẩm bên dưới (24 ký tự 0-9a-f, ví dụ [CARD:6a0d769c8b1bfc212bc79709]). KHÔNG được tự nghĩ ra id, KHÔNG viết hoa id. Nếu danh sách sản phẩm rỗng thì TUYỆT ĐỐI không nêu tên sản phẩm nào và không nêu giá nào — chỉ được nói thật là chưa tìm thấy sản phẩm phù hợp và hỏi khách tiêu chí khác. Tên thương hiệu trong TỔNG QUAN không phải sản phẩm: CẤM tự đặt tên chai, giá hay dung tích từ tên hãng.`;
 
 let cachedStoreOverview: { data: string; expiresAt: number } | null = null;
 
@@ -66,6 +66,60 @@ ${allBrands.map((b: any) => `  + ${b.name}${b.origin ? ` (Xuất xứ: ${b.origi
   } catch (dbErr) {
     console.error('Error fetching store overview:', dbErr);
     return cachedStoreOverview?.data || '';
+  }
+}
+
+/** Câu xin thêm/gợi ý khác ("còn sản phẩm khác không", "gợi ý thêm vài chai", "xem thêm", "loại khác"...). KHÔNG khớp "còn hàng không" (check tồn kho). */
+const MORE_PRODUCTS_RE = /còn.*(sản phẩm|chai|loại|mùi|hương|hãng|gợi ý|khác|nữa)|sản phẩm khác|gợi ý thêm|thêm.*(vài|mấy|chai|loại|mùi)|xem thêm|loại khác|mùi khác|chai khác|khác (đi|không|nữa|nào)/i;
+
+/** Lấy hàng thật cho follow-up xin thêm: trừ chai đã hiện, chỉ lấy còn hàng, giữ khoảng giá cũ */
+async function fetchMoreProducts(history: any[], message: string): Promise<any[]> {
+  try {
+    const shown = new Set<string>();
+    for (const h of (history || []).slice(-6)) {
+      for (const m of String(h?.content || '').matchAll(/\[CARD:\s*([a-f\d]{24})\s*\]/gi)) {
+        if (m[1]) shown.add(m[1].toLowerCase());
+      }
+    }
+    const docs = await Product.find({
+      status: 'active',
+      ...(shown.size ? { _id: { $nin: [...shown] } } : {}),
+    })
+      .populate('brandId')
+      .populate('categoryId')
+      .sort({ soldCount: -1 })
+      .limit(8)
+      .lean();
+    if (docs.length === 0) return [];
+    const inStock = await ProductVariant.distinct('productId', {
+      productId: { $in: docs.map((d: any) => d._id) },
+      quantityInStock: { $gt: 0 },
+    });
+    const inStockSet = new Set(inStock.map((id: any) => id.toString()));
+    const available = docs.filter((d: any) => inStockSet.has(d._id.toString()));
+    if (available.length === 0) return [];
+    let products = await formatMultipleProducts(available);
+    // Giữ khoảng giá: câu hiện tại không có thì lấy từ user turn gần nhất
+    let range = extractPriceRange(message);
+    if (!range) {
+      for (let i = (history || []).length - 1; i >= 0; i--) {
+        if ((history as any[])[i]?.role !== 'user') continue;
+        range = extractPriceRange(String((history as any[])[i]?.content || ''));
+        if (range) break;
+      }
+    }
+    if (range) {
+      const { minPrice, maxPrice } = range;
+      const inRange = products.filter((p: any) =>
+        typeof p.price === 'number' && p.price > 0 &&
+        (minPrice === undefined || p.price >= minPrice) &&
+        (maxPrice === undefined || p.price <= maxPrice));
+      if (inRange.length > 0) products = inRange;
+    }
+    return products.slice(0, 4);
+  } catch (err) {
+    console.error('❌ [RouteExecutors] More-products fallback Error:', err);
+    return [];
   }
 }
 
@@ -104,6 +158,15 @@ async function buildContext(
           return true;
         });
       }
+    }
+
+    // Follow-up "còn/khác/nữa" mà search ra rỗng: đưa list rỗng cho model là nó bịa
+    // tên chai + giá từ kiến thức có sẵn (thấy tên hãng trong TỔNG QUAN là đặt luôn
+    // chai + giá). Lấy hàng thật khác các chai vừa gợi ý, giữ khoảng giá đã chốt.
+    // Chạy TRƯỚC fallback tái dùng card cũ bên dưới — xin "khác" mà trả lại đúng
+    // chai vừa hiện thì cũng sai ý khách.
+    if (products.length === 0 && MORE_PRODUCTS_RE.test(message)) {
+      products = await fetchMoreProducts(history, message);
     }
 
     // Nếu search theo nội dung câu ngắn (như "thêm sản phẩm vào giỏ hàng") không khớp sản phẩm,
