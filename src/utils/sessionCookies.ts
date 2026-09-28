@@ -17,7 +17,9 @@ import { ACCESS_COOKIE, REFRESH_COOKIE, ADMIN_COOKIE } from './auth.ts';
  * — xem middleware/originGuard.ts.
  */
 export function sessionCookieAttrs() {
-  const isProd = process.env.NODE_ENV === 'production';
+  // Render tự tiêm RENDER=true nhưng KHÔNG tự set NODE_ENV — chỉ check NODE_ENV thì
+  // bản deploy luôn rớt về Lax, browser chặn cookie cross-site Vercel→Render.
+  const isProd = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
   return {
     httpOnly: true,
     secure: isProd,

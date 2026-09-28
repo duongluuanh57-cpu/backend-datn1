@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sessionCookieAttrs, setSessionCookies, setAdminCookie, clearSessionCookies } from '../../utils/sessionCookies.ts';
 
 const originalEnv = process.env.NODE_ENV;
+const originalRender = process.env.RENDER;
 
 afterEach(() => {
   process.env.NODE_ENV = originalEnv;
+  if (originalRender === undefined) delete process.env.RENDER;
+  else process.env.RENDER = originalRender;
 });
 
 describe('sessionCookieAttrs', () => {
@@ -16,6 +19,12 @@ describe('sessionCookieAttrs', () => {
   it('dùng SameSite=None + Secure ở production — cookie cross-site Vercel→Render', () => {
     // SameSite=None mà thiếu Secure là browser BỎ cookie luôn, nên hai cái phải đi cặp.
     process.env.NODE_ENV = 'production';
+    expect(sessionCookieAttrs()).toMatchObject({ httpOnly: true, secure: true, sameSite: 'none', path: '/' });
+  });
+
+  it('coi Render là production dù NODE_ENV chưa set — dashboard Render không tự set nó', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.RENDER = 'true';
     expect(sessionCookieAttrs()).toMatchObject({ httpOnly: true, secure: true, sameSite: 'none', path: '/' });
   });
 });
