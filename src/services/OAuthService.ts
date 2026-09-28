@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { UserRepository } from '../repositories/UserRepository.ts';
 import { generateTokens, toPublicUser } from '../utils/auth.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
+import { normalizeEmail } from '../utils/email.ts';
 import type { IUser } from '../models/User.ts';
 
 // Cấu hình cho từng OAuth Provider
@@ -107,12 +108,16 @@ export class OAuthService {
       throw new UnauthorizedError('Email tài khoản Google chưa được xác minh — không thể đăng nhập');
     }
 
+    // Tra cứu và lưu đúng MỘT dạng email. Google có thể trả về hoa/thường khác nhau, và
+    // email lệch chuỗi sẽ lọt qua cả check ở tầng service lẫn unique index của Mongo.
+    const email = normalizeEmail(profile.email);
+
     // Tìm theo oauthId trước
     let user = await UserRepository.findByOAuthId(provider, profile.oauthId);
 
     if (!user) {
       // Thử tìm theo email (user đã đăng ký bằng email trước đó)
-      user = await UserRepository.findByEmail(profile.email);
+      user = await UserRepository.findByEmail(email);
 
       if (user) {
         // Gắn thêm OAuth vào tài khoản email cũ + cập nhật avatar từ Google
@@ -130,7 +135,7 @@ export class OAuthService {
         for (let attempt = 0; attempt < 5; attempt++) {
           try {
             user = await UserRepository.create({
-              email: profile.email,
+              email,
               username,
               oauthProvider: provider,
               oauthId: profile.oauthId,

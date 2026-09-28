@@ -1,10 +1,19 @@
 import { User } from '../models/User.ts';
 import type { IUser } from '../models/User.ts';
 import { memberTierRange } from '../utils/memberTier.ts';
+import { gmailAliasRegex, normalizeEmail } from '../utils/email.ts';
 
 export class UserRepository {
   static async findByEmail(email: string): Promise<IUser | null> {
-    return User.findOne({ email }).lean();
+    const exact = await User.findOne({ email: normalizeEmail(email) }).lean();
+    if (exact) return exact;
+
+    // Gmail bỏ qua dấu chấm và +tag. Nếu chỉ so khớp chuỗi chính xác thì cùng một hộp thư
+    // tạo được nhiều tài khoản: đăng ký web bằng a.b@gmail.com rồi đăng nhập Google bằng
+    // ab@gmail.com sẽ không tìm thấy nhau và sinh tài khoản thứ hai.
+    const alias = gmailAliasRegex(email);
+    if (!alias) return null;
+    return User.findOne({ email: alias }).lean();
   }
 
   static async findByUsername(username: string): Promise<IUser | null> {

@@ -119,5 +119,30 @@ describe("OAuthService", () => {
       await expect(OAuthService.handleGoogleCallback('code')).rejects.toThrow('Tài khoản của bạn đã bị khóa.');
       expect(generateTokens).not.toHaveBeenCalled();
     });
+
+    it('email Google trả về lẫn hoa/thường → tra cứu và lưu đúng dạng lowercase', async () => {
+      vi.mocked(UserRepository.findByOAuthId).mockResolvedValue(null);
+      vi.mocked(UserRepository.findByEmail).mockResolvedValue(null);
+      vi.mocked(UserRepository.create).mockResolvedValue({
+        _id: 'new-1',
+        role: 'USER',
+        status: 'active',
+      } as any);
+      mockGoogle({ access_token: 'g-access' }, {
+        id: 'g-999',
+        email: 'Mixed.Case@Gmail.com',
+        verified_email: true,
+        name: 'Mixed Case',
+      });
+
+      await OAuthService.handleGoogleCallback('code');
+
+      // Lệch hoa/thường thì findByEmail không thấy doc cũ và unique index cũng không chặn
+      // → cùng một người thành hai tài khoản.
+      expect(UserRepository.findByEmail).toHaveBeenCalledWith('mixed.case@gmail.com');
+      expect(UserRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'mixed.case@gmail.com' }),
+      );
+    });
   });
 });
