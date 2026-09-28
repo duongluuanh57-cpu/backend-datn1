@@ -87,6 +87,29 @@ describe('AuthProfileController.changePassword', () => {
     }));
   });
 
+  it('REGRESSION: FE gửi currentPassword: "" với tài khoản Google chưa có mật khẩu → vẫn set được', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: '' } as any);
+
+    const { reply, getStatus } = makeReply();
+    await AuthProfileController.changePassword(req({ currentPassword: '', newPassword: 'abcd1234' }), reply);
+
+    expect(getStatus()).toBe(200);
+    expect(UserRepository.update).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.objectContaining({
+      passwordHash: 'new-hash',
+    }));
+  });
+
+  it('REGRESSION: currentPassword rỗng với tài khoản ĐÃ có mật khẩu → 400 đúng message', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: 'hash' } as any);
+
+    const { reply, getStatus, getBody } = makeReply();
+    await AuthProfileController.changePassword(req({ currentPassword: '', newPassword: 'abcd1234' }), reply);
+
+    expect(getStatus()).toBe(400);
+    expect(getBody().message).toBe('Vui lòng nhập mật khẩu hiện tại');
+    expect(UserRepository.update).not.toHaveBeenCalled();
+  });
+
   it('đúng mật khẩu hiện tại → hash mật khẩu mới (không ghi passwordChangedAt)', async () => {
     vi.mocked(UserRepository.findById).mockResolvedValue({ _id: '507f1f77bcf86cd799439011', passwordHash: 'hash' } as any);
     vi.mocked(comparePassword).mockResolvedValue(true);

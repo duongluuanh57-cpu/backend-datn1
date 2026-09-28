@@ -68,9 +68,11 @@ describe("ChangePasswordSchema", () => {
     ).toThrow();
   });
 
-  it("should reject empty current password", () => {
-    expect(() =>
-      ChangePasswordSchema.parse({ currentPassword: "", newPassword: "newpassword" })
-    ).toThrow();
+  it("REGRESSION: accepts empty current password (OAuth user gửi '' khi chưa có mật khẩu)", () => {
+    const result = ChangePasswordSchema.parse({
+      currentPassword: "",
+      newPassword: "newpassword1",
+    });
+    expect(result.currentPassword).toBe("");
   });
 });

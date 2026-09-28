@@ -30,7 +30,11 @@ export const LoginSchema = z.object({
 
 // Policy thống nhất với đăng ký: tối thiểu 8 ký tự, phải có chữ và số
 export const ChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Vui lòng nhập mật khẩu hiện tại').optional(),
+  // '' hoặc bỏ trống = tài khoản OAuth (Google) chưa từng đặt mật khẩu — FE cố tình gửi
+  // currentPassword: ''. Không được chặn ở đây: controller.changePassword mới là nơi quyết
+  // (chỉ bắt buộc khi user.passwordHash khác rỗng) và trả đúng message 'Vui lòng nhập mật khẩu
+  // hiện tại' cho tài khoản đã có mật khẩu.
+  currentPassword: z.string().optional(),
   newPassword: z
     .string()
     .min(8, 'Mật khẩu phải dài ít nhất 8 ký tự')
