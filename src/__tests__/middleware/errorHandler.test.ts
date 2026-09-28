@@ -11,6 +11,21 @@ describe("errorHandler", () => {
     expect(result).toBeUndefined();
   });
 
+  // Render free tier: client abort trong lúc pod đang thức dậy -> end-of-stream
+  // ném Error('premature close') KHÔNG có code. Trước đây lọt xuống 500.
+  it.each([
+    ["premature close without code", { message: "premature close" }],
+    ["ECONNRESET", { code: "ECONNRESET", message: "other" }],
+    ["EPIPE", { code: "EPIPE", message: "other" }],
+  ])("treats %s as client abort: no response, warn only", (_label, shape) => {
+    const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;
+    const reply = { status: vi.fn(), send: vi.fn() } as any;
+    expect(errorHandler(shape as any, req, reply)).toBeUndefined();
+    expect(reply.status).not.toHaveBeenCalled();
+    expect(req.log.error).not.toHaveBeenCalled();
+    expect(req.log.warn).toHaveBeenCalledTimes(1);
+  });
+
   it("should return AppError with correct statusCode and message", () => {
     const error = new AppError("Custom not found", 404);
     const req = { log: { error: vi.fn(), warn: vi.fn() } } as any;

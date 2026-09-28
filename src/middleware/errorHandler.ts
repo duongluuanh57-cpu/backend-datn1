@@ -1,9 +1,30 @@
 import type { FastifyError, FastifyRequest, FastifyReply } from 'fastify';
 import { AppError } from '../utils/errors.ts';
 
+/**
+ * Client đã rời đi (đóng tab, FE abort timeout, Render cold start bị bỏ giữa
+ * chừng) — socket đóng nên không còn ai nhận response. `reply.send()` lúc này
+ * chỉ sinh thêm lỗi, và log level error sẽ dump stack vô ích.
+ * end-of-stream báo 'premature close' mà KHÔNG gắn `code`, nên phải kiểm tra cả
+ * message lẫn code — nếu chỉ nhìn code thì mỗi request hụt lại thành 500.
+ */
+const CLIENT_ABORT_CODES = new Set([
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'ECONNRESET',
+  'EPIPE',
+  'ERR_HTTP_REQUEST_TIMEOUT',
+]);
+
+function isClientAbort(error: FastifyError): boolean {
+  const code = (error as any).code;
+  return (typeof code === 'string' && CLIENT_ABORT_CODES.has(code)) || error.message === 'premature close';
+}
+
 export function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
-  // Suppress spam: ERR_STREAM_PREMATURE_CLOSE là normal khi client ngắt kết nối
-  if ((error as any).code === 'ERR_STREAM_PREMATURE_CLOSE') return;
+  if (isClientAbort(error)) {
+    request.log.warn({ statusCode: 499, code: (error as any).code }, 'Client đã ngắt kết nối trước khi response hoàn tất');
+    return;
+  }
   const statusCode = (error as any).statusCode || 500;
 
   // Lỗi 4xx là client sai (body rỗng, validation, 401…) — chỉ warn một dòng, không dump
