@@ -5,7 +5,7 @@ import { Order } from '../models/Order.ts';
 import CartItem from '../models/CartItem.ts';
 import { computeMemberTier } from '../utils/memberTier.ts';
 import type { CreateAdminInput, UpdateUserInput } from '../types/user.types.ts';
-import { hashPassword } from '../utils/auth.ts';
+import { hashPassword, revokeUserSessions } from '../utils/auth.ts';
 import { AppError, ValidationError } from '../utils/errors.ts';
 
 /** Tong chi tieu don da giao — chung cach tinh voi getMe va findPaginated */
@@ -125,6 +125,14 @@ export class UserController {
     // không xóa giỏ oan ở các lần update khác.
     if (data.status === 'suspended' && targetUser.status !== 'suspended') {
       await CartItem.deleteMany({ userId: user._id }).catch(() => {});
+      // Cắt mọi phiên đang sống của user (access + refresh ký trước lúc khóa). Middleware
+      // đã check status, nhưng revocation khiến token cũ chết ngay kể cả khi Redis fail-open.
+      // Lỗi Redis không được làm fail thao tác của admin.
+      try {
+        await revokeUserSessions(String(user._id));
+      } catch (err: any) {
+        console.warn('[Admin] Không thu hồi được phiên khi khóa tài khoản:', err?.message || err);
+      }
     }
 
     const { passwordHash, ...safeUser } = user.toObject();

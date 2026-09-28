@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OAuthService } from "../../services/OAuthService.ts";
 import { UnauthorizedError } from "../../utils/errors.ts";
 import { UserRepository } from "../../repositories/UserRepository.ts";
+import { generateTokens } from "../../utils/auth.ts";
 
 vi.mock("../../repositories/UserRepository.ts", () => ({
   UserRepository: {
@@ -103,6 +104,20 @@ describe("OAuthService", () => {
       expect(UserRepository.create).not.toHaveBeenCalled();
       expect(result.user).toEqual({ id: '507f1f77bcf86cd799439011', role: 'USER' });
       expect(result.tokens.accessToken).toBe('at');
+    });
+
+    it('REGRESSION: tài khoản bị admin khóa → Google login KHÔNG được cấp phiên mới', async () => {
+      const locked: any = { _id: '507f1f77bcf86cd799439011', role: 'USER', email: 'a@b.com', status: 'suspended' };
+      vi.mocked(UserRepository.findByOAuthId).mockResolvedValue(locked);
+      mockGoogle({ access_token: 'g-access' }, {
+        id: 'g-123',
+        email: 'a@b.com',
+        verified_email: true,
+        name: 'Bi Khoa Tai Khoan',
+      });
+
+      await expect(OAuthService.handleGoogleCallback('code')).rejects.toThrow('Tài khoản của bạn đã bị khóa.');
+      expect(generateTokens).not.toHaveBeenCalled();
     });
   });
 });

@@ -36,8 +36,22 @@ export class OAuthController {
     if (!stateValid) throw new ValidationError('Invalid hoặc hết hạn state parameter');
     await redis.del(`oauth:state:${state}`);
 
-    const result = await OAuthService.handleGoogleCallback(code);
     const frontendUrl = process.env.FRONTEND_URL || 'https://lessence-livid.vercel.app';
+
+    let result: Awaited<ReturnType<typeof OAuthService.handleGoogleCallback>>;
+    try {
+      result = await OAuthService.handleGoogleCallback(code);
+    } catch (err: any) {
+      // KHÔNG để trình duyệt hiện JSON thô ở URL backend: redirect về trang đăng nhập
+      // kèm cờ để FE toast đúng thông điệp — case chính là tài khoản bị admin khóa.
+      const loginUrl = new URL(`${frontendUrl}/auth/login`);
+      if (typeof err?.message === 'string' && err.message.includes('khóa')) {
+        loginUrl.searchParams.set('error', 'locked');
+      } else {
+        loginUrl.searchParams.set('error', 'oauth');
+      }
+      return reply.redirect(loginUrl.toString());
+    }
 
     // Set session cookie trước, rồi redirect về FE với URL sạch.
     // ADMIN phải có cả access+refresh: callback vừa xong thì FE gọi /api/auth/me

@@ -27,8 +27,14 @@ vi.mock('../../../repositories/UserRepository.ts', () => ({
   },
 }));
 
+vi.mock('../../../utils/auth.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/auth.ts')>();
+  return { ...actual, revokeUserSessions: vi.fn() };
+});
+
 import { UserRepository } from '../../../repositories/UserRepository.ts';
 import CartItem from '../../../models/CartItem.ts';
+import { revokeUserSessions } from '../../../utils/auth.ts';
 
 function reply() {
   let statusCode = 200;
@@ -150,6 +156,46 @@ describe('UserController.updateUser — I6 dọn giỏ hàng khi khóa', () => {
     await UserController.updateUser(req, rep);
 
     expect(CartItem.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserController.updateUser — cắt phiên đang sống khi khóa', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(revokeUserSessions).mockResolvedValue(undefined);
+  });
+
+  it('chuyển active → suspended → thu hồi mọi phiên đang sống', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, status: 'suspended', toObject: () => ({ ...normalUser, status: 'suspended' }) } as any);
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(revokeUserSessions).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('set suspended khi đã suspended sẵn → idempotent, không revoke thêm', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue({ ...normalUser, status: 'suspended' });
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, status: 'suspended', toObject: () => ({ ...normalUser, status: 'suspended' }) } as any);
+    const req = { params: { id: USER_ID }, body: { status: 'suspended' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(revokeUserSessions).not.toHaveBeenCalled();
+  });
+
+  it('không đổi status → không revoke', async () => {
+    vi.mocked(UserRepository.findById).mockResolvedValue(normalUser);
+    vi.mocked(UserRepository.update).mockResolvedValue({ ...normalUser, toObject: () => ({ ...normalUser }) } as any);
+    const req = { params: { id: USER_ID }, body: { username: 'ten moi' }, user: { userId: ADMIN_ID } } as any;
+    const { reply: rep } = reply();
+
+    await UserController.updateUser(req, rep);
+
+    expect(revokeUserSessions).not.toHaveBeenCalled();
   });
 });
 

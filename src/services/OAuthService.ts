@@ -146,6 +146,15 @@ export class OAuthService {
       }
     }
 
+    // Admin khóa tài khoản → Google login KHÔNG được cấp phiên mới. Login/refresh bằng
+    // mật khẩu đã chặn, đây là cửa thứ ba vẫn còn mở (user khóa xong đăng nhập lại bằng Google).
+    // `|| !user.status` — doc thiếu status (dữ liệu cũ) coi như active, đúng như toPublicUser.
+    if (user && user.status && user.status !== 'active') {
+      throw new UnauthorizedError(
+        user.status === 'suspended' ? 'Tài khoản của bạn đã bị khóa.' : 'Tài khoản của bạn không khả dụng.',
+      );
+    }
+
     const tokens = generateTokens(user!._id.toString(), user!.role);
     return {
       user: toPublicUser(user!),
