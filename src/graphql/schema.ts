@@ -272,10 +272,16 @@ const EMPTY_CART_AND_FAVORITES = {
 interface HomepageCacheEntry {
   data: any;
   cachedAt: number;
+  /**
+   * Thời gian coi là "mới" của entry. Bản rỗng (build thất bại) dùng 30s thay vì 3 phút
+   * để request sau build lại ngay — không treo trang chủ suốt 10 phút.
+   */
+  freshMs?: number;
 }
 
 const HOMEPAGE_STALE_MS = 180_000; // 3 phút: sau 3 phút thì dữ liệu coi là stale, revalidate ngầm
 const HOMEPAGE_EXPIRE_MS = 600_000; // 10 phút: tối đa lưu trong memory
+const HOMEPAGE_EMPTY_TTL_MS = 30_000; // Bản rỗng chỉ giữ 30s: không hammer DB, nhưng cũng không giữ rỗng lâu
 const HOMEPAGE_CACHE_KEY = 'homepage:v19';
 
 let memHomepageCache: HomepageCacheEntry | null = null;
@@ -283,6 +289,33 @@ let singleFlightHomepagePromise: Promise<any> | null = null;
 
 export function invalidateHomepageCache(): void {
   memHomepageCache = null;
+}
+
+/**
+ * Trang chủ "trống trơn" = build THẤT BẠI, không phải cửa hàng tự trống: từng service đều
+ * nuốt lỗi bằng `.catch(() => [])`, nên lúc backend cold start (DB/Redis chưa sẵn) hoặc
+ * vượt quá timeout 20s là ra đúng một object rỗng cho cả 6 section.
+ */
+export function isEmptyHomepage(data: any): boolean {
+  if (!data || typeof data !== 'object') return true;
+  return ['flashSales', 'new', 'hot', 'limited', 'seasonal', 'brands'].every(
+    (key) => !Array.isArray(data[key]) || data[key].length === 0,
+  );
+}
+
+/** Bản tốt gần nhất (memory, không thì Redis) — dùng làm fallback khi build ra rỗng. */
+async function readLastGoodHomepage(): Promise<any | null> {
+  if (memHomepageCache && !isEmptyHomepage(memHomepageCache.data)) return memHomepageCache.data;
+  try {
+    const raw = await safeRedisGet(HOMEPAGE_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!isEmptyHomepage(parsed)) return parsed;
+    }
+  } catch {
+    /* Redis cũng chết thì coi như không có bản cũ */
+  }
+  return null;
 }
 
 async function buildHomepageData(): Promise<any> {
@@ -321,14 +354,30 @@ async function buildHomepageData(): Promise<any> {
     brands: (brands || []).filter((b: any) => b.status === 'active' && b.logo).map(mapBrand),
   };
 
-  // Chỉ cache khi tổng hợp xong thật. Trước đây điều kiện là "hot hoặc new có dữ liệu",
-  // nên DB trống/hỏng nhẹ là mỗi request trang chủ đều chạy lại toàn bộ service.
-  if (!timedOut) {
+  // Chỉ cache khi tổng hợp xong THẬT. Timeout 20s hay mọi service trả rỗng (DB/Redis chưa
+  // sẵn) đều là thất bại: ghi bản rỗng vào cache 10 phút thì trang chủ sẽ trống đúng ngay lúc
+  // admin vừa tạo xong Flash Sale, và người dùng kết luận "tạo mà không hiện".
+  if (!timedOut && !isEmptyHomepage(result)) {
     memHomepageCache = { data: result, cachedAt: Date.now() };
     await safeRedisSet(HOMEPAGE_CACHE_KEY, JSON.stringify(result), 'EX', 600);
+    console.log('[Homepage Worker] Đã cập nhật cache trang chủ thành công');
+    return result;
   }
 
-  console.log('[Homepage Worker] Đã cập nhật cache trang chủ thành công');
+  console.warn('[Homepage Worker] Build thất bại (timeout hoặc dữ liệu rỗng) — dùng bản cũ nếu có');
+  const lastGood = await readLastGoodHomepage();
+  if (lastGood) {
+    // Vừa bị invalidate (mem trống) mà còn bản trong Redis → nạp vào memory ở trạng thái
+    // "stale": request tới trả ngay bản cũ, đồng thời revalidate nền để tự hồi phục.
+    if (!memHomepageCache || isEmptyHomepage(memHomepageCache.data)) {
+      memHomepageCache = { data: lastGood, cachedAt: Date.now() - HOMEPAGE_STALE_MS };
+    }
+    return lastGood;
+  }
+
+  // Không có bản nào (server mọc giữa lúc DB chết) → giữ bản rỗng tối đa 30s rồi build lại,
+  // thay vì treo trang chủ rỗng suốt 10 phút.
+  memHomepageCache = { data: result, cachedAt: Date.now(), freshMs: HOMEPAGE_EMPTY_TTL_MS };
   return result;
 }
 
@@ -353,8 +402,9 @@ const resolvers = {
 
       const now = Date.now();
 
-      // 1. In-Memory Cache: Nếu còn mới (< 3 phút) -> Phản hồi lập tức (< 1ms)
-      if (memHomepageCache && (now - memHomepageCache.cachedAt < HOMEPAGE_STALE_MS)) {
+      // 1. In-Memory Cache: Nếu còn mới (< 3 phút; bản rỗng thì 30s) -> Phản hồi lập tức (< 1ms)
+      const freshMs = memHomepageCache?.freshMs ?? HOMEPAGE_STALE_MS;
+      if (memHomepageCache && now - memHomepageCache.cachedAt < freshMs) {
         return memHomepageCache.data;
       }
 
