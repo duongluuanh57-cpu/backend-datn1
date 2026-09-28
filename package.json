@@ -9,7 +9,6 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "cleanup:discount-dates": "tsx scripts/unset-discount-dates.ts",
     "clean": "node --input-type=module -e \"import {rmSync,existsSync} from 'fs'; if (existsSync('dist')) {rmSync('dist', {recursive: true, force: true}); console.log('🧹 Cleaned dist folder')}\"",
     "check:users": "tsx scripts/check-users.ts",
     "seed:orders": "tsx scripts/seed-orders.ts",
