@@ -1,10 +1,13 @@
 import type { FastifyRequest } from 'fastify';
-import { verifyAccessToken } from './auth.ts';
+import { verifyAccessToken, extractAccessToken } from './auth.ts';
 
 /**
- * Rate-limit identity — đọc từ header Authorization NGAY TẠI onRequest.
+ * Rate-limit identity — đọc access token NGAY TẠI onRequest (pha keyGenerator).
  * @fastify/rate-limit chạy ở onRequest, trước mọi preHandler nên request.user
- * (do authMiddleware set) chưa bao giờ tồn tại ở đây — đọc user từ đó là dead code.
+ * (do authMiddleware set) chưa bao giờ tồn tại ở đây.
+ * Token lấy qua đúng extractAccessToken() mà authMiddleware dùng: FE xác thực
+ * bằng httpOnly cookie, đọc riêng header Bearer là mọi trình duyệt bị tính là
+ * khách ẩn danh (120/phút/IP) và quota theo role không bao giờ được dùng.
  * Verify thật (không chỉ decode) để không ai fake role lấy quota cao hơn.
  */
 interface RateLimitIdentity {
@@ -17,10 +20,10 @@ function identity(request: FastifyRequest): RateLimitIdentity {
   if (cached) return cached;
 
   let found: RateLimitIdentity = {};
-  const authHeader = request.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
+  const token = extractAccessToken(request);
+  if (token) {
     try {
-      const decoded = verifyAccessToken(authHeader.substring(7));
+      const decoded = verifyAccessToken(token);
       found = { userId: decoded.userId, role: decoded.role };
     } catch {
       // Token hỏng/hết hạn → coi như anonymous, không throw (keyGenerator throw là sập mọi request)
@@ -34,6 +37,15 @@ function identity(request: FastifyRequest): RateLimitIdentity {
 export function rateLimitKey(request: FastifyRequest): string {
   return identity(request).userId || request.ip;
 }
+
+/**
+ * E2E_SKIP_RATE_LIMIT — bỏ qua mọi quota, chỉ cho bật ở môi trường không phải
+ * production (Playwright boot BE với E2E_DISABLE_RATE_LIMIT=1). Một suite e2e chạy
+ * 30+ login + hàng trăm request từ CÙNG một IP trong vài phút, đủ để tự 429 chính
+ * mình ở mọi tầng limit.
+ */
+export const E2E_SKIP_RATE_LIMIT =
+  process.env.NODE_ENV !== 'production' && process.env.E2E_DISABLE_RATE_LIMIT === '1';
 
 /** Quota theo role: GET/HEAD 1000, ADMIN 500, USER 600, ẩn danh 120. */
 export function rateLimitMax(request: FastifyRequest): number {

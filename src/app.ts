@@ -51,7 +51,7 @@ import corePlugin from './plugins/core.ts';
 import { errorHandler } from './middleware/errorHandler.ts';
 import { originGuard } from './middleware/originGuard.ts';
 import { getAllowedOrigins } from './config/origins.ts';
-import { rateLimitKey, rateLimitMax } from './utils/rateLimit.ts';
+import { rateLimitKey, rateLimitMax, E2E_SKIP_RATE_LIMIT } from './utils/rateLimit.ts';
 import { runHealthChecks, checkDatabase } from './services/HealthCheckService.ts';
 
 export function buildApp(): FastifyInstance {
@@ -141,6 +141,7 @@ export function buildApp(): FastifyInstance {
     timeWindow: '1 minute',
     keyGenerator: rateLimitKey,
     allowList: (request: any) => {
+      if (E2E_SKIP_RATE_LIMIT) return true;
       if (request.url?.startsWith('/api/favorites')) return true;
       if (request.url?.startsWith('/api/cart')) return true;
       return false;

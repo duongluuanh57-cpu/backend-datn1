@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { rateLimitKey, rateLimitMax } from '../../utils/rateLimit.ts';
-import { generateTokens } from '../../utils/auth.ts';
+import { generateTokens, ACCESS_COOKIE } from '../../utils/auth.ts';
 
-function fakeReq(headers: Record<string, string> = {}, ip = '1.2.3.4', method = 'POST'): any {
-  return { headers, ip, method };
+function fakeReq(headers: Record<string, string> = {}, ip = '1.2.3.4', method = 'POST', cookies: Record<string, string> = {}): any {
+  return { headers, ip, method, cookies };
 }
 
 describe('rateLimit helpers (chạy ở onRequest — request.user chưa tồn tại)', () => {
@@ -43,5 +43,33 @@ describe('rateLimit helpers (chạy ở onRequest — request.user chưa tồn t
     const req = fakeReq({ authorization: `Bearer ${refreshToken}` });
     expect(rateLimitKey(req)).toBe('1.2.3.4');
     expect(rateLimitMax(req)).toBe(120);
+  });
+
+  // ═══ Kênh thật của FE là httpOnly cookie, không có Authorization header ═══
+  it('USER đăng nhập bằng cookie → key là userId, quota 600 (không phải 120/IP)', () => {
+    const { accessToken } = generateTokens('user-9', 'USER');
+    const req = fakeReq({}, '9.9.9.9', 'POST', { [ACCESS_COOKIE]: accessToken });
+    expect(rateLimitKey(req)).toBe('user-9');
+    expect(rateLimitMax(req)).toBe(600);
+  });
+
+  it('ADMIN đăng nhập bằng cookie → quota 500', () => {
+    const { accessToken } = generateTokens('admin-9', 'ADMIN');
+    const req = fakeReq({}, '9.9.9.9', 'POST', { [ACCESS_COOKIE]: accessToken });
+    expect(rateLimitKey(req)).toBe('admin-9');
+    expect(rateLimitMax(req)).toBe(500);
+  });
+
+  it('cookie rác → anonymous, không throw', () => {
+    const req = fakeReq({}, '8.8.8.8', 'POST', { [ACCESS_COOKIE]: 'khong-phai-jwt' });
+    expect(() => rateLimitKey(req)).not.toThrow();
+    expect(rateLimitKey(req)).toBe('8.8.8.8');
+    expect(rateLimitMax(req)).toBe(120);
+  });
+
+  it('có cả Bearer lẫn cookie → theo extractAccessToken, Bearer thắng', () => {
+    const bearer = generateTokens('user-bearer', 'USER').accessToken;
+    const req = fakeReq({ authorization: `Bearer ${bearer}` }, '7.7.7.7', 'POST', { [ACCESS_COOKIE]: 'khong-phai-jwt' });
+    expect(rateLimitKey(req)).toBe('user-bearer');
   });
 });

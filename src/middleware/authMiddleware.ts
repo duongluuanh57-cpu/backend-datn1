@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { verifyAccessToken, isSessionRevoked, ACCESS_COOKIE } from '../utils/auth.ts';
+import { verifyAccessToken, isSessionRevoked, extractAccessToken } from '../utils/auth.ts';
 import { UnauthorizedError } from '../utils/errors.ts';
 
 // Mở rộng kiểu Fastify Request để TypeScript biết có thêm field `user`
@@ -10,17 +10,6 @@ declare module 'fastify' {
       role: string;
     };
   }
-}
-
-/** Lấy access token từ httpOnly cookie hoặc Authorization: Bearer header (fallback) */
-function extractAccessToken(req: FastifyRequest): string | null {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.substring(7);
-  }
-  const cookies = (req as any).cookies || {};
-  const fromCookie = cookies[ACCESS_COOKIE];
-  return typeof fromCookie === 'string' && fromCookie ? fromCookie : null;
 }
 
 /**

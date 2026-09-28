@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import { schema } from './schema.ts';
 import { execute, parse, visit } from 'graphql';
 import { ACCESS_COOKIE } from '../utils/auth.ts';
+import { E2E_SKIP_RATE_LIMIT } from '../utils/rateLimit.ts';
 
 export async function graphqlRoute(app: FastifyInstance) {
   // GraphQL rate limit — 50 req/phút/IP
@@ -10,6 +11,7 @@ export async function graphqlRoute(app: FastifyInstance) {
     max: 50,
     timeWindow: '1 minute',
     keyGenerator: (request) => request.ip,
+    allowList: () => E2E_SKIP_RATE_LIMIT,
     errorResponseBuilder: () => ({
       errors: [{ message: 'Vượt quá giới hạn yêu cầu GraphQL, vui lòng thử lại sau' }],
     }),

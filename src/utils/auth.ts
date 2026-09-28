@@ -45,6 +45,24 @@ export const REFRESH_COOKIE = 'refresh_token';
 // Cookie rieng cho admin panel (access token cua admin khong co cookie user counterpart)
 export const ADMIN_COOKIE = 'admin_token';
 
+/**
+ * Nguồn duy nhất định nghĩa "token của request này nằm ở đâu":
+ * httpOnly cookie (kênh thật của FE) hoặc Authorization: Bearer (fallback).
+ * Ai cần danh tính người gọi (authMiddleware, rate-limit) PHẢI dùng hàm này —
+ * tự đọc header Bearer một mình là nhầm mọi request của trình duyệt thành khách.
+ */
+export function extractAccessToken(request: {
+  headers: { authorization?: string };
+  cookies?: Record<string, string | undefined>;
+}): string | null {
+  const authHeader = request.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  const fromCookie = (request.cookies || {})[ACCESS_COOKIE];
+  return typeof fromCookie === 'string' && fromCookie ? fromCookie : null;
+}
+
 // TTL chuẩn hoá: user thường 15 phút / 7 ngày — admin 12 giờ / 14 ngày (trước đây admin là 365 ngày)
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;   // 7 ngày (giây) — blacklist/cookie refresh user
 

@@ -6,6 +6,7 @@ import { AuthSessionController } from '../controllers/auth/authSessionController
 import { AuthProfileController } from '../controllers/auth/authProfileController.ts';
 import { authMiddleware } from '../middleware/authMiddleware.ts';
 import { RegisterSchema, LoginSchema, ChangePasswordSchema } from '../types/user.types.ts';
+import { E2E_SKIP_RATE_LIMIT } from '../utils/rateLimit.ts';
 
 export async function authRoutes(app: FastifyInstance) {
   // Rate limit các endpoint nhạy cảm — 50 req/phút mỗi IP.
@@ -20,6 +21,7 @@ export async function authRoutes(app: FastifyInstance) {
       return request.ip;
     },
     allowList: (request: any) => {
+      if (E2E_SKIP_RATE_LIMIT) return true;
       if (request.method !== 'POST') return true;
       return !/\/(login|register|verify-password|change-password)$/.test(request.url || '');
     },
